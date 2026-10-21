@@ -1,0 +1,27 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+build/
+dist/
+.pytest_cache/
+.ruff_cache/
+
+# data and large files (never commit experiment data or vendor binaries)
+*.tif
+*.tiff
+*.h5
+*.hdf5
+*.npz
+/data/
+/third_party/installers/
+*.dll
+*.exe
+
+# local / editor
+.vscode/
+.idea/
+*.log
+.claude/settings.local.json
