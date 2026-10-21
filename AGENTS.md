@@ -7,8 +7,9 @@ to choose. V6 decision record: V6 `docs/decisions/script_port_is_a_separate_proj
 ## The rig — read `G:\Codes\rig\RULES.md` first; it applies here in full
 
 User 2026-10-21: "그 규칙들이 LabVIEW2Scr 프로젝트에서도 적용되도록 하면 좋겠음." In short:
-1. **The rig state** (분해 / 조립 / 실험중) changes only on the user's word; record it with
-   `py G:\Codes\rig\riglock.py set-state ... --by chat --note "<the user's words>"`. 실험중 = touch nothing.
+1. **The rig state** (`분해` disassembled / `조립` assembled / `실험중` experiment) changes only on the user's word;
+   record it with `py G:\Codes\rig\riglock.py set-state ... --by chat --note "<the user's words>"`.
+   Experiment = touch nothing.
 2. **Take the shared lock** (`G:\Codes\rig\riglock.py`) before any device call — camera, PI, ASI, rotor, iXon, laser,
    Arduino — and release it after a verified cleanup. Check `permitted` before each step and at least every 30 s.
    Another live holder -> wait; experiment / stale / error -> stop.
@@ -27,3 +28,6 @@ User 2026-10-21: "그 규칙들이 LabVIEW2Scr 프로젝트에서도 적용되�
   otherwise (acceptance is numeric).
 - Secrets only in user environment variables.
 - Answer the user first; write in plain words; state evidence and confidence.
+- **Language:** chat with the user in Korean. Documents, code, comments and commit messages are in English. Korean
+  is allowed only inside quotes (verbatim user words, data strings) or in a `*.ko.md` translation; the hook
+  `.claude/hooks/english_only.py` enforces this.
