@@ -46,6 +46,7 @@ Details and reasons: [docs/decisions/](docs/decisions/).
 
 ```
 docs/            documents for people (permanent)
+  plan.md          the phase plan (order, completion criteria, rig needs)
   decisions/       design decisions and why they were made
   format/          data file formats
 CLAUDE.md        working rules for AI assistants during development (AGENTS.md is the same text)
