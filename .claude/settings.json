@@ -22,6 +22,26 @@
             "statusMessage": "Rig check: blocks device/LabVIEW commands during an experiment (G:/Codes/rig/RULES.md section 5)"
           }
         ]
+      },
+      {
+        "matcher": "Bash|Grep",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "G=\"$(command -v graphify || echo \"$USERPROFILE/tools/graphify-venv/Scripts/graphify.exe\")\"; if [ -x \"$G\" ]; then \"$G\" hook-guard search; fi",
+            "timeout": 10
+          }
+        ]
+      },
+      {
+        "matcher": "Read|Glob",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "G=\"$(command -v graphify || echo \"$USERPROFILE/tools/graphify-venv/Scripts/graphify.exe\")\"; if [ -x \"$G\" ]; then \"$G\" hook-guard read; fi",
+            "timeout": 10
+          }
+        ]
       }
     ]
   }

@@ -25,3 +25,6 @@ dist/
 .idea/
 *.log
 .claude/settings.local.json
+
+# graphify output (local only)
+graphify-out/

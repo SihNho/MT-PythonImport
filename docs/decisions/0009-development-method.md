@@ -6,6 +6,10 @@
 - **Where:** git on GitHub, with branches and pull requests. Development happens locally on the rig PC, because hardware access is needed in the end.
 - **Review:** an AI assistant reviews code changes; the project owner checks behavior and results. Changes to hardware-safety code are summarized in plain words and confirmed separately.
 - **Checks:** pytest and ruff. Six test tiers (see CONTRIBUTING.md). Device drivers default to simulators.
+- **AI-assistant tooling (development period only):**
+  - **Graphify** (Apache-2.0): a knowledge graph of the repo; its output is local and git-ignored.
+  - **Ponytail** (MIT): a "smallest complete change" ruleset, with exceptions for faithful-port code, file formats, the decided architecture and safety code (see `CLAUDE.md`).
+  - Both are installed project-scoped. They are not part of the application.
 - **Python environment:** the project uses its **own virtual environment**, so packages used by the LabVIEW project's tools on the same PC are never changed.
 
 ## The rig is shared
