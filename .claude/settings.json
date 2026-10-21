@@ -11,6 +11,17 @@
             "statusMessage": "Checking English-only rule"
           }
         ]
+      },
+      {
+        "matcher": "Bash|PowerShell|mcp__.*computer.*|mcp__.*browser_batch",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "G=\"G:/Codes/LabVIEW_Codes/MinLab/zz_LabView VI/AAA_UNIST/2. Tracking/V6_ParallelLoop/tools/hooks/guard_experiment.py\"; if [ -f \"$G\" ]; then py \"$G\"; fi",
+            "timeout": 10,
+            "statusMessage": "Rig check: blocks device/LabVIEW commands during an experiment (G:/Codes/rig/RULES.md section 5)"
+          }
+        ]
       }
     ]
   }
