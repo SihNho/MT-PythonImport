@@ -69,6 +69,36 @@ Owner: "모든 항목이 다 스크린에 있어서 가독성이 떨어졌던 �
 - Works without AI (decision 0001): rule-based checks plus a searchable case log; an AI helper only as an optional
   add-on later.
 
+**U10 - the screening protocol is programmable, preferably from the UI.** Owner 2026-10-22, current criteria
+(single-biotin attachment):
+1. "0 force --> 7 pN 당겼을 때 변위" (extension change from 0 to 7 pN);
+2. "Rotation 돌려서 길이 변화 패턴이 있는지 [Multi-tethering 있는지], 그리고 trace의 radius가 얼마나 큰지 (angle이 일정
+   이상으로 작아야 좋음)" (extension pattern under rotation reveals multiple tethers; radius of the x-y trace during
+   rotation, the angle must be small enough);
+3. "Rotation 했을 때 trace가 정상적인지. [원형으로 돌아야 하는데, 다양한 이유로 원형이 아닌 다른 모양을 가질 때가 종종
+   있음]" (the x-y trace must be a circle).
+Owner: "위의 기준은 사실 single-biotin을 사용하는 나에게 맞고, 케이스에 따라서는 기준선이 달라질 수 있음. 따라서 선별
+프로토콜을 프로그램 가능하게 두었으면 좋겠음. 유저 친화적으로 프로그램 하면 좋긴 하겠는데... UI로 가능하면 정말 좋고"
+- A protocol = **actions** (magnet to force / position, rotate -N..+N turns at a speed, hold and record t s; an
+  ordered, reorderable list) + **metrics** chosen from a library (extension change between two segments; extension vs
+  turns: presence and symmetry of a decrease, for multiple tethers; x-y circle radius during rotation and the angle
+  derived from it; circularity: circle-fit residual, ellipticity, closure) + **rules** (comparisons combined with
+  AND / OR). Each failed rule is shown as the bead's reason.
+- Templates: "Single-biotin (SiHyeong)" ships as the default; others copy it and change thresholds; saved in the
+  lab-wide library.
+- Dry run on saved recordings, without the rig.
+- Threshold tuning: the distribution of each metric over the beads is shown, and moving a threshold slider updates the
+  pass / fail table live.
+- Power users may add a metric as a small Python function; everyone else uses the UI only.
+- **Open:** the definition of "angle" (e.g. attachment angle from the trace radius and the bead radius), the rotation
+  range and speed used, and the single-biotin thresholds.
+
+**U11 - UI language.** Owner 2026-10-22: "글자는 무조건 영어." All UI text in English only.
+
+**Note - local AI model.** Owner 2026-10-22: "Laya 내장하는거는 염두에 두고 있음. 로컬로 트레이닝한다면 내 계정이
+필요없음." The owner is considering embedding "Laya", trained locally so no personal account is needed. What Laya is
+has not been confirmed in the chat. Per decision 0001 any AI stays an optional add-on on top of the normal interfaces.
+
 ## Also to be supported (owner, earlier in the same chat)
 - The Andor iXon EMCCD added later (decision 0005: the JAI is the master clock, the Arduino divides frames).
 - Real-time fluorescence traces.
