@@ -11,11 +11,14 @@ changes, add the new line with its date and keep the old one marked "superseded"
 | Sensor pixel | 5.0 x 5.0 µm (2560 x 2048, Lince5M) | JAI product page, accessed 2026-10-22 |
 | Objective | **50x oil immersion** since the field of view was widened; **100x oil** before | owner 2026-10-22 |
 | Image pixel, nominal | 5.0 µm x 2 (binning) / 50 ≈ **200 nm/px** (assumes the objective's matching tube lens) | computed 2026-10-22, not measured |
-| `pixel distance (nm)` in the calibration file | **84 nm/px** (last DBL of the `cal002` tail; also the panel default) | `cal002`; `spec/3-calibration.md` F3.01 |
+| `pixel distance (nm)` in the calibration file | **84 nm/px** (last DBL of the `cal002` tail; also the panel default) — stale, from the 100x objective | `cal002`; `spec/3-calibration.md` F3.01; owner 2026-10-22 |
 
-The two pixel sizes disagree (see Q3.07 in [questions-for-owner.md](spec/questions-for-owner.md)). 84 nm/px may be a
-value left from the 100x setup (100x with binning 2 would give about 100 nm/px nominally). Tracking itself works in
-pixels; the value only matters where pixels are converted to nm.
+**84 nm/px is a value left from the 100x objective** (owner 2026-10-22: "예전 렌즈 사용할 때 기록인듯. (100X)"), so it
+is stale for 50x data. Note: 100x with binning 2 is 100 nm/px nominally, not 84; if 84 was measured, the real
+magnification is about 1.19x the nominal one, and the same ratio would put 50x at about **168 nm/px** rather than 200.
+Both figures are inferences; **measure the 50x pixel size** (stage micrometer, or move the ASI stage by a known
+distance and track a stuck bead) before converting pixels to nm. Tracking itself works in pixels, but force
+analysis from x fluctuations may not: see Q3.07.
 
 ## Samples
 

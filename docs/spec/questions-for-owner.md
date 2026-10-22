@@ -55,7 +55,13 @@ here; they are the `unknown — needs VI read` entries in the step files and in 
   ([rig-facts.md](../rig-facts.md)). Still open: whether any of them change between experiments.
 - **Q3.07 (F3.01)** The calibration file stores `pixel distance (nm)` = 84, but the 50x objective with binning 2 gives
   about 200 nm/px nominally (100x would give about 100). Is 84 a value left from the 100x setup, or was it measured?
-  Where is it used? ([rig-facts.md](../rig-facts.md))
+  Where is it used? ([rig-facts.md](../rig-facts.md)) *Answered (owner 2026-10-22):* "예전 렌즈 사용할 때 기록인듯.
+  (100X)" — stale for 50x. Still open: where the program uses it, and the measured 50x pixel size.
+  **Possible data impact (inference, not checked):** the force analysis subVI `autotreat force-ext module v3
+  k-based.vi` has a `Pixel distance` input and is not called from the tracking VI (V6 wiki: 0 call sites), so it is
+  likely used by the analysis VIs (`Min_Load N bead trace_Force-Ext*.vi`). If those take 84 nm/px for 50x data, any
+  force computed from x fluctuations (F = kT·L/<δx²>) scales with (true px / 84)², about 4-5.7x too high at 168-200
+  nm/px. Which pixel distance do you enter, or does the analysis read it from the `.cal` file?
 - **Q3.02 (F3.02)** Does the Z scan start at the current focus and go up, and is the bead expected to be in focus at
   the start or in the middle of the scan?
 - **Q3.05 (F3.04)** Do you choose the bandpass and forget radius by hand during calibration? What do the three numbers
