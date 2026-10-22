@@ -166,6 +166,23 @@ fitting 해보고 거기서 persistence length 확인이 된다면 정말 좋을
 - Later: suggest a bridge when all beads, or the reference bead, jump at the same frame; it is applied only after the
   user confirms.
 
+**U15 - device-settings presets, applied with read-back and saved with the data.** Owner 2026-10-22: "경우에 따라 장비
+셋팅을 바꿔야하는 일이 종종 있음. 가장 대표적으로는 카메라 셋업. Frame rate은 어떻게 할 것이며, signal magnification은
+무엇이며, acquisition mode는 무엇이며, 등등... 이 정보도 프리셋 적용하고, 데이터와 함께 저장하면 좋겠는데"
+- Named presets per device, e.g. "JAI 150 Hz tracking", "JAI 90 Hz wide field", "iXon ALEX 15 Hz". Camera fields:
+  frame rate, exposure, gain ("signal magnification"), acquisition mode (continuous / external trigger / ...), ROI,
+  binning, pixel format; iXon adds EM gain, readout speed, pre-amp gain, cooling set point, frame transfer, trigger
+  mode. Other devices (lasers, rotor speed, ...) use the same structure.
+- **Applied after every device open, then read back and verified** before acquisition starts: the JAI resets ROI and
+  exposure on every open (V6 `docs/camera-acquisition-facts.md`, measured 2026-09-14). A mismatch is shown and acquisition
+  does not start.
+- Checked before applying: exposure longer than the frame period, frame rate above the maximum for the ROI, mismatch
+  with the EMCCD frame ratio N (0005); the reason is shown.
+- The data file stores the preset name **and the values read back from the device** (they can differ from the preset).
+- The active preset is visible in the device details window (U8).
+- Answers spec question Q0.02: the application sets these itself and saves them with the data, rather than relying on
+  whatever NI MAX holds.
+
 **U11 - UI language.** Owner 2026-10-22: "글자는 무조건 영어." All UI text in English only.
 
 **Note - local AI model.** Owner 2026-10-22: "Laya 내장하는거는 염두에 두고 있음. 로컬로 트레이닝한다면 내 계정이

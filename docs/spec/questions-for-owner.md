@@ -10,6 +10,8 @@ here; they are the `unknown — needs VI read` entries in the step files and in 
 
 - **Q0.02 (F0.02)** Frame rate, exposure and ROI come from NI MAX, not from the program. Should the port set them
   itself (and save them with the data), or keep reading what the camera holds?
+  *Answered (owner 2026-10-22):* set them from presets and save them with the data ("이 정보도 프리셋 적용하고, 데이터와
+  함께 저장하면 좋겠는데"); see [ui-requirements.md](ui-requirements.md) U15.
 - **Q0.03 (F0.03)** At every start the PI controller runs `GOH` (the magnet moves home). Is that wanted every time?
   Is it safe with a sample in place?
 - **Q0.05 (F0.05)** The focus stage is moved at start-up to `Set Focus  (0->50)` (51.5 on the panel) and also to
