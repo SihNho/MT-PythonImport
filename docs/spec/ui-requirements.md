@@ -199,6 +199,20 @@ fitting 해보고 거기서 persistence length 확인이 된다면 정말 좋을
 Structure in decision 0006, "Later notes": a `metadata` group (devices, presets, run) apart from the data tables, a JSON
 copy for quick reading, one run ID shared by MT and fluorescence files, and a MATLAB `meta` struct.
 
+**U17 - settings change while the program runs.** Owner 2026-10-22: "실험에 들어가기 전에도 장비를 가동하며 이리저리
+움직여 봐야함. 현행 코드는 configuration이 코드 시작부분에 있어서 한번 셋팅하면 코드 작동중에 바꾸는게 불가능함. 이 부분
+개선 필요"
+- Configuration is **runtime state held by long-running device services**, not start-up constants; the GUI sends
+  change requests; no restart is needed.
+- An **exploration mode** before the experiment: live image, jog magnet / rotor / focus, change settings, no recording
+  (or a short optional one).
+- Three kinds of setting: **immediate** (exposure, gain, magnet, rotor, focus, display); **needs a short pause** (ROI,
+  binning, JAI frame rate: the application stops acquisition, applies, reads back, restarts - one button for the
+  user); **guarded while recording** (changes that alter how data are read, e.g. frame rate, ROI: confirmation, and an
+  event with its time in the metadata, U16).
+- Every change passes the safety checks and is logged with its time.
+- "Save current settings as preset" turns a good combination found in exploration into a preset (U13, U15).
+
 **U11 - UI language.** Owner 2026-10-22: "글자는 무조건 영어." All UI text in English only.
 
 **Note - local AI model.** Owner 2026-10-22: "Laya 내장하는거는 염두에 두고 있음. 로컬로 트레이닝한다면 내 계정이
