@@ -17,8 +17,8 @@ changes, add the new line with its date and keep the old one marked "superseded"
 is stale for 50x data. Note: 100x with binning 2 is 100 nm/px nominally, not 84; if 84 was measured, the real
 magnification is about 1.19x the nominal one, and the same ratio would put 50x at about **168 nm/px** rather than 200.
 Both figures are inferences; **measure the 50x pixel size** (stage micrometer, or move the ASI stage by a known
-distance and track a stuck bead) before converting pixels to nm. Tracking itself works in pixels, but force
-analysis from x fluctuations may not: see Q3.07.
+distance and track a stuck bead) before converting pixels to nm. **LabVIEW does not use this number**: tracking
+works in pixels, and analysis is done in MATLAB with its own parameters (owner 2026-10-22, Q3.07).
 
 ## Samples
 
