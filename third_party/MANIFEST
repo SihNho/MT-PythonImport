@@ -1,0 +1,52 @@
+# Pinned copies and references from MT_LabVIEW (https://github.com/SihNho/MT_LabVIEW)
+# source commit: 307a31c1e0c0128e55401609c66d0a96ea753e36 (2026-10-22), files copied unchanged
+# Owned by MT_LabVIEW; fixes go there first, then are re-copied here with a new hash (decision 0009).
+# Format: sha256  path-in-this-repo-or-MT_LabVIEW  kind
+
+## copied (under third_party/mt_labview/, same relative path as in MT_LabVIEW)
+169b5d513f33b6a80c8094f4cff6f4d26ef612ebff61c30fdc55450290b41dd1  tools/bench/camera_attributes.py  copied
+dfd8ecf63b870be5b07db938dd209a3394755cfcf47d2060c8fa168d7b29fbbb  tools/bench/imaqdx_ctypes.py  copied
+9bb1c302d2d385063fcd3eb3a2841039c7b45e396ac14947d0c8eef546b80919  tools/bench/motor_limits.json  copied
+37fedca0791c2319cce49706d1be3da71dc1d08b6a2f1b82a40012e48848e7a3  tools/gpu/check_all.py  copied
+c4d34ba4776c0e7e7972c425dfe3e880a2708d877ef95f908c47a75ed29be967  tools/gpu/cuda_v3/build_v3.bat  copied
+e9b8529378374320d4fb6c9b9a88b5d913bf5f721de02430fd0f2eeac3dd56f7  tools/gpu/cuda_v3/cal_file.inc  copied
+0a1bc7293493b3cd602bd5e78cc7056d6993e47ac1d793aedbacb52953582307  tools/gpu/cuda_v3/dump.inc  copied
+5c4247d363948c1646ae2031db75573d92075a7328d24b7924d7938235cf1ceb  tools/gpu/cuda_v3/fused.inc  copied
+fb17c907c62b29fcd46f3eec03547048390c4dbef9d43baff642c885620987fe  tools/gpu/cuda_v3/mt2.inc  copied
+ee3ba83310d4ebcd6c6692d31ffb9ea8adfbcf9d0a2f305eb0f7384f88681f39  tools/gpu/cuda_v3/mt_track.cu  copied
+145f8da7ec3df411d834fc87d37282103e1147855c8fee4350b7593934a6718e  tools/gpu/cuda_v3/mt_track_v3.def  copied
+c2f2b8edd7968fc778400595721689afd446ff89def7b31f8988b3d14ef0625b  tools/gpu/fixture.py  copied
+0817d1d83d9c2e47d86b29c5b6a40fc768b811b6d40b5ad093e425c3b225d0d6  tools/gpu/ref_numpy.py  copied
+6437ba28edddd72dd642a2243c5500d256419673f262f092ff1d57fbe69e29d2  tools/motor_asi_io.ps1  copied
+432e070b884b7dcd0eb6639b76a16e87e3fdc4fb6f36cee91b08d7460e191c32  tools/motor_gate.py  copied
+1669a862091d2713ffbc4b17ba21dce6d1f40fcce19484b3a7e9bf2464033dfc  tools/motor_rotor_io.ps1  copied
+aa29b5643b4e80d7003aee3f6cf861308d2c0a975ff8d59c614f64f7197a29d1  tools/motor_send_pi.ps1  copied
+
+## referenced only (not copied: data or binaries; read from MT_LabVIEW / G:\Data at test time)
+8414e8efa374750e3b14e1bf062c7853e050163e2cbda3f813f2e598ced43052  tools/gpu/harness_inputs.npz  data: per-bead calibration cluster + windows captured from LabVIEW
+483998406a47b379b4c72a7d2fd141f939a30320b0bded1f35b092f235f7a853  tools/bench/fixture_compare_results.jsonl  data: LabVIEW kernel output per frame (acceptance reference)
+a46a352ec5b7aa2d551224e5d7e071492fd1de4fb50006e09b49f95a318d7fd6  tools/gpu/cuda_v3/mt_track_v3.dll  binary: CUDA kernel built from the copied sources
+-  G:\Data\SiHyeong\20260906 Kimlab - 50bp 16X WT 90Hz 1p2 Ramp_Newbatch\test\{cal002,tra002-000,img*.tif}  data: recorded fixture (10046 files), experiment data, never committed
+
+## vendor SDKs and drivers (not redistributed)
+# Found on the rig PC 2026-10-22 (registry uninstall keys, pnputil driver store, file versions). Install each from the
+# vendor on a new PC; none of these files is copied into this repository. Usage per device: docs/manuals/.
+# Format: name | version on this PC | install path | where to download | redistribution
+NI-IMAQdx (NI Vision Acquisition Software) | 26.3 (niimaqdx.dll 26.3.0f141) | C:\Windows\System32\niimaqdx.dll; header C:\Program Files (x86)\National Instruments\NI-IMAQdx\include\NIIMAQdx.h; VIs C:\Program Files\NI\LVAddons\niimaqdx\1\vi.lib\vision\driver\IMAQdx.llb | ni.com, "Vision Acquisition Software" | NI license; USB3 Vision acquisition needs an activated license per PC (check NI License Manager); not redistributed
+JAI SP-5000M-USB camera file | (written by NI-IMAQdx/NI MAX) | C:\Users\Public\Documents\National Instruments\NI-IMAQdx\Data\JAI Corporation SP-5000M-USB (#000014FB0067A270).icd | created by NI MAX for this camera | rig configuration; back up before any change, never edited by project code
+NI-VISA | 26.5.0 (visa64.dll file version 8.0.7331.0) | C:\Windows\System32\visa64.dll, visa32.dll | ni.com, "NI-VISA" | NI license (runtime freely downloadable); used by LabVIEW for all serial devices, not needed by a direct-serial port
+NI-Serial | 26.5 | (NI runtime) | ni.com | NI license; installed, not used by the SUNIX ports
+SUNIX PCIe serial card driver (COM3 PI, COM4 ASI) | snxpcip.inf 10.2.6.0 (also 10.2.3.0) | Windows driver store | sunix.com / Windows Update | vendor driver, not redistributed
+LabVIEW instrument drivers (instr.lib) | as installed with LabVIEW 2026 | C:\Program Files\National Instruments\LabVIEW 2026\instr.lib\{Mercury, ASI TG-1000, Autonics Motor, atmcd64d.llb} | PI, ASI, Autonics (lab copy), Andor | vendor/lab VIs; reference only, the port does not use them
+PI Software Suite | 2.4.0.3 (PI Base/API/Extra Components) | C:\Program Files (x86)\Physik Instrumente (PI)\Software Suite\ | pi.ws download area / PI product CD | PI license, not redistributed
+PI GCS library PI_GCS2_DLL | 3.7.1.5 | C:\ProgramData\PI\GCSTranslator\PI_GCS2_DLL_x64.dll; programming files C:\Users\Public\PI\PI_Programming_Files_PI_GCS2_DLL\ | with PI Software Suite | PI license, not redistributed; optional (GCS ASCII over the serial port works without it)
+PI USB drivers | 2.3.0.0 (pi_usb.inf 3.11.0.0) | Windows driver store | with PI Software Suite | not used on this rig (C-863 is on RS-232)
+FTDI VCP / D2XX driver (COM5 rotor, COM6 unknown) | ftdibus/ftdiport 2.12.36.20 (older 2.12.36.4, 2.12.28, 2.12.26 also staged) | Windows driver store | ftdichip.com / Windows Update | FTDI driver licence; not redistributed
+WCH CH340 USB-serial driver (Arduino) | ch341ser.inf 3.9.2024.9 | Windows driver store | wch-ic.com / Windows Update | vendor driver, not redistributed
+Arduino IDE | 2.3.10 | C:\Program Files\Arduino IDE\ | arduino.cc | AGPL/GPL tool; firmware source of this project is our own
+Andor Driver Pack 2 (SDK2 runtime) | 2.104.30065.0 (atmcd64d.dll 2.104.30065.0) | C:\Program Files\Andor Driver Pack 2\atmcd64d.dll | andor.oxinst.com (MyAndor account) | Andor licence, not redistributed; full SDK2 (header ATMCD32D.H) not installed
+Andor device drivers | AndorWDM atmcd.inf 4.33.0.0; Andor libusb0 1.2.6.0 | Windows driver store | with the Andor Driver Pack | Andor licence
+Coherent Connection | 3.0.0.8 | C:\Program Files (x86)\Coherent\Coherent Connection 3\ | coherent.com, OBIS software downloads | Coherent licence, not redistributed
+Coherent OBIS USB driver | obis_01.inf 1.0.0.0 (also sraybus/srayport 2.8.14.0) | Windows driver store | with Coherent Connection | Coherent licence
+CUDA runtime for mt_track_v3.dll | CUDA Toolkit 12.6 (12.6.3); cudart linked statically; dynamic dependency cufft64_11.dll | C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v12.6\bin\cufft64_11.dll | developer.nvidia.com/cuda-toolkit | cuFFT is on NVIDIA's redistributable list (CUDA EULA), not copied here; deps measured on mt_track.dll (MT_LabVIEW docs/gpu-portability.md), re-check v3 with dumpbin
+NVIDIA display driver | >= R560 required (rig: 616.64, RTX 2060 sm_75, per MT_LabVIEW docs/gpu-portability.md) | Windows | nvidia.com | NVIDIA licence

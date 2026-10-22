@@ -2,7 +2,7 @@
 
 A Python port of the Kim Lab (UNIST) **magnetic-tweezers (MT) bead-tracking and experiment-control software**, which today runs as a LabVIEW program.
 
-> **Status: design phase.** Decisions and specifications are being written. There is no runnable code yet. The LabVIEW program stays in use for experiments until this port has been validated against it.
+> **Status: offline core (phase 3 of [the plan](docs/plan.md)).** The tracking computation and the `.tra` / `.cal` readers and writers run offline and match the LabVIEW program on recorded frames. There is no device code yet. The LabVIEW program stays in use for experiments until this port has been validated against it.
 
 ## Why
 
@@ -45,15 +45,23 @@ Details and reasons: [docs/decisions/](docs/decisions/).
 ## Repository layout
 
 ```
+src/mtpy/        the package: track.py (tracking, faithful port), fast.py (numba executor), lvfiles.py (.tra / .cal)
+tests/           pytest; replay tests need the recorded fixture and skip without it
+tools/           developer scripts (speed benchmark, spec coverage check)
+matlab/          MATLAB readers for .tra / .cal
+third_party/     pinned copies of reused code (MANIFEST lists hashes and sources)
 docs/            documents for people (permanent)
   plan.md          the phase plan (order, completion criteria, rig needs)
   decisions/       design decisions and why they were made
+  spec/            behavior specification of the LabVIEW program
+  manuals/         one manual per device
   format/          data file formats
+  results/         verification results
 CLAUDE.md        working rules for AI assistants during development (AGENTS.md is the same text)
 CONTRIBUTING.md  how to collaborate
 ```
 
-Planned additions: `src/` (the package), `tests/`, `docs/spec/` (behavior specification of the LabVIEW program), `docs/manuals/` (one manual per device), `docs/install/`.
+Development setup (Windows, Python 3.10): `py -3.10 -m venv .venv`, then `.venv\Scripts\python -m pip install -e ".[dev]"`, then `.venv\Scripts\python -m pytest`. Planned addition: `docs/install/`.
 
 ## Relation to other repositories
 
