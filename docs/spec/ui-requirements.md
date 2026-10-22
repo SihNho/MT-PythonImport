@@ -111,8 +111,19 @@ WLC line을 그려주고, 파라미터를 조정할 수 있기는 한데 ... ext
 fitting 해보고 거기서 persistence length 확인이 된다면 정말 좋을듯."
 - Select a range on the force-extension graph with the mouse; fit an extensible WLC; show persistence length P,
   contour length Lc, stretch modulus S and zero offset z0 with uncertainties, plus residuals. Ranges can exclude
-  unwrapping events (nucleosomes). Model choice (Odijk high-force form, or Marko-Siggia with a stretch term) to be
-  decided.
+  unwrapping events (nucleosomes).
+- **Model: the van Noort group's equations** (owner 2026-10-22: "van Noort 그룹에서 사용하는 equation이 좋을듯. 내
+  publication 및 핵심 모델이 그걸 따르거든."). Verified from Meng, Andresen & van Noort, Nucleic Acids Res 43:3578
+  (2015), full text via Europe PMC: DNA follows "an extensible WLC model" (their Eq. 1, citing Bustamante et al. 2000)
+  with contour length L, persistence length A, stretch modulus S and kBT; the folded fiber adds a Hookean term per
+  nucleosome (Eq. 3). Their analysis set the offset by aligning the high-force extension, after the last rupture, with
+  a WLC of known contour length, A = 50 nm and S = 1200 pN, "to circumvent errors due to off-center attachment".
+  **Eq. 1 itself is an image and was not read**: the exact form is to come from the owner's publication.
+- **Zero:** owner 2026-10-22: "fitting을 제대로 하려고하면 0점을 잘 잡아야 할거야" and "zero-force로 내려서 영점을 잡고,
+  그 보정을 기준으로 실시간 길이를 보는게 맞는듯." So the **primary zero is measured at zero force** (magnet far away)
+  and the live extension is shown against it. The fit offset (van Noort high-force alignment) is kept as a cross-check;
+  the difference between the two zeros reflects off-centre attachment and links to the angle metric of U10. Drift
+  after zeroing is corrected with the reference bead.
 - Saved values stay **raw**; the zero is stored **separately** with how it was set (fit z0 / surface contact / the
   LabVIEW 7 pN rule). The display offers raw / surface-referenced / fit-z0-referenced. Raw is never overwritten.
 - `.tra` stays byte-compatible with LabVIEW (decision 0006); zero and correction metadata go to the HDF5 file.
