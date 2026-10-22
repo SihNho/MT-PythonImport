@@ -141,6 +141,20 @@ fitting 해보고 거기서 persistence length 확인이 된다면 정말 좋을
   corrected z. The literature survey found a measured factor of 0.57 for an NA 1.49 objective (unverified authors),
   so measuring ours is worth considering.
 
+**U14 - re-zero by clicking, during or after a run.** Owner 2026-10-22: "실험하다 보면 여러가지 이유로 에러가 생기는데
+(프레임이 튄다던가, 아니면 실험하는 bead 위로 버블이나 다른 bead가 움직인다던가) 특정 시점에 클릭해서 원점을 갱신하는 방식이
+편리할듯"
+- Click on a trace (or press a button) to update the zero from that time on, in one of two modes: **"set zero here"**
+  (mean over a short window, e.g. ±0.5 s, around the click; meant for a zero-force moment) or **"bridge a step"**
+  (shift everything after a jump so the trace continues from before it; no force change needed).
+- Scope: one bead, selected beads or all beads (a frame jump usually affects all; a bubble or a passing bead one).
+- Mark **excluded segments** (bubble, passing bead) so fits and analysis skip them.
+- Every re-zero and exclusion is an **event** in the data (time, beads, old and new value, reason: frame jump / bubble
+  / other bead / other, user). Raw data are never changed; the display and exports apply the events. Undo and edit
+  are possible.
+- Later: suggest a bridge when all beads, or the reference bead, jump at the same frame; it is applied only after the
+  user confirms.
+
 **U11 - UI language.** Owner 2026-10-22: "글자는 무조건 영어." All UI text in English only.
 
 **Note - local AI model.** Owner 2026-10-22: "Laya 내장하는거는 염두에 두고 있음. 로컬로 트레이닝한다면 내 계정이
