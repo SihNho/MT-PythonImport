@@ -118,7 +118,12 @@ fitting 해보고 거기서 persistence length 확인이 된다면 정말 좋을
   with contour length L, persistence length A, stretch modulus S and kBT; the folded fiber adds a Hookean term per
   nucleosome (Eq. 3). Their analysis set the offset by aligning the high-force extension, after the last rupture, with
   a WLC of known contour length, A = 50 nm and S = 1200 pN, "to circumvent errors due to off-center attachment".
-  **Eq. 1 itself is an image and was not read**: the exact form is to come from the owner's publication.
+  **Eq. 1, supplied by the owner 2026-10-22 (screenshot of the paper):**
+  `z_DNA(f, L) = L * [1 - (1/2) * sqrt(kB*T / (f*A)) + f / S]` (the Odijk high-force form).
+  Implementation notes: valid at high force only (it turns negative below f = kB*T/(4A), about 0.02 pN at A = 50 nm;
+  the paper analyses f > 0.5 pN), so the fit range defaults to f >= 0.5 pN with a warning below; each of L, A, S and
+  the offset z0 can be fixed or fitted (defaults A = 50 nm, S = 1200 pN; z0 fixed when the zero-force zero is used);
+  kB*T from the sample preset's temperature.
 - **Zero:** owner 2026-10-22: "fitting을 제대로 하려고하면 0점을 잘 잡아야 할거야" and "zero-force로 내려서 영점을 잡고,
   그 보정을 기준으로 실시간 길이를 보는게 맞는듯." So the **primary zero is measured at zero force** (magnet far away)
   and the live extension is shown against it. The fit offset (van Noort high-force alignment) is kept as a cross-check;
