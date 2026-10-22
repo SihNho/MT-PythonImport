@@ -45,11 +45,17 @@ here; they are the `unknown — needs VI read` entries in the step files and in 
 - **Q2.03 (F2.03)** After `Done Picking Beads?` there is no way back. Should the port allow going back to picking
   (or adding a bead) before the calibration starts?
 - **Q2.04 (F2.04)** Is there ever more than one reference bead? Is the reference always the first click?
+  *Partly answered (owner 2026-10-22):* every measurement includes non-paramagnetic streptavidin polystyrene
+  reference beads ([rig-facts.md](../rig-facts.md)). Still open: how many are picked, and whether it is the first click.
 
 ## 3 — Calibration
 
 - **Q3.01 (F3.01)** Which calibration values change between experiments (slices, step, averages, cross length), and
-  which are fixed per room?
+  which are fixed per room? *Partly answered (owner 2026-10-22):* step 100 nm over about 6 µm
+  ([rig-facts.md](../rig-facts.md)). Still open: whether any of them change between experiments.
+- **Q3.07 (F3.01)** The calibration file stores `pixel distance (nm)` = 84, but the 50x objective with binning 2 gives
+  about 200 nm/px nominally (100x would give about 100). Is 84 a value left from the 100x setup, or was it measured?
+  Where is it used? ([rig-facts.md](../rig-facts.md))
 - **Q3.02 (F3.02)** Does the Z scan start at the current focus and go up, and is the bead expected to be in focus at
   the start or in the middle of the scan?
 - **Q3.05 (F3.04)** Do you choose the bandpass and forget radius by hand during calibration? What do the three numbers
