@@ -52,6 +52,23 @@ Owner: "모든 항목이 다 스크린에 있어서 가독성이 떨어졌던 �
 - Status checks run in each device's own thread, never on the frame acquisition path (rule: no serial / VISA call on
   the frame path).
 
+**U9 - built-in troubleshooting guide.** Owner 2026-10-22, from a discussion with Ecem: "트러블슈팅 가이드를 프로그램에
+내장해두면 큰 도움이 될 것같음. 1) 실험 테스트를 해보고 가능한 트러블 및 트러블 슈팅 옵션들 제공 2) 이전의 경험들을 제공하며
+그 당시의 트러블 정체, 그리고 트러블 슈팅 방법 알려줌"
+- **Diagnostic tests:** the user picks a symptom (beads lost often, z too noisy, frames dropped, beads do not follow
+  the magnet, a device does not reply, ...); the program measures the related quantities and shows each beside its
+  normal range (e.g. reference-bead z noise now vs the ~4 nm baseline of 2026-10-22; focus drift; share of saturated
+  pixels; real fps, exposure vs frame period, CPU / USB load; device status), then lists fixes in order of likelihood.
+  A fix that moves hardware goes through the same safety layer and asks the user first.
+- **Case log of past experience:** a "record a problem" button snapshots the state (device status, fps, noise levels,
+  settings, recent errors); the user adds symptom, cause, fix and outcome. When a diagnostic finds something abnormal,
+  the guide shows past cases with a similar symptom and similar measured values. Lab-wide, searchable.
+- **Seeded from real history:** the incidents recorded in MT_LabVIEW (V6) documents, e.g. ASI XY moved by the
+  joystick, the field changed and beads gone, the camera resetting ROI and exposure on every open, unexpected PC
+  shutdowns, the rotor zero offset, causes of frame loss.
+- Works without AI (decision 0001): rule-based checks plus a searchable case log; an AI helper only as an optional
+  add-on later.
+
 ## Also to be supported (owner, earlier in the same chat)
 - The Andor iXon EMCCD added later (decision 0005: the JAI is the master clock, the Arduino divides frames).
 - Real-time fluorescence traces.
