@@ -194,6 +194,11 @@ fitting 해보고 거기서 persistence length 확인이 된다면 정말 좋을
 - Answers spec question Q0.02: the application sets these itself and saves them with the data, rather than relying on
   whatever NI MAX holds.
 
+**U16 - device and run metadata saved with every data file.** Owner 2026-10-22: "저장하는 데이터에 장비의 정보들이 같이
+저장되면 좋겠음. MT 데이터나 형광 데이터에 직접 들어가지 않지만 메타데이터로 두고 나중에 Matlab 분석에서도 참고할 수 있도록".
+Structure in decision 0006, "Later notes": a `metadata` group (devices, presets, run) apart from the data tables, a JSON
+copy for quick reading, one run ID shared by MT and fluorescence files, and a MATLAB `meta` struct.
+
 **U11 - UI language.** Owner 2026-10-22: "글자는 무조건 영어." All UI text in English only.
 
 **Note - local AI model.** Owner 2026-10-22: "Laya 내장하는거는 염두에 두고 있음. 로컬로 트레이닝한다면 내 계정이
