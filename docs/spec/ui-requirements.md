@@ -180,6 +180,17 @@ fitting 해보고 거기서 persistence length 확인이 된다면 정말 좋을
   with the EMCCD frame ratio N (0005); the reason is shown.
 - The data file stores the preset name **and the values read back from the device** (they can differ from the preset).
 - The active preset is visible in the device details window (U8).
+- Owner 2026-10-22: "평상시에는 바꿀 일이 없는데, 종종 바꾸는 일이 있음. 예를 들면, force calibration을 위해서는 frame
+  rate을 최대한 올려서 찍고 실험 목적으로는 90 Hz로 사용하는 것 같음. 그런데, 일부 케이스에 카메라 Hz 정보가 없으니
+  데이터 분석에 문제가 생기더라고". So: two default presets, "Force calibration (max fps)" and "Experiment 90 Hz".
+- **The frame rate can never be missing from the data:** every frame stores its absolute buffer number and the
+  camera's own timestamp; the file stores the preset rate, the read-back rate and the rate measured from the
+  timestamps, with a warning when they disagree. Cause of today's problem: the `.tra` first column, labelled "time", holds
+  the frame (buffer) number (fixture `tra002-000`: 4 ... 11824), so without a separately noted rate the time axis
+  cannot be rebuilt. `.tra` stays byte-compatible (0006); the rate and timestamps go to the HDF5 file, and the MATLAB
+  `.tra` reader loads them from the companion HDF5 automatically.
+- Old data without a rate: a rough estimate is possible from the header start times of consecutive `.tra` files of one
+  run and their row counts (not exact).
 - Answers spec question Q0.02: the application sets these itself and saves them with the data, rather than relying on
   whatever NI MAX holds.
 
