@@ -90,14 +90,27 @@ Owner: "위의 기준은 사실 single-biotin을 사용하는 나에게 맞고, 
 - Threshold tuning: the distribution of each metric over the beads is shown, and moving a threshold slider updates the
   pass / fail table live.
 - Power users may add a metric as a small Python function; everyone else uses the UI only.
-- **Open:** the definition of "angle" (e.g. attachment angle from the trace radius and the bead radius), the rotation
-  range and speed used, and the single-biotin thresholds.
+- **Owner's answers (2026-10-22):**
+  - Angle: "Bead radius, DNA contour length 둘을 포함하여 계산. 이를 위해서는 특정 force값에서 어느 정도로 길이가 잡혀야
+    하는지를 알아야 각도 계산이 될거임." Proposed (to be confirmed): attachment angle θ from the x-y circle,
+    sin θ = r / R; and independently from the height deficit, z = L(F) - R (1 - cos θ), with L(F) from the
+    worm-like-chain model and the contour length. Agreement of the two = a normal single attachment.
+  - Rotation test: "+-10바퀴 정도면 괜찮은 기준 아닌가 싶음. 1~2 pN 사이면 사실 괜찮을듯." (depends on DNA length).
+  - Thresholds: the owner's sample is nucleosomes; extension varies by condition (about 1400 nm in some, 800-900 nm in
+    others), and the angle has never been computed explicitly, so no fixed numbers yet.
+- **Follows:** rules may be **relative to the field** (e.g. within ±20 % of the median of the beads in view), and
+  templates exist per sample type (naked DNA, nucleosome, ...); the threshold sliders (above) set the numbers per
+  condition.
+- **Open:** bead type / radius (MyOne 1 µm or M-270 2.8 µm diameter?); a recording that contains a rotation test, to
+  try the metrics offline.
 
 **U11 - UI language.** Owner 2026-10-22: "글자는 무조건 영어." All UI text in English only.
 
 **Note - local AI model.** Owner 2026-10-22: "Laya 내장하는거는 염두에 두고 있음. 로컬로 트레이닝한다면 내 계정이
-필요없음." The owner is considering embedding "Laya", trained locally so no personal account is needed. What Laya is
-has not been confirmed in the chat. Per decision 0001 any AI stays an optional add-on on top of the normal interfaces.
+필요없음." The owner is considering embedding "Laya", trained locally so no personal account is needed. What Laya
+is: owner 2026-10-22, "Laya는 Jev와 유사한 AI 모델인데, 로컬로 설치 가능하며 fine tuning 가능하다는 장점이 있음" (an AI
+model similar to Jev, installable locally and fine-tunable). Per decision 0001 any AI stays an optional add-on on top
+of the normal interfaces; a natural use is the troubleshooting guide (U9), trained on the lab's case log.
 
 ## Also to be supported (owner, earlier in the same chat)
 - The Andor iXon EMCCD added later (decision 0005: the JAI is the master clock, the Arduino divides frames).
