@@ -101,8 +101,34 @@ Owner: "위의 기준은 사실 single-biotin을 사용하는 나에게 맞고, 
 - **Follows:** rules may be **relative to the field** (e.g. within ±20 % of the median of the beads in view), and
   templates exist per sample type (naked DNA, nucleosome, ...); the threshold sliders (above) set the numbers per
   condition.
-- **Open:** bead type / radius (MyOne 1 µm or M-270 2.8 µm diameter?); a recording that contains a rotation test, to
-  try the metrics offline.
+- Bead: M-270 amine (owner 2026-10-22), 2.8 µm diameter, R = 1.4 µm.
+- **Open:** a recording that contains a rotation test, to try the metrics offline.
+
+**U12 - eWLC fitting on a selected range, and an honest extension zero.** Owner 2026-10-22: "현재 LabVIEW에서 expected
+WLC line을 그려주고, 파라미터를 조정할 수 있기는 한데 ... extensible WLC 모델이 아니어서 high force 영역에서 fitting이
+벗겨간다는 점. 약 7 pN에서 extension 기준을 0 nm로 잡기 때문에, force를 내려주면 마이너스로 감. 그리고 저장하는 값도 이렇게
+보정 안된 값을 저장하다보니 내가 추가로 보정하지 않는 이상 raw data가 이상하게 보임. 내 데이터 영역의 일부를 선택하여서 eWLC
+fitting 해보고 거기서 persistence length 확인이 된다면 정말 좋을듯."
+- Select a range on the force-extension graph with the mouse; fit an extensible WLC; show persistence length P,
+  contour length Lc, stretch modulus S and zero offset z0 with uncertainties, plus residuals. Ranges can exclude
+  unwrapping events (nucleosomes). Model choice (Odijk high-force form, or Marko-Siggia with a stretch term) to be
+  decided.
+- Saved values stay **raw**; the zero is stored **separately** with how it was set (fit z0 / surface contact / the
+  LabVIEW 7 pN rule). The display offers raw / surface-referenced / fit-z0-referenced. Raw is never overwritten.
+- `.tra` stays byte-compatible with LabVIEW (decision 0006); zero and correction metadata go to the HDF5 file.
+
+**U13 - experiment presets, recorded in the data.** Owner 2026-10-22: "현행 트위저에서 실험하다 보면 거의 공통적으로
+사용하는 파라미터들이 있을 것 같음. Bead는 무엇을 썼는지 (현재는 M270-amine 사용중), diffraction 보정 (지금은 0.88 사용하는
+걸로 아는데, oil immersion이 cover slip과 만나고 채널 안의 물과 만나서면서 빛이 꺾이는 정도를 보정하는 것으로 알고 있음) 이런
+정보들을 프리셋으로 저장해두고 꺼내 쓰면서, 동시에 최종 데이터에 해당 프리셋 정보도 같이 있으면 좋을 것 같음."
+- Three preset layers: **rig** (objective, pixel size, camera settings, focal-shift factor, magnet-position-to-force
+  calibration), **sample** (bead type and diameter, DNA construct name and contour length, sample type, buffer,
+  temperature), **protocol** (screening template, experiment sequence).
+- The full content of the chosen presets is written into each data file, so later preset edits never change what a
+  file says about its own conditions (prevents stale values like the 84 nm/px of [rig-facts.md](../rig-facts.md)).
+- The focal-shift factor carries its source (assumed 0.88 = 1.33/1.515, or measured); data keep both uncorrected and
+  corrected z. The literature survey found a measured factor of 0.57 for an NA 1.49 objective (unverified authors),
+  so measuring ours is worth considering.
 
 **U11 - UI language.** Owner 2026-10-22: "글자는 무조건 영어." All UI text in English only.
 

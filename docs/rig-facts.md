@@ -25,6 +25,9 @@ works in pixels, and analysis is done in MATLAB with its own parameters (owner 2
 | Fact | Value | Source |
 |---|---|---|
 | Reference beads | Every measurement includes **non-paramagnetic streptavidin polystyrene beads** stuck to the surface, used as the reference | owner 2026-10-22 |
+| Magnetic beads | **M-270 amine** (Dynabeads, 2.8 µm diameter) | owner 2026-10-22 |
+| Sample | nucleosomes (owner's current work); extension varies by condition, about 800-1400 nm | owner 2026-10-22 |
+| Focal-shift (refractive-index) factor | 0.88 in use, believed to be the oil-to-water correction; source (assumed or measured) not recorded | owner 2026-10-22 |
 | "16X" in data folder names | the **DNA construct's name**, not a magnification | owner 2026-10-22 |
 
 ## Calibration (z look-up table)
