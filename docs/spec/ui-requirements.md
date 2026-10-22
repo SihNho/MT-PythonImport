@@ -51,6 +51,12 @@ Owner: "모든 항목이 다 스크린에 있어서 가독성이 떨어졌던 �
 - Device errors are logged with time stamps and saved with the data.
 - Status checks run in each device's own thread, never on the frame acquisition path (rule: no serial / VISA call on
   the frame path).
+- **Device details on double-click / "Open"** (owner 2026-10-22: "장비 정보들도 더블클릭 혹은 열기 등으로 보면 확인
+  가능하도록 하면 좋겠음"): identity (model, serial number, firmware, port, driver / SDK version); current state
+  (position and settings, connected since, last reply); safety limits (controller limits, allowed motion range);
+  calibration in use (date, table version); recent errors and reconnects; links to the device manual
+  (`docs/manuals/`) and to related troubleshooting cases (U9). **Read-only**: changes go through the settings screen
+  with confirmation. The same information is written into each data file at the start of a run (as with U13 presets).
 
 **U9 - built-in troubleshooting guide.** Owner 2026-10-22, from a discussion with Ecem: "트러블슈팅 가이드를 프로그램에
 내장해두면 큰 도움이 될 것같음. 1) 실험 테스트를 해보고 가능한 트러블 및 트러블 슈팅 옵션들 제공 2) 이전의 경험들을 제공하며
