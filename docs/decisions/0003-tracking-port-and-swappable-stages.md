@@ -53,4 +53,7 @@ Per bead, per frame:
   FFT-phasor (Brouwer et al. 2020) is a robustness option; MagTrack is GPL-3.0, so only an outside numeric check.
   Suggested first measurement: pixel bias and Z linearity of the current method, including how much the two extra
   phase-shift passes contribute, before porting anything.
+- **Owner reconfirmed 2026-10-22:** "우선 새 프로그램의 경우 LabVIEW와 동일한 알고리즘을 통해서 기준선 이하의 오차를
+  보이는게 1차적인 목표임. 이후 더 좋은 알고리즘이 있다고 한다면 그걸로 갈아탈 수 있으면 좋겠음. 다만 이 부분을 모듈화하여
+  선택 가능하도록." (= decision items 1, 2 and 5.)
 - **Baseline for the recorded data:** bead 1 of the fixture is the reference bead ([rig-facts.md](../rig-facts.md)).
