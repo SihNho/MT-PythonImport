@@ -232,12 +232,34 @@ above the limit) cannot be applied. Every applied edit is an event with the old 
 - Proposed script grammar (mock-up): `zero t=5`, `ramp from=0 to=7 t=30`, `hold f=7 t=10`,
   `rotate from=-10 to=10 f=1.5 t=40`, `record t=10`, `repeat 3`, `rule dext >= 0.8`.
 
+- **The script is a defined grammar, not AI.** Owner asked 2026-10-23: "프로토콜을 스크립트로 작성했는데, 이 부분 AI가
+  해석해야 하는거야 아니면 문법이 갖춰진거야?" Answer: a fixed grammar parsed deterministically by the program, with
+  line-numbered errors; AI may only draft scripts through the gateway (0014). Before implementation a grammar
+  specification (every keyword, parameter, unit and allowed range) is written in `docs/format/`.
+
 **U20 - visible Save / Save as / Load for protocols and presets**, and a lab library browser. "프로토콜, 프리셋 등을 저장하는
 버튼이 보이지 않음."
 
 **U21 - saving runs asks where, like `uigetfile`.** "Save는 '시작 디렉토리'를 지정할 수 있으나, 기본적으로는 uigetfile처럼
 프롬프트를 띄워서 물어보는게 좋을듯". A start folder is set in the settings; every save opens a file dialog that starts
 there and asks for folder and name.
+
+**U22 - mapping (channel registration).** Owner 2026-10-23: "Mapping". smCamera had it as Movie Mapper
+([smcamera-emccd-parameters.md](../manuals/smcamera-emccd-parameters.md) section 5).
+- Fluorescence CH1 <-> CH2: record or open a bead movie, find spots in both halves automatically, pair them, fit a
+  polynomial (default cubic, as the old map files), show the rms residual and an overlay; save the map with date and
+  objective in the library; data record which map was used. Existing `map_Andor1_*.txt` files can be imported.
+- New for MT-TIRF: JAI bright field <-> iXon fluorescence mapping with targets visible in both, so a tracked bead's
+  position gives its fluorescence ROI automatically.
+
+**U23 - automatic candidate finding by parameters.** Owner 2026-10-23: "automatic check (radius 등의 parameter 넣고 버튼
+누르면 자동으로 candidate 찾았던 것 같음.)" smCamera's Movie Analysis stored e.g. 3.0, 5.0 (radius-like), 1.7
+(threshold-like) and a frame range in `analysis.save` (meanings inferred).
+- Parameters + "Find" button; results update live as parameters change; result table; manual add / remove;
+  parameters saved as presets.
+- Fluorescence: spot radius, threshold, background handling, frames to average (the old FrameSequence role).
+- MT beads: ring radius range, contrast threshold, minimum distance to neighbours, edge margin; candidates flow into
+  screening (U10, U19).
 
 **U11 - UI language.** Owner 2026-10-22: "글자는 무조건 영어." All UI text in English only.
 
