@@ -288,6 +288,39 @@ the PC through shared memory.
   be checked on the actual hardware.
 - **Open:** which back-end; which wavelengths.
 
+**U25 - identify the right fluorescence signal under a large bead.** Owner 2026-10-23: "Bead가 워낙 거대하다보니, bead에
+연결된 DNA fluorescence signal이 뭔지 모를 수도 있다 임. 예를 들면, DNA labeling이 빽빽하게 되어 있을 때, bead 밑에 여러
+개의 fluorescence 신호가 나올 수 있음. 이 때 어떻게 하면 정확하게 우리가 원하는 signal을 특정할 수 있는가"
+Proposed (discussion, not decided): score every candidate spot near a bead on three kinds of evidence and recommend
+one; the user decides.
+- **Position:** the centre of the bead's x-y circle during rotation = the tether's surface anchor; mapped to the EMCCD
+  (U22, needs < 1 px accuracy), candidates within a radius of it.
+- **Time:** a true signal changes when the mechanics change (extension events, unwrapping); cross-correlate event
+  times of extension and intensity / FRET per candidate.
+- **Shape:** single-step photobleaching; ALEX stoichiometry for donor + acceptor on one molecule.
+- Experimental side: lower labelling density, better passivation, a bead-free control for the surface background.
+- Feeds the troubleshooting guide (U9).
+
+**U26 - fluorescence focus away from the surface (discussion).** Owner: "만약 fluorescence dye가 바닥이 아닌 조금
+distant 한 곳에 위치한다면, focus를 바닥이 아닌 형광 위치정도로 두고 찍으면 되지 않을까 싶음. (다만 추가로 고려할 부분은,
+extension 및 force 값에 따라 형광 위치가 요동칠텐데 그 부분을 감당 가능할지 모르겠음)"
+- TIRF excites only ~100-200 nm above the surface; a dye higher up may need HILO / epi illumination, not just refocus.
+- Bright field and fluorescence share the objective: moving the objective focus changes the bead image and breaks the
+  z look-up table. A focus offset belongs in the **fluorescence path only** (e.g. a motorised relay lens or camera
+  position before the EMCCD).
+- Fluctuations: at high force tens of nm (inside a ~0.5-1 µm depth of field); force changes move the dye by µm. A
+  focus follower could use live z (dye height ≈ surface + fraction × extension). Value depends on the illumination.
+
+**U27 - comparable fields of view for fluorescence and bead tracking (discussion).** Owner: "형광 ROI와 magnetic bead
+ROI를 대체로 비슷한 스케일로 맞추고 싶음. 현재는 형광 영역에서 너무 좁게 보고 있는 것같으니 형광 영역을 키우면 좋겠음.
+아마도 렌즈 배율을 조정하는게 좋을 듯"
+- Estimates (assumed iXon 897: 16 µm pixels, 512 × 512; 50x; extra emission-path magnification unknown): JAI ≈ 256 ×
+  205 µm at ~200 nm/px; iXon without extra magnification ≈ 164 × 164 µm at ~320 nm/px, ≈ 82 × 164 µm per channel when
+  split in two.
+- A demagnifying relay widens the EMCCD field; larger pixels lower localisation precision but are fine (better SNR)
+  for intensity-based smFRET. The choice follows the main measurement (intensity FRET vs. fluorescence localisation).
+- **Open:** iXon model and the present emission-path magnification; main fluorescence measurement.
+
 **U11 - UI language.** Owner 2026-10-22: "글자는 무조건 영어." All UI text in English only.
 
 **Note - local AI model.** Owner 2026-10-22: "Laya 내장하는거는 염두에 두고 있음. 로컬로 트레이닝한다면 내 계정이
