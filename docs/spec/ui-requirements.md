@@ -261,6 +261,20 @@ there and asks for folder and name.
 - MT beads: ring radius range, contrast threshold, minimum distance to neighbours, edge margin; candidates flow into
   screening (U10, U19).
 
+**U24 - shutter and laser control.** Owner 2026-10-23: "내 기억으로는 shutter 컨트롤도 아마 했던 것 같음." Confirmed by the
+static analysis ([smcamera-emccd-parameters.md](../manuals/smcamera-emccd-parameters.md) sections 3 and 7): smCamera
+opened / closed the iXon's own shutter (`SetShutter`), and the separate ShutterManager drove three laser shutters
+through an NI PCI-6503 (lines 1, 4, 7) from per-frame 0/1 sequence files split into header / body / footer, timed by
+the PC through shared memory.
+- An **illumination sequence editor** (0013): one column per laser or shutter, one row per EMCCD frame, with header /
+  body (repeated) / footer parts; block and script editing like protocols (U19); a per-frame preview. Old
+  ShutterManager files can be imported (column-to-laser assignment to be confirmed on the rig).
+- Executed by the Arduino in hardware, locked to camera frames (0005), never timed by the PC.
+- Manual open / close per laser and shutter in Explore, for alignment and focusing.
+- Lasers and shutters close automatically whenever nothing is being recorded (photobleaching); every change is an
+  event (U16).
+- **Open:** do the rig's lasers still use mechanical shutters, or OBIS digital modulation only? Which wavelengths?
+
 **U11 - UI language.** Owner 2026-10-22: "글자는 무조건 영어." All UI text in English only.
 
 **Note - local AI model.** Owner 2026-10-22: "Laya 내장하는거는 염두에 두고 있음. 로컬로 트레이닝한다면 내 계정이
