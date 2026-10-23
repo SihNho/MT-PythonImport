@@ -46,6 +46,11 @@ The second pass halves the bias for one profile; the third adds nothing. At the 
 → 2-3 nm, below the per-frame noise (0.0085 px ≈ 1.7 nm is the reference bead's frame-to-frame noise; the bias is a
 systematic error, the noise is random).
 
+> **Correction 2026-10-24** ([2026-10-24-radial-profile-crosstalk.md](2026-10-24-radial-profile-crosstalk.md)): the
+> 6.3 / 7.6 nm below was measured on noise-free 8-bit images, where the rounding pattern adds crosstalk of its own.
+> With realistic noise (sigma 1.66 grey levels) the current stage's systematic crosstalk is about **1.0-1.3 nm sd**
+> (p2p 3.5-6.5 nm on a 5 x 5 grid). It is still systematic, but smaller than stated here.
+
 **3. XY→Z crosstalk is the largest systematic error found.** At one fixed height, moving the bead within one pixel
 changes z by **6.3 nm (bead 1) and 7.6 nm (bead 2) peak-to-peak**, the same for all XY variants. It comes from the
 radial profile depending on the sub-pixel centre. A tethered bead moving 0.1 px per frame carries this into its z.
