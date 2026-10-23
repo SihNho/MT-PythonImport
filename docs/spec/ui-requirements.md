@@ -356,3 +356,7 @@ of the normal interfaces; a natural use is the troubleshooting guide (U9), train
 
 ## Next
 A clickable mock-up with fake data, for the owner and lab members to try before any GUI code is written.
+- **Mock-up (2026-10-22/23):** https://claude.ai/artifact/Hg7YRQbKfDN8jZyEDeMLHd (private until shared from its Share
+  menu). Version 1 covered U1-U17; version 2 added U18-U21 (mid-run protocol edits, block + script editors, save /
+  load buttons, save dialog with start folder). Not yet in it: mapping screens (U22), parameter-based candidate
+  finding (U23), illumination sequence editor (U24), signal identification (U25).
