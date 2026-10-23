@@ -251,6 +251,11 @@ there and asks for folder and name.
   objective in the library; data record which map was used. Existing `map_Andor1_*.txt` files can be imported.
 - New for MT-TIRF: JAI bright field <-> iXon fluorescence mapping with targets visible in both, so a tracked bead's
   position gives its fluorescence ROI automatically.
+- Owner 2026-10-23: "Mapping의 경우 single channel, 2 channel, 3 channel로 사용할 것 같고 각 채널 정체를 define할 수 있고
+  그 정보를 프리셋 저장도 가능해야겠음. 동시에 magnetic bead와 EMCCD 사이의 mapping 역시 필요함. 사전의 mapping을 통해서
+  데이터를 불러오는게 맞겠고, mapping 데이터 형식은 어떻게 할지도 정하면 좋을듯". So: a **channel-layout preset**
+  (1 / 2 / 3 channels, each named and defined), **maps measured beforehand and loaded at run start**, and a map file
+  format: proposal in [docs/format/mapping.md](../format/mapping.md) (not yet decided).
 
 **U23 - automatic candidate finding by parameters.** Owner 2026-10-23: "automatic check (radius 등의 parameter 넣고 버튼
 누르면 자동으로 candidate 찾았던 것 같음.)" smCamera's Movie Analysis stored e.g. 3.0, 5.0 (radius-like), 1.7
