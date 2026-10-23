@@ -55,8 +55,22 @@ JSON because it is small, human-readable, diff-able and read by MATLAB `jsondeco
 - Legacy `map_Andor1_*.txt` (smCamera) import into this format; the exact meaning of its 16 coefficients is to be
   confirmed from the smCamera paper (Lee & Ha 2024) before relying on it.
 
+## Detection differs by target (owner 2026-10-23)
+Owner: "detection 알고리즘이 각각 달라야할거임. Fluorescence channel 끼리는 그냥 peak detection으로 될지 모르나 magnetic
+bead의 auto-fluorescence를 활용한다면 덩치가 조금 있을거임."
+- Fluorescence channel <-> channel (single molecules, small fluorescent beads): **peak detection** of
+  diffraction-limited spots (local maximum + threshold; sub-pixel by 2D Gaussian or centroid, as smCamera).
+- JAI <-> EMCCD: **the magnetic beads' autofluorescence** on the EMCCD (M-270, 2.8 µm: an extended blob of several to
+  tens of pixels, possibly uneven) -> **blob detection** (LoG / DoG at the bead's scale, or a disc template; centre
+  from the segmented blob's centroid or a circle fit), paired with the same beads' **ring detection** on the JAI.
+- Pairing: an initial transform from the optics (magnification ratio, flips, rotation), nearest-neighbour pairing,
+  outlier rejection (e.g. RANSAC), then the fit.
+- Benefit: the map uses the very beads of the experiment, so it can be checked in situ before each run (one
+  autofluorescence frame -> residual of the stored map).
+- Detectors are per-channel plug-ins (peak / blob / ring) with their parameters in presets (U23).
+
 ## Open
-- How to make JAI <-> EMCCD control points: (a) targets visible in both bright field and fluorescence (large
-  fluorescent beads), (b) a grid / stage micrometer imaged by both cameras, or (c) one stuck bead stepped by the stage
-  by known distances and tracked in both cameras. Depends on the optical path; owner to choose.
+- JAI <-> EMCCD control points: the owner proposes magnetic-bead autofluorescence (above). Whether it is bright
+  enough on the EMCCD, and the other options ((b) a grid / stage micrometer, (c) a stuck bead stepped by the stage), to
+  be checked on the rig.
 - Agreement on JSON vs HDF5, and on the field names.
