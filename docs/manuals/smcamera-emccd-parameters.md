@@ -120,6 +120,13 @@ FrameSequence path (`6-15.txt`, `1-5.txt`) [F]. smCamera's recorder never reads 
 green-excited frames" for peak finding (e.g. `11-20.txt` = 10 of 20) [I]. The per-frame laser/shutter pattern lives in
 ShutterManager (section 7).
 
+**Correction from the owner's account (2026-10-23, from an explanation by a smCamera user):** in the `.smm` -> `.smt`
+conversion a shutter `.txt` such as `0;0;0;0;1;1;1;1` (frames 5-8) assigns each frame of the movie to green or red
+excitation, and FRET is computed as Red/(Red+Green) with a pre-defined map applied. So a frame sequence file also
+labels **which laser excited each frame**, not only which frames analysis uses. The `;`-separated layout differs from
+the one-value-per-line files read here (format [F] above): to be checked against the owner's example data. The
+pipeline continues `.smt` -> several formats (`.trace` among ~7) -> MATLAB on `.trace`.
+
 ## 5. map_Andor1_*.txt - CH2 <-> CH1 registration (donor/acceptor halves)
 
 Format [F] (`map_Andor1_170725.txt`):

@@ -321,6 +321,31 @@ ROI를 대체로 비슷한 스케일로 맞추고 싶음. 현재는 형광 영�
   for intensity-based smFRET. The choice follows the main measurement (intensity FRET vs. fluorescence localisation).
 - **Open:** iXon model and the present emission-path magnification; main fluorescence measurement.
 
+**U28 - FRET pipeline and MATLAB integration.** Owner 2026-10-23, from an explanation of smCamera received that day:
+"1) 데이터 얻음 (~.smm) 2) 데이터 형태 전환 (~.smt) 3) 이후 다른 데이터들로 전환 (*.trace, .... 대략 7개의 형태?) 4) 이후
+Matlab으로 분석함 (*.trace 쓴다고 함). 1) -> 2) 의 과정에서, shutter 정보를 읽는데 .txt 파일로 짜여있음 (0;0;0;0;1;1;1;1
+--> 5~8 frame 해당됨). 전체의 movie .smm 데이터에서 Green laser, Red laser excitation 프레임을 지정함 --> Red/(Red+Green)
+적용하여 계산. ( pre-defined mapping 파일도 적용함) --> FRET 계산 후 데이터 export." and "결국 Matlab 분석을 가능하게
+해야하며, 이 부분은 기존의 MT 분석 라이브러리와 추후에 얻게 될 FRET 분석 library를 통합해야 할 것 같음. smCamera 예시
+데이터는 추후 첨부하도록 하겠음."
+- Fewer steps: the raw EMCCD movie (saved raw, 0006) plus **one combined file** with MT and FRET on one time axis.
+  Per-frame excitation comes from the illumination sequence **actually executed** (U24, metadata), not from a separate
+  text file; MT and EMCCD frames are linked by absolute buffer numbers (0005).
+- Per molecule: ROI from the map (U22, U25), per-frame channel intensities with background, apparent FRET =
+  acceptor / (acceptor + donor) on donor-excited frames; acceptor-excited frames (ALEX) for stoichiometry / acceptor
+  presence (to be confirmed with the owner).
+- MATLAB: export `.trace` in smCamera's format for existing scripts (format from the owner's example data), and one
+  MATLAB package that reads the combined HDF5 and the legacy files, aligns MT and FRET time axes and offers the basic
+  plots; the existing MT analysis library and the future FRET library are merged into it (extends 0011).
+- **Open:** example smCamera data (`.smm`, `.smt`, `.trace`, the shutter `.txt`), the list of the ~7 formats and which
+  ones are still used.
+
+**U29 - FRET and extension overlaid.** Owner 2026-10-23: "필요한 그래프는 결국은 FRET, extension 둘이 오버레이된
+그래프는 반드시 필요하겠고, 그 외에 필요에 따라 다양한 데이터 조합 및 분석이 있겠음." A required plot: FRET and
+extension on one time axis (two y-axes), live in the application and as a function in the MATLAB package. Other
+combinations through the graph axis choice (U3), with FRET, donor / acceptor intensity and stoichiometry added as
+variables.
+
 **U11 - UI language.** Owner 2026-10-22: "글자는 무조건 영어." All UI text in English only.
 
 **Note - local AI model.** Owner 2026-10-22: "Laya 내장하는거는 염두에 두고 있음. 로컬로 트레이닝한다면 내 계정이
