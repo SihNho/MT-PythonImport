@@ -278,7 +278,15 @@ the PC through shared memory.
 - Manual open / close per laser and shutter in Explore, for alignment and focusing.
 - Lasers and shutters close automatically whenever nothing is being recorded (photobleaching); every change is an
   event (U16).
-- **Open:** do the rig's lasers still use mechanical shutters, or OBIS digital modulation only? Which wavelengths?
+- Owner 2026-10-23: "셔터는 나중에 결정할 부분이기는 하고" and "셔터는 지금 1) 기계식 셔터, 2) AOM 3) 레이저 컨트롤러 셋 중
+  하나를 선택할 예정". So the light switch is **one interface with three back-ends** (mechanical shutter, AOM, laser
+  controller e.g. OBIS digital modulation); the sequence files and screens are shared, only the device settings differ
+  (shutter open / close delay; AOM TTL polarity and analog power level; laser modulation mode and power). All three
+  are driven by Arduino TTL locked to frames (0005). Before a run the program checks the chosen back-end's switching
+  time fits the gap between frames (e.g. warns for fast ALEX with a mechanical shutter). The back-end and its settings
+  are stored in the metadata. Typical switching times (mechanical ms, AOM µs, laser modulation µs to tens of µs) are to
+  be checked on the actual hardware.
+- **Open:** which back-end; which wavelengths.
 
 **U11 - UI language.** Owner 2026-10-22: "글자는 무조건 영어." All UI text in English only.
 
