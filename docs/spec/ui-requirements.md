@@ -332,8 +332,11 @@ Matlab으로 분석함 (*.trace 쓴다고 함). 1) -> 2) 의 과정에서, shutt
   Per-frame excitation comes from the illumination sequence **actually executed** (U24, metadata), not from a separate
   text file; MT and EMCCD frames are linked by absolute buffer numbers (0005).
 - Per molecule: ROI from the map (U22, U25), per-frame channel intensities with background, apparent FRET =
-  acceptor / (acceptor + donor) on donor-excited frames; acceptor-excited frames (ALEX) for stoichiometry / acceptor
-  presence (to be confirmed with the owner).
+  acceptor / (acceptor + donor) on donor-excited frames. **Red-excited frames serve as a correction for the FRET
+  calculation** (owner 2026-10-23: "ALEX 보다는, FRET 계산을 위한 보정으로 이해했음"), most likely the acceptor
+  direct-excitation correction; donor leakage and gamma corrections may also apply. The exact formula smCamera uses is
+  to be read from the example data / MATLAB scripts. Correction factors are preset values, recorded in the data, and
+  FRET can be recomputed with other factors.
 - MATLAB: export `.trace` in smCamera's format for existing scripts (format from the owner's example data), and one
   MATLAB package that reads the combined HDF5 and the legacy files, aligns MT and FRET time axes and offers the basic
   plots; the existing MT analysis library and the future FRET library are merged into it (extends 0011).
