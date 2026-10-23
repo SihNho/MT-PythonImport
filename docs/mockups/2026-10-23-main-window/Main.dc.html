@@ -59,7 +59,7 @@ button,select,input,textarea{font-family:inherit;font-size:12px}
 <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 8px">
 <strong>Camera</strong>
 <button onClick="{{viewBF}}" style="border: 1px solid #9CA3AF; border-radius: 6px; padding: 4px 10px; cursor: pointer; background: {{bfBg}}; color: {{bfFg}}">Bright field (JAI)</button>
-<button onClick="{{viewFL}}" style="border: 1px solid #9CA3AF; border-radius: 6px; padding: 4px 10px; cursor: pointer; background: {{flBg}}; color: {{flFg}}">Fluorescence (iXon)</button>
+<sc-if value="{{tirf}}" hint-placeholder-val="{{ true }}"><button onClick="{{viewFL}}" style="border: 1px solid #9CA3AF; border-radius: 6px; padding: 4px 10px; cursor: pointer; background: {{flBg}}; color: {{flFg}}">Fluorescence (iXon, simulated)</button></sc-if>
 <span style="color: #4B5563">{{camPreset}}</span>
 </div>
 <div style="flex: 1 1 0; min-height: 0; position: relative; background: #2B2F35; border-radius: 6px; overflow: hidden">
@@ -81,9 +81,20 @@ button,select,input,textarea{font-family:inherit;font-size:12px}
 </svg>
 </sc-if>
 <sc-if value="{{showFL}}" hint-placeholder-val="{{ false }}">
-<div style="position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; color: #E5E7EB; flex-direction: column; gap: 6px; text-align: center; padding: 16px">
-<strong>iXon EMCCD not connected</strong><span>When connected: donor | acceptor halves, ROIs mapped from bead positions, illumination sequence per frame.</span>
-</div>
+<svg viewBox="0 0 640 360" preserveAspectRatio="xMidYMid meet" role="img" aria-label="Simulated EMCCD image, donor and acceptor halves" style="position: absolute; inset: 0; width: 100%; height: 100%">
+<rect x="0" y="0" width="318" height="360" fill="#0B0F14"></rect><rect x="322" y="0" width="318" height="360" fill="#0B0F14"></rect>
+<text x="10" y="20" fill="#86EFAC" font-size="13" font-family="Inter">CH1 {{ch1Name}}</text><text x="332" y="20" fill="#FCA5A5" font-size="13" font-family="Inter">CH2 {{ch2Name}}</text>
+<circle cx="120" cy="150" r="20" fill="#1F2937" stroke="#4B5563" stroke-width="1"></circle><circle cx="442" cy="150" r="20" fill="#1F2937" stroke="#4B5563" stroke-width="1"></circle>
+<circle cx="230" cy="250" r="20" fill="#1F2937" stroke="#4B5563" stroke-width="1"></circle><circle cx="552" cy="250" r="20" fill="#1F2937" stroke="#4B5563" stroke-width="1"></circle>
+<line x1="112" y1="150" x2="128" y2="150" stroke="#FBBF24" stroke-width="1.5"></line><line x1="120" y1="142" x2="120" y2="158" stroke="#FBBF24" stroke-width="1.5"></line>
+<line x1="434" y1="150" x2="450" y2="150" stroke="#FBBF24" stroke-width="1.5"></line><line x1="442" y1="142" x2="442" y2="158" stroke="#FBBF24" stroke-width="1.5"></line>
+<circle cx="111" cy="138" r="3" fill="#BBF7D0"></circle><circle cx="123" cy="153" r="3.5" fill="#86EFAC"></circle><circle cx="140" cy="168" r="3" fill="#BBF7D0"></circle>
+<circle cx="433" cy="138" r="2.5" fill="#FECACA"></circle><circle cx="445" cy="153" r="4" fill="#FCA5A5"></circle><circle cx="462" cy="168" r="2.5" fill="#FECACA"></circle>
+<circle cx="123" cy="153" r="8" fill="none" stroke="#38BDF8" stroke-width="1.5"></circle><circle cx="445" cy="153" r="8" fill="none" stroke="#38BDF8" stroke-width="1.5"></circle>
+<text x="96" y="132" fill="#E5E7EB" font-size="10" font-family="Inter">S1</text><text x="128" y="150" fill="#E5E7EB" font-size="10" font-family="Inter">S2</text><text x="144" y="178" fill="#E5E7EB" font-size="10" font-family="Inter">S3</text>
+<text x="80" y="190" fill="#9CA3AF" font-size="11" font-family="Inter">B2 (autofluorescence blob, anchor +)</text>
+<text x="10" y="350" fill="#9CA3AF" font-size="11" font-family="Inter">Simulated (iXon not connected). Map {{mapId}}</text>
+</svg>
 </sc-if>
 </div>
 </section>
@@ -94,6 +105,7 @@ button,select,input,textarea{font-family:inherit;font-size:12px}
 <div style="display: flex; flex-wrap: wrap; gap: 6px; align-items: center">
 <label style="display: flex; gap: 4px; align-items: center">Y <select value="{{g.y}}" onChange="{{g.setY}}" style="padding: 3px; border: 1px solid #9CA3AF; border-radius: 4px"><sc-for list="{{axisOpts}}" as="o" hint-placeholder-count="5"><option value="{{o.v}}">{{o.l}}</option></sc-for></select></label>
 <label style="display: flex; gap: 4px; align-items: center">X <select value="{{g.x}}" onChange="{{g.setX}}" style="padding: 3px; border: 1px solid #9CA3AF; border-radius: 4px"><sc-for list="{{axisOpts}}" as="o" hint-placeholder-count="5"><option value="{{o.v}}">{{o.l}}</option></sc-for></select></label>
+<label style="display: flex; gap: 4px; align-items: center">Y2 <select value="{{g.y2}}" onChange="{{g.setY2}}" style="padding: 3px; border: 1px solid #9CA3AF; border-radius: 4px"><sc-for list="{{axisOpts2}}" as="o" hint-placeholder-count="5"><option value="{{o.v}}">{{o.l}}</option></sc-for></select></label>
 <label style="display: flex; gap: 4px; align-items: center"><input type="checkbox" checked="{{g.auto}}" onChange="{{g.toggleAuto}}"> Auto scale</label>
 <sc-if value="{{g.manual}}" hint-placeholder-val="{{ false }}">
 <label style="display: flex; gap: 4px; align-items: center">min <input value="{{g.ymin}}" onChange="{{g.setYmin}}" style="width: 48px; padding: 2px 4px; border: 1px solid #9CA3AF; border-radius: 4px"></label>
@@ -105,9 +117,12 @@ button,select,input,textarea{font-family:inherit;font-size:12px}
 <div style="display: flex; flex-direction: column; justify-content: space-between; font-family: 'JetBrains Mono', monospace; font-size: 11px; color: #4B5563; width: 44px; text-align: right"><span>{{g.yMaxT}}</span><span>{{g.yLabel}}</span><span>{{g.yMinT}}</span></div>
 <div style="flex: 1 1 0; min-width: 0; position: relative; border: 1px solid #D1D5DB; border-radius: 4px; background: #FBFBFC">
 <sc-for list="{{g.series}}" as="se" hint-placeholder-count="2">
-<svg viewBox="0 0 600 200" preserveAspectRatio="none" aria-hidden="true" style="position: absolute; inset: 0; width: 100%; height: 100%"><polyline points="{{se.points}}" fill="none" stroke="{{se.color}}" stroke-width="1.5" vector-effect="non-scaling-stroke"></polyline></svg>
+<svg viewBox="0 0 600 200" preserveAspectRatio="none" aria-hidden="true" style="position: absolute; inset: 0; width: 100%; height: 100%"><polyline points="{{se.points}}" fill="none" stroke="{{se.color}}" stroke-width="1.5" stroke-dasharray="{{se.dash}}" vector-effect="non-scaling-stroke"></polyline></svg>
 </sc-for>
 </div>
+<sc-if value="{{g.hasY2}}" hint-placeholder-val="{{ false }}">
+<div style="display: flex; flex-direction: column; justify-content: space-between; font-family: 'JetBrains Mono', monospace; font-size: 11px; color: #15803D; width: 40px"><span>{{g.y2MaxT}}</span><span>{{g.y2Label}}</span><span>{{g.y2MinT}}</span></div>
+</sc-if>
 </div>
 <div style="display: flex; justify-content: space-between; padding-left: 50px; font-family: 'JetBrains Mono', monospace; font-size: 11px; color: #4B5563"><span>{{g.xMinT}}</span><span>{{g.xLabel}}</span><span>{{g.xMaxT}}</span></div>
 </div>
@@ -125,6 +140,12 @@ button,select,input,textarea{font-family:inherit;font-size:12px}
 
 <sc-if value="{{isSetup}}" hint-placeholder-val="{{ true }}">
 <div style="display: flex; flex-direction: column; gap: 8px">
+<div style="font-weight: 600">Experiment type</div>
+<div role="radiogroup" aria-label="Experiment type" style="display: flex; gap: 6px">
+<button onClick="{{setMT}}" style="flex: 1 1 0; border: 1px solid #9CA3AF; border-radius: 6px; padding: 8px; cursor: pointer; background: {{mtBg}}; color: {{mtFg}}; min-height: 40px">MT only</button>
+<button onClick="{{setTIRF}}" style="flex: 1 1 0; border: 1px solid #9CA3AF; border-radius: 6px; padding: 8px; cursor: pointer; background: {{tirfBg}}; color: {{tirfFg}}; min-height: 40px">MT-TIRF</button>
+</div>
+<div style="font-size: 12px; color: #4B5563">{{typeNote}}</div>
 <div style="font-weight: 600">Presets</div>
 <sc-for list="{{presetRows}}" as="p" hint-placeholder-count="4">
 <div style="display: flex; flex-direction: column; gap: 2px"><span style="color: #4B5563; font-size: 12px">{{p.label}}</span>
@@ -168,13 +189,112 @@ button,select,input,textarea{font-family:inherit;font-size:12px}
 </div>
 </sc-if>
 
+<sc-if value="{{isMap}}" hint-placeholder-val="{{ false }}">
+<div style="display: flex; flex-direction: column; gap: 8px">
+<label style="display: flex; flex-direction: column; gap: 2px"><span style="font-size: 12px; color: #4B5563">Channel layout (preset)</span>
+<select value="{{layout}}" onChange="{{setLayout}}" style="padding: 6px; border: 1px solid #9CA3AF; border-radius: 6px"><option value="1">1 channel (full frame)</option><option value="2">2 channels (left / right)</option><option value="3">3 channels (thirds)</option></select></label>
+<sc-for list="{{chRows}}" as="c" hint-placeholder-count="2">
+<div style="display: flex; flex-wrap: wrap; gap: 6px; align-items: center; border: 1px solid #E5E7EB; border-radius: 6px; padding: 6px">
+<span style="width: 10px; height: 10px; border-radius: 50%; background: {{c.color}}"></span><strong>{{c.id}}</strong>
+<input value="{{c.name}}" onChange="{{c.setName}}" aria-label="Channel name" style="flex: 1 1 120px; min-width: 0; padding: 4px; border: 1px solid #9CA3AF; border-radius: 4px">
+<span style="font-family: 'JetBrains Mono', monospace; font-size: 11px; color: #4B5563">{{c.region}} · ex {{c.ex}}</span>
+</div>
+</sc-for>
+<div style="display: flex; gap: 6px; flex-wrap: wrap"><button onClick="{{saveLayout}}" style="border: 1px solid #1D4ED8; color: #1D4ED8; background: #FFFFFF; border-radius: 6px; padding: 4px 8px; cursor: pointer">Save layout as…</button></div>
+<div style="font-weight: 600">Transforms</div>
+<sc-for list="{{tfRows}}" as="t" hint-placeholder-count="2">
+<div style="display: flex; flex-wrap: wrap; gap: 6px; align-items: center; border: 1px solid #E5E7EB; border-radius: 6px; padding: 6px; font-size: 12px">
+<strong>{{t.label}}</strong>
+<select value="{{t.model}}" onChange="{{t.setModel}}" aria-label="Model" style="padding: 3px; border: 1px solid #9CA3AF; border-radius: 4px"><option value="affine">affine</option><option value="poly2">poly2</option><option value="poly3">poly3</option><option value="similarity">similarity</option></select>
+<span>detector: {{t.det}}</span><span style="margin-left: auto; font-family: 'JetBrains Mono', monospace">rms {{t.rms}} px · n {{t.n}}</span>
+</div>
+</sc-for>
+<svg viewBox="0 0 300 120" role="img" aria-label="Residuals of mapped control points" style="width: 100%; height: 120px; background: #FBFBFC; border: 1px solid #D1D5DB; border-radius: 4px">
+<circle cx="40" cy="30" r="3" fill="#1D4ED8"></circle><line x1="40" y1="30" x2="44" y2="27" stroke="#DC2626" stroke-width="1.5"></line>
+<circle cx="110" cy="50" r="3" fill="#1D4ED8"></circle><line x1="110" y1="50" x2="112" y2="53" stroke="#DC2626" stroke-width="1.5"></line>
+<circle cx="190" cy="25" r="3" fill="#1D4ED8"></circle><line x1="190" y1="25" x2="187" y2="23" stroke="#DC2626" stroke-width="1.5"></line>
+<circle cx="250" cy="80" r="3" fill="#1D4ED8"></circle><line x1="250" y1="80" x2="254" y2="82" stroke="#DC2626" stroke-width="1.5"></line>
+<circle cx="70" cy="95" r="3" fill="#1D4ED8"></circle><line x1="70" y1="95" x2="68" y2="99" stroke="#DC2626" stroke-width="1.5"></line>
+<circle cx="160" cy="100" r="3" fill="#1D4ED8"></circle><line x1="160" y1="100" x2="163" y2="98" stroke="#DC2626" stroke-width="1.5"></line>
+<text x="6" y="114" fill="#4B5563" font-size="9" font-family="Inter">control points; red = residual × 20</text>
+</svg>
+<div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px">
+<button onClick="{{mapAcquire}}" style="border: 1px solid #9CA3AF; background: #FFFFFF; border-radius: 6px; padding: 6px; cursor: pointer; min-height: 36px">Acquire mapping image</button>
+<button onClick="{{mapFit}}" style="border: none; background: #1D4ED8; color: #FFFFFF; border-radius: 6px; padding: 6px; cursor: pointer; min-height: 36px">Find, pair and fit</button>
+<button onClick="{{mapCheck}}" style="border: 1px solid #1D4ED8; color: #1D4ED8; background: #FFFFFF; border-radius: 6px; padding: 6px; cursor: pointer; min-height: 36px">Check in situ (beads)</button>
+<button onClick="{{mapImport}}" style="border: 1px solid #9CA3AF; background: #FFFFFF; border-radius: 6px; padding: 6px; cursor: pointer; min-height: 36px">Import smCamera map…</button>
+<button onClick="{{mapSave}}" style="border: 1px solid #1D4ED8; color: #1D4ED8; background: #FFFFFF; border-radius: 6px; padding: 6px; cursor: pointer; min-height: 36px">Save map as…</button>
+<button onClick="{{mapLoad}}" style="border: 1px solid #9CA3AF; background: #FFFFFF; border-radius: 6px; padding: 6px; cursor: pointer; min-height: 36px">Load map…</button>
+</div>
+<sc-if value="{{mapMsgOn}}" hint-placeholder-val="{{ false }}"><div style="background: #ECFDF5; color: #065F46; padding: 6px 8px; border-radius: 6px; font-size: 12px">{{mapMsg}}</div></sc-if>
+<div style="font-size: 12px; color: #4B5563">In use: {{mapId}} · saved with every run.</div>
+</div>
+</sc-if>
+
+<sc-if value="{{isLight}}" hint-placeholder-val="{{ false }}">
+<div style="display: flex; flex-direction: column; gap: 8px">
+<label style="display: flex; flex-direction: column; gap: 2px"><span style="font-size: 12px; color: #4B5563">Light switch back-end</span>
+<select value="{{lt.backend}}" onChange="{{setBackend}}" style="padding: 6px; border: 1px solid #9CA3AF; border-radius: 6px"><option value="shutter">Mechanical shutter (~5 ms)</option><option value="aom">AOM (~µs)</option><option value="laser">Laser controller, digital modulation (~µs-tens of µs)</option></select></label>
+<div style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap"><span>EMCCD = 1 frame per</span><input value="{{lt.nText}}" onChange="{{setN}}" aria-label="JAI frames per EMCCD frame" style="width: 40px; padding: 2px 4px; border: 1px solid #9CA3AF; border-radius: 4px"><span>JAI frames → {{emccdHz}} Hz</span></div>
+<sc-for list="{{seqSections}}" as="sec" hint-placeholder-count="3">
+<div style="border: 1px solid #E5E7EB; border-radius: 6px; padding: 6px; display: flex; flex-direction: column; gap: 4px">
+<div style="display: flex; gap: 6px; align-items: center"><strong>{{sec.label}}</strong><span style="font-size: 12px; color: #4B5563">{{sec.note}}</span><button onClick="{{sec.add}}" style="margin-left: auto; border: 1px dashed #6B7280; background: #FFFFFF; border-radius: 4px; padding: 2px 8px; cursor: pointer">+ frame</button></div>
+<div style="display: flex; gap: 4px; font-size: 11px; color: #4B5563"><span style="width: 44px">frame</span><span style="width: 52px">532 nm</span><span style="width: 52px">638 nm</span></div>
+<sc-for list="{{sec.rows}}" as="r" hint-placeholder-count="2">
+<div style="display: flex; gap: 4px; align-items: center">
+<span style="width: 44px; font-family: 'JetBrains Mono', monospace; font-size: 11px">{{r.n}}</span>
+<button onClick="{{r.tg}}" aria-label="Toggle 532 nm" style="width: 52px; height: 24px; border: 1px solid #9CA3AF; border-radius: 4px; cursor: pointer; background: {{r.gBg}}; color: {{r.gFg}}">{{r.gT}}</button>
+<button onClick="{{r.tr}}" aria-label="Toggle 638 nm" style="width: 52px; height: 24px; border: 1px solid #9CA3AF; border-radius: 4px; cursor: pointer; background: {{r.rBg}}; color: {{r.rFg}}">{{r.rT}}</button>
+<button onClick="{{r.del}}" aria-label="Remove frame" style="border: 1px solid #D1D5DB; background: #FFFFFF; border-radius: 4px; padding: 0 6px; cursor: pointer">×</button>
+</div>
+</sc-for>
+</div>
+</sc-for>
+<label style="display: flex; gap: 6px; align-items: center">Repeat body <input value="{{lt.repText}}" onChange="{{setRep}}" style="width: 48px; padding: 2px 4px; border: 1px solid #9CA3AF; border-radius: 4px"> times · {{seqTotal}} EMCCD frames</label>
+<div style="font-weight: 600">Preview (first 40 frames)</div>
+<div style="display: flex; flex-wrap: wrap; gap: 2px">
+<sc-for list="{{seqPreview}}" as="p" hint-placeholder-count="20"><span title="{{p.t}}" style="width: 12px; height: 18px; border-radius: 2px; background: {{p.c}}; display: inline-block"></span></sc-for>
+</div>
+<div style="display: flex; gap: 10px; font-size: 11px; color: #4B5563"><span><span style="display: inline-block; width: 10px; height: 10px; background: #16A34A"></span> 532</span><span><span style="display: inline-block; width: 10px; height: 10px; background: #DC2626"></span> 638</span><span><span style="display: inline-block; width: 10px; height: 10px; background: #7C3AED"></span> both</span><span><span style="display: inline-block; width: 10px; height: 10px; background: #374151"></span> dark</span></div>
+<div style="background: {{ltCheckBg}}; color: {{ltCheckFg}}; padding: 6px 8px; border-radius: 6px; font-size: 12px">{{ltCheck}}</div>
+<div style="display: flex; gap: 6px; flex-wrap: wrap">
+<button onClick="{{ltImport}}" style="border: 1px solid #9CA3AF; background: #FFFFFF; border-radius: 6px; padding: 6px 8px; cursor: pointer">Import ShutterManager file…</button>
+<button onClick="{{ltSave}}" style="border: 1px solid #1D4ED8; color: #1D4ED8; background: #FFFFFF; border-radius: 6px; padding: 6px 8px; cursor: pointer">Save sequence as…</button>
+</div>
+<div style="font-weight: 600">Manual (alignment / focusing)</div>
+<div style="display: flex; gap: 6px">
+<button onClick="{{tgManG}}" style="flex: 1 1 0; border: 1px solid #9CA3AF; border-radius: 6px; padding: 8px; cursor: pointer; background: {{manGBg}}; color: {{manGFg}}">532 nm {{manGT}}</button>
+<button onClick="{{tgManR}}" style="flex: 1 1 0; border: 1px solid #9CA3AF; border-radius: 6px; padding: 8px; cursor: pointer; background: {{manRBg}}; color: {{manRFg}}">638 nm {{manRT}}</button>
+</div>
+<div style="font-size: 12px; color: #4B5563">Run by the Arduino on camera frames, never timed by the PC. Lights close automatically when not recording.</div>
+</div>
+</sc-if>
+
 <sc-if value="{{isBeads}}" hint-placeholder-val="{{ false }}">
 <div style="display: flex; flex-direction: column; gap: 8px">
-<div style="color: #4B5563">Candidates are detected automatically. Live x / y / z appear right after calibration, before you pick.</div>
+<div style="font-weight: 600">Find candidates</div>
+<div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px">
+<label style="display: flex; flex-direction: column; gap: 2px; grid-column: span 2"><span style="font-size: 12px; color: #4B5563">Detector</span>
+<select value="{{fd.det}}" onChange="{{fd.setDet}}" style="padding: 6px; border: 1px solid #9CA3AF; border-radius: 6px"><option value="ring">Ring (JAI bright field, magnetic beads)</option><option value="blob">Blob (EMCCD, bead autofluorescence)</option><option value="peak">Peak (EMCCD, single molecules)</option></select></label>
+<sc-for list="{{fd.fields}}" as="f" hint-placeholder-count="5"><label style="display: flex; flex-direction: column; gap: 2px"><span style="font-size: 12px; color: #4B5563">{{f.l}}</span><input value="{{f.v}}" onChange="{{f.set}}" style="padding: 4px; border: 1px solid #9CA3AF; border-radius: 4px"></label></sc-for>
+</div>
+<div style="display: flex; gap: 8px; align-items: center"><button onClick="{{fd.find}}" style="border: none; background: #1D4ED8; color: #FFFFFF; border-radius: 6px; padding: 6px 12px; cursor: pointer">Find</button><span>{{fd.result}}</span></div>
+<div style="display: flex; gap: 6px"><button onClick="{{fd.save}}" style="border: 1px solid #1D4ED8; color: #1D4ED8; background: #FFFFFF; border-radius: 6px; padding: 4px 8px; cursor: pointer">Save parameters as…</button></div>
+<div style="color: #4B5563">Live x / y / z appear right after calibration, before you pick.</div>
 <div style="overflow-x: auto"><table style="border-collapse: collapse; width: 100%; font-size: 12px">
 <thead><tr style="text-align: left; color: #4B5563"><th style="padding: 4px">Bead</th><th style="padding: 4px">Role</th><th style="padding: 4px">z (µm)</th><th style="padding: 4px">Ring</th><th style="padding: 4px">Nearest</th></tr></thead>
 <tbody><sc-for list="{{beadRows}}" as="r" hint-placeholder-count="6"><tr style="border-top: 1px solid #E5E7EB"><td style="padding: 4px; font-weight: 600">{{r.id}}</td><td style="padding: 4px; color: {{r.roleColor}}">{{r.role}}</td><td style="padding: 4px; font-family: 'JetBrains Mono', monospace">{{r.z}}</td><td style="padding: 4px">{{r.ring}}</td><td style="padding: 4px">{{r.near}}</td></tr></sc-for></tbody>
 </table></div>
+<sc-if value="{{tirf}}" hint-placeholder-val="{{ true }}">
+<div style="display: flex; flex-direction: column; gap: 6px; border-top: 1px solid #E5E7EB; padding-top: 8px">
+<div style="font-weight: 600">Fluorescence signal for bead {{sigBead}}</div>
+<div style="font-size: 12px; color: #4B5563">Anchor = centre of the bead's rotation circle, mapped to the EMCCD. Spots near it are scored; you choose.</div>
+<div style="overflow-x: auto"><table style="border-collapse: collapse; width: 100%; font-size: 12px">
+<thead><tr style="text-align: left; color: #4B5563"><th style="padding: 4px">Spot</th><th style="padding: 4px">From anchor</th><th style="padding: 4px">Event match</th><th style="padding: 4px">Bleach steps</th><th style="padding: 4px">Score</th><th style="padding: 4px"></th></tr></thead>
+<tbody><sc-for list="{{sigRows}}" as="r" hint-placeholder-count="3"><tr style="border-top: 1px solid #E5E7EB; background: {{r.bg}}"><td style="padding: 4px; font-weight: 600">{{r.id}}{{r.star}}</td><td style="padding: 4px; font-family: 'JetBrains Mono', monospace">{{r.d}}</td><td style="padding: 4px; font-family: 'JetBrains Mono', monospace">{{r.c}}</td><td style="padding: 4px">{{r.b}}</td><td style="padding: 4px; font-family: 'JetBrains Mono', monospace">{{r.s}}</td><td style="padding: 4px"><button onClick="{{r.pick}}" style="border: 1px solid #1D4ED8; color: #1D4ED8; background: #FFFFFF; border-radius: 4px; padding: 2px 6px; cursor: pointer">{{r.pickLabel}}</button></td></tr></sc-for></tbody>
+</table></div>
+</div>
+</sc-if>
 </div>
 </sc-if>
 
@@ -293,6 +413,17 @@ button,select,input,textarea{font-family:inherit;font-size:12px}
 <button onClick="{{evBridge}}" style="border: 1px solid #1D4ED8; color: #1D4ED8; background: #FFFFFF; border-radius: 6px; padding: 6px; cursor: pointer; min-height: 40px">Bridge a step</button>
 <button onClick="{{evExclude}}" style="border: 1px solid #B45309; color: #92400E; background: #FFFFFF; border-radius: 6px; padding: 6px; cursor: pointer; min-height: 40px">Exclude segment</button>
 </div>
+<sc-if value="{{tirf}}" hint-placeholder-val="{{ true }}">
+<div style="display: flex; flex-direction: column; gap: 4px">
+<div style="font-weight: 600">FRET corrections (preset, saved with the run)</div>
+<div style="display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px">
+<label style="display: flex; flex-direction: column; gap: 2px"><span style="font-size: 11px; color: #4B5563">Leakage α</span><input value="{{corrA}}" onChange="{{setCorrA}}" style="padding: 4px; border: 1px solid #9CA3AF; border-radius: 4px"></label>
+<label style="display: flex; flex-direction: column; gap: 2px"><span style="font-size: 11px; color: #4B5563">Direct exc. δ (red frames)</span><input value="{{corrD}}" onChange="{{setCorrD}}" style="padding: 4px; border: 1px solid #9CA3AF; border-radius: 4px"></label>
+<label style="display: flex; flex-direction: column; gap: 2px"><span style="font-size: 11px; color: #4B5563">γ</span><input value="{{corrG}}" onChange="{{setCorrG}}" style="padding: 4px; border: 1px solid #9CA3AF; border-radius: 4px"></label>
+</div>
+<div style="font-family: 'JetBrains Mono', monospace; font-size: 12px">B2 now: E raw {{eRaw}} → corrected {{eCorr}} (formula to match smCamera, pending)</div>
+</div>
+</sc-if>
 <div style="font-weight: 600">Event log</div>
 <sc-if value="{{noEvents}}" hint-placeholder-val="{{ true }}"><div style="color: #4B5563; font-size: 12px">No events yet.</div></sc-if>
 <sc-for list="{{events}}" as="e" hint-placeholder-count="2"><div style="font-family: 'JetBrains Mono', monospace; font-size: 12px; background: #F3F4F6; border-radius: 4px; padding: 4px 6px">{{e.text}}</div></sc-for>
@@ -366,8 +497,12 @@ class Component extends DCLogic {
     const d = {
       step: 'setup', tick: 450, live: true, rec: false, estop: false, view: 'bf', modal: null, dlg: null, toast: '', toastUntil: 0,
       shown: { B1: true, B2: true, B3: true, B4: false },
-      g0: { x: 't', y: 'ext', auto: true, ymin: '0', ymax: '1.6', follow: true },
-      g1: { x: 'rot', y: 'ext', auto: true, ymin: '0', ymax: '1.6', follow: false },
+      g0: { x: 't', y: 'ext', y2: 'fret', auto: true, ymin: '0', ymax: '1.6', follow: true },
+      g1: { x: 'rot', y: 'ext', y2: 'none', auto: true, ymin: '0', ymax: '1.6', follow: false },
+      expType: 'mttirf', layout: '2', chNames: ['Donor Cy3', 'Acceptor Cy5', 'Alexa 488'], mapMsg: '', tfModel: { c: 'poly3', j: 'affine' },
+      finder: { det: 'ring', rmin: 8, rmax: 16, thr: 0.3, nn: 5, edge: 72 }, sigBead: 'B2', sigPick: 'S2',
+      light: { backend: 'laser', header: [[0, 0], [0, 0]], body: [[1, 0], [0, 1]], footer: [[0, 1]], repeat: 50, n: 10 },
+      manual: { g: false, r: false }, corr: { a: '0.07', d: '0.05', g: '1.00' },
       checkDone: false, magSet: 6.0, rotSet: 0, expo: 5, gain: 0, fpsSel: '90', fpsApplied: '90', camMsg: '',
       calPct: 0, calRunning: false, mode: 'blocks', scriptDraft: null, parseMsg: '', parseOk: true,
       events: [], startDir: 'D:\\Data\\SiHyeong\\2026-10', saved: '',
@@ -387,6 +522,7 @@ class Component extends DCLogic {
     const rnd = () => { seed = (seed * 16807) % 2147483647; return seed / 2147483647 - 0.5; };
     const beads = [ { id: 'B1', L: 0, ref: true }, { id: 'B2', L: 1.40 }, { id: 'B3', L: 1.32 }, { id: 'B4', L: 0.88 } ];
     const N = 900, t = [], mag = [], force = [], rot = [], ext = { B1: [], B2: [], B3: [], B4: [] };
+    const fret = { B2: [], B3: [] }, donor = { B2: [], B3: [] }, acceptor = { B2: [], B3: [] };
     for (let i = 0; i < N; i++) {
       let m, r;
       if (i < 300) { m = 18 * i / 300; r = 0; } else if (i < 600) { m = 12; r = -10 + 20 * (i - 300) / 300; } else { m = 18 - 18 * (i - 600) / 300; r = 0; }
@@ -394,9 +530,17 @@ class Component extends DCLogic {
       t.push(i / 10); mag.push(m); force.push(f); rot.push(r);
       const w = 1 - 0.5 * Math.sqrt(4.1 / (f * 50)) + f / 1200;
       const hat = Math.max(0.2, 1 - 0.07 * Math.max(0, Math.abs(r) - 1.5));
-      for (const b of beads) ext[b.id].push(b.ref ? 0.004 * i / N + 0.006 * rnd() : Math.max(0, b.L * w * hat) + 0.012 * rnd());
+      const unwrapped = f >= 2.5;
+      for (const b of beads) {
+        let v = b.ref ? 0.004 * i / N + 0.006 * rnd() : Math.max(0, b.L * w * hat) + 0.012 * rnd();
+        if (b.id === 'B2' && unwrapped) v += 0.08;
+        ext[b.id].push(v);
+      }
+      const e2 = (unwrapped ? 0.35 : 0.75) + 0.04 * rnd(), e3 = 0.5 + 0.05 * rnd();
+      fret.B2.push(e2); donor.B2.push(1000 * (1 - e2) + 30 * rnd()); acceptor.B2.push(1000 * e2 + 30 * rnd());
+      fret.B3.push(e3); donor.B3.push(900 * (1 - e3) + 30 * rnd()); acceptor.B3.push(900 * e3 + 30 * rnd());
     }
-    return { N, t, mag, force, rot, ext };
+    return { N, t, mag, force, rot, ext, fret, donor, acceptor };
   }
 
   componentDidMount() {
@@ -424,24 +568,36 @@ class Component extends DCLogic {
     const D = this.data;
     const end = s.tick + 1, start = g.follow ? Math.max(0, end - 300) : 0;
     const colors = { B1: '#C2410C', B2: '#1D4ED8', B3: '#0F766E', B4: '#7C3AED' };
-    const get = (key, b) => (key === 'ext' ? D.ext[b] : D[key]);
+    const perBead = { ext: 1, fret: 1, donor: 1, acceptor: 1 };
+    const get = (key, b) => (perBead[key] ? (D[key][b] || null) : D[key]);
     let xmin = Infinity, xmax = -Infinity, ymin = Infinity, ymax = -Infinity;
-    const raw = ['B1', 'B2', 'B3', 'B4'].filter((b) => s.shown[b]).map((b) => {
+    const raw = ['B1', 'B2', 'B3', 'B4'].filter((b) => s.shown[b] && get(g.x, b) && get(g.y, b)).map((b) => {
       const xs = get(g.x, b).slice(start, end), ys = get(g.y, b).slice(start, end);
       for (const v of xs) { if (v < xmin) xmin = v; if (v > xmax) xmax = v; }
       for (const v of ys) { if (v < ymin) ymin = v; if (v > ymax) ymax = v; }
       return { b, xs, ys };
     });
+    let y2min = Infinity, y2max = -Infinity;
+    const raw2 = g.y2 && g.y2 !== 'none' ? ['B1', 'B2', 'B3', 'B4'].filter((b) => s.shown[b] && get(g.x, b) && get(g.y2, b)).map((b) => {
+      const xs = get(g.x, b).slice(start, end), ys = get(g.y2, b).slice(start, end);
+      for (const v of ys) { if (v < y2min) y2min = v; if (v > y2max) y2max = v; }
+      return { b, xs, ys };
+    }) : [];
+    if (raw2.length) { const p = (y2max - y2min) * 0.06 || 0.05; y2min -= p; y2max += p; }
     if (!isFinite(xmin)) { xmin = 0; xmax = 1; ymin = 0; ymax = 1; }
     if (xmax - xmin < 1e-9) xmax = xmin + 1;
     if (g.auto) { const p = (ymax - ymin) * 0.06 || 0.1; ymin -= p; ymax += p; }
     else { const a = parseFloat(g.ymin), c = parseFloat(g.ymax); ymin = isFinite(a) ? a : 0; ymax = isFinite(c) && c > ymin ? c : ymin + 1; }
     const sx = (v) => ((v - xmin) / (xmax - xmin) * 600).toFixed(1);
     const sy = (v) => (200 - (Math.min(Math.max(v, ymin), ymax) - ymin) / (ymax - ymin) * 200).toFixed(1);
-    const lab = { t: 'Time (s)', mag: 'Magnet (mm)', force: 'Force (pN)', rot: 'Rotation (turns)', ext: 'Extension (µm)' };
+    const lab = { t: 'Time (s)', mag: 'Magnet (mm)', force: 'Force (pN)', rot: 'Rotation (turns)', ext: 'Extension (µm)', fret: 'FRET E', donor: 'Donor (a.u.)', acceptor: 'Acceptor (a.u.)' };
     const f = (v) => (Math.abs(v) >= 100 ? v.toFixed(0) : v.toFixed(2));
-    return { series: raw.map((r) => ({ color: colors[r.b], points: r.xs.map((x, i) => sx(x) + ',' + sy(r.ys[i])).join(' ') })),
-      xLabel: lab[g.x], yLabel: lab[g.y].split(' ')[0], xMinT: f(xmin), xMaxT: f(xmax), yMinT: f(ymin), yMaxT: f(ymax) };
+    const sy2 = (v) => (200 - (v - y2min) / (y2max - y2min) * 200).toFixed(1);
+    const s1 = raw.map((r) => ({ color: colors[r.b], dash: '0', points: r.xs.map((x, i) => sx(x) + ',' + sy(r.ys[i])).join(' ') }));
+    const s2 = raw2.map((r) => ({ color: r.b === 'B2' ? '#16A34A' : '#CA8A04', dash: '4 2', points: r.xs.map((x, i) => sx(x) + ',' + sy2(r.ys[i])).join(' ') }));
+    return { series: s1.concat(s2), hasY2: raw2.length > 0,
+      xLabel: lab[g.x], yLabel: lab[g.y].split(' ')[0], xMinT: f(xmin), xMaxT: f(xmax), yMinT: f(ymin), yMaxT: f(ymax),
+      y2Label: raw2.length ? lab[g.y2].split(' ')[0] : '', y2MinT: raw2.length ? f(y2min) : '', y2MaxT: raw2.length ? f(y2max) : '' };
   }
 
   stepText(st) {
@@ -486,9 +642,12 @@ class Component extends DCLogic {
     const set = (o) => this.setState(o);
     const toast = (msg) => set({ toast: msg, toastUntil: Date.now() + 3500 });
 
-    const stepDefs = [ ['setup', 'Setup'], ['explore', 'Explore'], ['beads', 'Beads'], ['cal', 'Calibrate'], ['screen', 'Screen'], ['exp', 'Experiment'], ['save', 'Save'], ['review', 'Review'] ];
-    const titles = { setup: 'Setup: presets and devices', explore: 'Explore (no recording)', beads: 'Bead candidates', cal: 'Calibration', screen: 'Screening protocol', exp: 'Experiment protocol', save: 'Save', review: 'Review and troubleshooting' };
-    const steps = stepDefs.map((d, k) => ({ num: k < 7 ? String(k + 1) : '·', label: d[1], go: () => set({ step: d[0], scriptDraft: null, parseMsg: '' }),
+    const tirf = s.expType === 'mttirf';
+    const stepDefs = [ ['setup', 'Setup'], ['explore', 'Explore'] ].concat(tirf ? [ ['map', 'Map'], ['light', 'Light'] ] : [])
+      .concat([ ['beads', 'Beads'], ['cal', 'Calibrate'], ['screen', 'Screen'], ['exp', 'Experiment'], ['save', 'Save'], ['review', 'Review'] ]);
+    const titles = { setup: 'Setup: experiment type, presets, devices', explore: 'Explore (no recording)', map: 'Mapping', light: 'Illumination sequence', beads: tirf ? 'Bead candidates and fluorescence signals' : 'Bead candidates', cal: 'Calibration', screen: 'Screening protocol', exp: 'Experiment protocol', save: 'Save', review: 'Review and troubleshooting' };
+    const nSteps = stepDefs.length;
+    const steps = stepDefs.map((d, k) => ({ num: k < nSteps - 1 ? String(k + 1) : '·', label: d[1], go: () => set({ step: d[0], scriptDraft: null, parseMsg: '' }),
       bg: s.step === d[0] ? '#1D4ED8' : '#FFFFFF', fg: s.step === d[0] ? '#FFFFFF' : '#16191D', fw: s.step === d[0] ? '600' : '400' }));
 
     const devDefs = [
@@ -510,10 +669,14 @@ class Component extends DCLogic {
       presets: ['50x oil binning 2.mtpreset', 'Experiment 90 Hz.mtpreset', 'Force calibration max fps.mtpreset', 'Nucleosome M-270.mtpreset'],
       runs: ['2026-10-21_nucleosome_run01.h5', '2026-10-21_nucleosome_run02.h5', '2026-10-22_nucleosome_run01.h5'] };
 
-    const axisOpts = [ { v: 't', l: 'Time (s)' }, { v: 'mag', l: 'Magnet (mm)' }, { v: 'force', l: 'Force (pN)' }, { v: 'rot', l: 'Rotation (turns)' }, { v: 'ext', l: 'Extension (µm)' } ];
+    const axisOpts = [ { v: 't', l: 'Time (s)' }, { v: 'mag', l: 'Magnet (mm)' }, { v: 'force', l: 'Force (pN)' }, { v: 'rot', l: 'Rotation (turns)' }, { v: 'ext', l: 'Extension (µm)' } ]
+      .concat(tirf ? [ { v: 'fret', l: 'FRET E' }, { v: 'donor', l: 'Donor (a.u.)' }, { v: 'acceptor', l: 'Acceptor (a.u.)' } ] : []);
+    const axisOpts2 = [ { v: 'none', l: '(none)' } ].concat(axisOpts);
     const graphs = ['g0', 'g1'].map((k) => {
-      const g = s[k], upd = (o) => set({ [k]: Object.assign({}, g, o) });
-      return Object.assign(this.plot(g, s), { x: g.x, y: g.y, auto: g.auto, manual: !g.auto, follow: g.follow, ymin: g.ymin, ymax: g.ymax,
+      const g0 = s[k], upd = (o) => set({ [k]: Object.assign({}, g0, o) });
+      const g = Object.assign({}, g0, { y2: tirf ? g0.y2 : 'none' });
+      return Object.assign(this.plot(g, s), { x: g.x, y: g.y, y2: g.y2, auto: g.auto, manual: !g.auto, follow: g.follow, ymin: g.ymin, ymax: g.ymax,
+        setY2: (e) => upd({ y2: e.target.value }),
         setX: (e) => upd({ x: e.target.value }), setY: (e) => upd({ y: e.target.value }), toggleAuto: () => upd({ auto: !g.auto }), toggleFollow: () => upd({ follow: !g.follow }),
         setYmin: (e) => upd({ ymin: e.target.value }), setYmax: (e) => upd({ ymax: e.target.value }) });
     });
@@ -627,7 +790,90 @@ class Component extends DCLogic {
       load: () => openDlg({ title: 'Load protocol', folder: 'Lab library\\protocols', okLabel: 'Load', isSave: false, files: libFiles.protocols, kind: 'load' }) };
     const dl = s.dlg;
 
+    // ---- mapping ----
+    const nCh = parseInt(s.layout, 10);
+    const chColor = ['#16A34A', '#DC2626', '#2563EB'], chEx = ['532 nm', '638 nm', '488 nm'];
+    const regions = { 1: ['0,0,512,512'], 2: ['0,0,256,512', '256,0,256,512'], 3: ['0,0,170,512', '170,0,171,512', '341,0,171,512'] };
+    const chRows = [];
+    for (let c = 0; c < nCh; c++) chRows.push({ id: 'CH' + (c + 1), name: s.chNames[c], color: chColor[c], ex: chEx[c], region: '[' + regions[nCh][c] + ']',
+      setName: (e) => { const a = s.chNames.slice(); a[c] = e.target.value; set({ chNames: a }); } });
+    const tfRows = [];
+    for (let c = 1; c < nCh; c++) tfRows.push({ label: 'CH' + (c + 1) + ' → CH1', model: s.tfModel.c, det: 'peak (beads)', rms: c === 1 ? '0.08' : '0.11', n: c === 1 ? '152' : '131', setModel: (e) => set({ tfModel: Object.assign({}, s.tfModel, { c: e.target.value }) }) });
+    tfRows.push({ label: 'JAI → CH1', model: s.tfModel.j, det: 'ring (JAI) + blob (autofluor.)', rms: '0.62', n: '24', setModel: (e) => set({ tfModel: Object.assign({}, s.tfModel, { j: e.target.value }) }) });
+    const mapId = '2026-10-23_' + nCh + 'ch_50x';
+
+    // ---- illumination sequence ----
+    const L = s.light;
+    const setL = (o) => set({ light: Object.assign({}, L, o) });
+    const mkRows = (key) => L[key].map((row, j) => ({ n: String(j + 1),
+      gBg: row[0] ? '#16A34A' : '#FFFFFF', gFg: row[0] ? '#FFFFFF' : '#374151', gT: row[0] ? 'on' : 'off',
+      rBg: row[1] ? '#DC2626' : '#FFFFFF', rFg: row[1] ? '#FFFFFF' : '#374151', rT: row[1] ? 'on' : 'off',
+      tg: () => { const a = L[key].map((x) => x.slice()); a[j][0] = 1 - a[j][0]; setL({ [key]: a }); },
+      tr: () => { const a = L[key].map((x) => x.slice()); a[j][1] = 1 - a[j][1]; setL({ [key]: a }); },
+      del: () => { const a = L[key].slice(); a.splice(j, 1); setL({ [key]: a }); } }));
+    const seqSections = [ { key: 'header', label: 'Header', note: 'once at start' }, { key: 'body', label: 'Body', note: 'repeated' }, { key: 'footer', label: 'Footer', note: 'once at end' } ]
+      .map((x) => ({ label: x.label, note: x.note, rows: mkRows(x.key), add: () => setL({ [x.key]: L[x.key].concat([[0, 0]]) }) }));
+    const full = L.header.concat([].concat(...Array(Math.max(0, L.repeat)).fill(L.body))).concat(L.footer);
+    const seqPreview = full.slice(0, 40).map((r, j) => ({ t: 'frame ' + (j + 1), c: r[0] && r[1] ? '#7C3AED' : r[0] ? '#16A34A' : r[1] ? '#DC2626' : '#374151' }));
+    const jaiHz = parseFloat(s.fpsApplied), eHz = jaiHz / Math.max(1, L.n), ePeriod = 1000 / eHz;
+    const swMs = { shutter: 5, aom: 0.001, laser: 0.05 }[L.backend];
+    let changes = 0; for (let j = 1; j < full.length; j++) if (full[j][0] !== full[j - 1][0] || full[j][1] !== full[j - 1][1]) changes++;
+    const ltOk = swMs < 0.1 * ePeriod;
+    const ltCheck = (ltOk ? 'OK: ' : 'Warning: ') + 'EMCCD frame period ' + ePeriod.toFixed(1) + ' ms, switching ≈ ' + swMs + ' ms, ' + changes + ' switches in the run' + (ltOk ? '.' : ' — switching takes more than 10 % of a frame; lower the rate or use AOM / laser modulation.');
+
+    // ---- candidate finder ----
+    const F = s.finder;
+    const fieldsByDet = { ring: [['rmin', 'Ring radius min (px)'], ['rmax', 'Ring radius max (px)'], ['thr', 'Contrast threshold'], ['nn', 'Min neighbour distance (µm)'], ['edge', 'Edge margin (px)']],
+      blob: [['rmin', 'Blob radius min (px)'], ['rmax', 'Blob radius max (px)'], ['thr', 'Intensity threshold (× bg)'], ['nn', 'Min neighbour distance (µm)'], ['edge', 'Edge margin (px)']],
+      peak: [['rmin', 'Spot radius (px)'], ['rmax', 'Background radius (px)'], ['thr', 'Threshold (× noise)'], ['nn', 'Min spot distance (px)'], ['edge', 'Edge margin (px)']] };
+    const pool = [ [10, 0.6, 9, 200], [11, 0.5, 12, 300], [12, 0.45, 11, 150], [9, 0.4, 8, 90], [13, 0.2, 6, 250], [12, 0.55, 4, 400], [18, 0.5, 10, 300], [7, 0.35, 7, 60], [11, 0.32, 15, 500], [10, 0.28, 9, 350], [14, 0.6, 3, 220], [12, 0.7, 13, 40], [11, 0.5, 10, 310], [9, 0.25, 6, 180] ];
+    let found = 0; const rej = { size: 0, contrast: 0, close: 0, edge: 0 };
+    for (const p of pool) { if (p[0] < F.rmin || p[0] > F.rmax) rej.size++; else if (p[1] < F.thr) rej.contrast++; else if (p[2] < F.nn) rej.close++; else if (p[3] < F.edge) rej.edge++; else found++; }
+    const fd = { det: F.det, setDet: (e) => set({ finder: Object.assign({}, F, { det: e.target.value }) }),
+      fields: fieldsByDet[F.det].map((x) => ({ l: x[1], v: String(F[x[0]]), set: (e) => { const v = parseFloat(e.target.value); if (isFinite(v)) set({ finder: Object.assign({}, F, { [x[0]]: v }) }); } })),
+      result: found + ' found · rejected: ' + rej.size + ' size, ' + rej.contrast + ' contrast, ' + rej.close + ' too close, ' + rej.edge + ' edge',
+      find: () => toast('Found ' + found + ' candidates (mock).'),
+      save: () => openDlg({ title: 'Save detector parameters', folder: 'Lab library\\presets', name: 'Finder ' + F.det + '.mtpreset', files: libFiles.presets, kind: 'preset' }) };
+
+    // ---- fluorescence signal identification ----
+    const spots = [ { id: 'S1', d: '9.1 px', c: '0.12', b: '1', s: 0.31 }, { id: 'S2', d: '1.8 px', c: '0.86', b: '1', s: 0.91 }, { id: 'S3', d: '12.4 px', c: '0.05', b: '2', s: 0.18 } ];
+    const sigRows = spots.map((x) => ({ id: x.id, d: x.d, c: x.c, b: x.b, s: x.s.toFixed(2), star: x.s > 0.8 ? ' ★' : '', bg: s.sigPick === x.id ? '#EFF6FF' : '#FFFFFF',
+      pickLabel: s.sigPick === x.id ? 'Chosen' : 'Use', pick: () => set({ sigPick: x.id }) }));
+
+    // ---- FRET corrections (mock formula) ----
+    const eRawV = D.fret.B2[i], cA = parseFloat(s.corr.a) || 0, cD = parseFloat(s.corr.d) || 0, cG = parseFloat(s.corr.g) || 1;
+    const Ia = D.acceptor.B2[i], Id = D.donor.B2[i];
+    const IaC = Ia - cA * Id - cD * 1000;
+    const eCorrV = IaC / (IaC + cG * Id);
+
     return {
+      tirf, setMT: () => set({ expType: 'mt', step: s.step === 'map' || s.step === 'light' ? 'setup' : s.step, view: 'bf' }), setTIRF: () => set({ expType: 'mttirf' }),
+      mtBg: tirf ? '#FFFFFF' : '#16191D', mtFg: tirf ? '#16191D' : '#FFFFFF', tirfBg: tirf ? '#16191D' : '#FFFFFF', tirfFg: tirf ? '#FFFFFF' : '#16191D',
+      typeNote: tirf ? 'MT-TIRF adds Map and Light steps, the EMCCD view, fluorescence signals and FRET.' : 'MT only: bright-field tracking; no EMCCD, mapping or lights.',
+      isMap: s.step === 'map', isLight: s.step === 'light', axisOpts2,
+      layout: s.layout, setLayout: (e) => set({ layout: e.target.value }), chRows, tfRows, mapId,
+      ch1Name: s.chNames[0], ch2Name: s.chNames[1],
+      saveLayout: () => openDlg({ title: 'Save channel layout', folder: 'Lab library\\presets', name: nCh + 'ch layout.mtpreset', files: libFiles.presets, kind: 'preset' }),
+      mapAcquire: () => set({ mapMsg: 'Mapping image acquired (mock): 200 frames averaged.' }),
+      mapFit: () => set({ mapMsg: 'Found 160 spots per channel, paired 152, rejected 8 outliers; ' + s.tfModel.c + ' fit rms 0.08 px.' }),
+      mapCheck: () => set({ mapMsg: 'In-situ check on 18 beads (autofluorescence): residual 0.70 px vs stored 0.62 px → OK.' }),
+      mapImport: () => openDlg({ title: 'Import smCamera map', folder: 'C:\\smCamera\\Common', okLabel: 'Import', isSave: false, files: ['map_Andor1_130100.txt', 'map_Andor1_170725.txt'], kind: 'load' }),
+      mapSave: () => openDlg({ title: 'Save map', folder: 'Lab library\\maps', name: mapId + '.json', files: [mapId + '.json'], kind: 'preset' }),
+      mapLoad: () => openDlg({ title: 'Load map', folder: 'Lab library\\maps', okLabel: 'Load', isSave: false, files: [mapId + '.json', '2026-09-30_2ch_50x.json'], kind: 'load' }),
+      mapMsgOn: !!s.mapMsg, mapMsg: s.mapMsg,
+      lt: { backend: L.backend, nText: String(L.n), repText: String(L.repeat) },
+      setBackend: (e) => setL({ backend: e.target.value }), setN: (e) => { const v = parseInt(e.target.value, 10); if (v > 0) setL({ n: v }); },
+      setRep: (e) => { const v = parseInt(e.target.value, 10); if (v >= 0) setL({ repeat: v }); },
+      emccdHz: eHz.toFixed(1), seqSections, seqPreview, seqTotal: String(full.length), ltCheck, ltCheckBg: ltOk ? '#ECFDF5' : '#FEF3C7', ltCheckFg: ltOk ? '#065F46' : '#78350F',
+      ltImport: () => openDlg({ title: 'Import ShutterManager sequence', folder: 'C:\\ShutterManager\\Shutter', okLabel: 'Import', isSave: false, files: ['2 frames - 1green1red.txt', '4 frames - 1dark1green1dark1red.txt', '10 frames - 1 dark 9 red 1 green.txt'], kind: 'load' }),
+      ltSave: () => openDlg({ title: 'Save illumination sequence', folder: 'Lab library\\sequences', name: 'ALEX green-red.mtseq', files: ['ALEX green-red.mtseq', 'Green only.mtseq'], kind: 'preset' }),
+      tgManG: () => set({ manual: Object.assign({}, s.manual, { g: !s.manual.g }) }), tgManR: () => set({ manual: Object.assign({}, s.manual, { r: !s.manual.r }) }),
+      manGBg: s.manual.g ? '#16A34A' : '#FFFFFF', manGFg: s.manual.g ? '#FFFFFF' : '#16191D', manGT: s.manual.g ? 'ON' : 'off',
+      manRBg: s.manual.r ? '#DC2626' : '#FFFFFF', manRFg: s.manual.r ? '#FFFFFF' : '#16191D', manRT: s.manual.r ? 'ON' : 'off',
+      fd, sigBead: s.sigBead, sigRows,
+      corrA: s.corr.a, corrD: s.corr.d, corrG: s.corr.g,
+      setCorrA: (e) => set({ corr: Object.assign({}, s.corr, { a: e.target.value }) }), setCorrD: (e) => set({ corr: Object.assign({}, s.corr, { d: e.target.value }) }), setCorrG: (e) => set({ corr: Object.assign({}, s.corr, { g: e.target.value }) }),
+      eRaw: eRawV.toFixed(2), eCorr: isFinite(eCorrV) ? eCorrV.toFixed(2) : '—',
       fpsText: (parseFloat(s.fpsApplied) + 0.0009).toFixed(2), magText: D.mag[i].toFixed(2), forceText: D.force[i].toFixed(2), rotText: (D.rot[i] >= 0 ? '+' : '') + D.rot[i].toFixed(1),
       devices, steps, stepTitle: titles[s.step], liveLabel: s.live ? 'Pause display' : 'Resume display', toggleLive: () => set({ live: !s.live }),
       recLabel: s.rec ? '● Recording' : 'Record', recBg: s.rec ? '#B91C1C' : '#2A3038', toggleRec: () => set({ rec: !s.rec }),
