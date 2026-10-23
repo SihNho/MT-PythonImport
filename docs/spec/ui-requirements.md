@@ -213,6 +213,32 @@ copy for quick reading, one run ID shared by MT and fluorescence files, and a MA
 - Every change passes the safety checks and is logged with its time.
 - "Save current settings as preset" turns a good combination found in exploration into a preset (U13, U15).
 
+**Feedback on the first mock-up (owner 2026-10-23)**
+
+**U18 - edit the protocol loop during an experiment.** "Experiment 중간에도 루프 수정이 가능해야 함." Edits made while a
+protocol runs go to a draft; "Apply changes" commits them: steps not started yet take them now, steps already done
+this loop take them from the next loop; the running step is locked. A draft that leaves the safe range (e.g. force
+above the limit) cannot be applied. Every applied edit is an event with the old and new steps (U16).
+
+**U19 - extensible screening and protocols, by script or by visual blocks.** "Screen condition에서 3 가지 조건으로
+셋업되어 있음. (그러나 추후 상황에 따라 얼마든지 가능할 수 있기에 조금 더 확장 가능성 있는 방향이면 좋겠음. 1) Scripting으로
+프로토콜을 작성 (지정된 방식을 통해) --> 프로그램에서 인식 --> 그래프 혹은 테이블로 표현 2) 시각적 프로그래밍 방식 차용하여
+프로토콜 작성"
+- One protocol model with two equivalent editors: **blocks** (visual: action blocks, rule blocks, add / remove /
+  reorder) and **script** (a defined text format, one step per line, `key=value`; "Check and use" parses it, reports
+  errors by line, and shows the result as blocks, a table and a force / rotation preview graph).
+- Screening rules are a list (metric, comparison, threshold) of any length over a metric library; new metrics (incl.
+  a Python function) extend it. Screening and experiment protocols share the format and engine (0012).
+- Proposed script grammar (mock-up): `zero t=5`, `ramp from=0 to=7 t=30`, `hold f=7 t=10`,
+  `rotate from=-10 to=10 f=1.5 t=40`, `record t=10`, `repeat 3`, `rule dext >= 0.8`.
+
+**U20 - visible Save / Save as / Load for protocols and presets**, and a lab library browser. "프로토콜, 프리셋 등을 저장하는
+버튼이 보이지 않음."
+
+**U21 - saving runs asks where, like `uigetfile`.** "Save는 '시작 디렉토리'를 지정할 수 있으나, 기본적으로는 uigetfile처럼
+프롬프트를 띄워서 물어보는게 좋을듯". A start folder is set in the settings; every save opens a file dialog that starts
+there and asks for folder and name.
+
 **U11 - UI language.** Owner 2026-10-22: "글자는 무조건 영어." All UI text in English only.
 
 **Note - local AI model.** Owner 2026-10-22: "Laya 내장하는거는 염두에 두고 있음. 로컬로 트레이닝한다면 내 계정이
