@@ -20,4 +20,5 @@ Each file records one decision: what was decided, why, and what follows from it.
 | [0014](0014-ai-gateway.md) | One restricted AI gateway with permission tiers; AI never changes code or touches devices directly | 2026-10-22 |
 | [0015](0015-extension-architecture.md) | Fixed core + extension levels + one public function layer; safety parameters in a protected, versioned rig safety profile | 2026-10-24 |
 
-The behavior specification of the LabVIEW program (`docs/spec/`) and the device manuals (`docs/manuals/`) will follow.
+The behavior specification of the LabVIEW program is in [../spec/README.md](../spec/README.md) and the device manuals are
+in [../manuals/README.md](../manuals/README.md).

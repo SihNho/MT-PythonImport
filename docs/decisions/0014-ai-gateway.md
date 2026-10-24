@@ -21,3 +21,5 @@ Owner: "AI 접근성과 관련하여서 창구를 특정하고 오픈하여서 �
   application works fully without the gateway being used.
 - Uses foreseen in the chat: drafting experiment protocols, applying screening protocols, running automation, the
   troubleshooting guide (U9).
+- The gateway is the same public function layer used by the GUI, scripts and plug-ins:
+  [0015](0015-extension-architecture.md) and [../design/api.md](../design/api.md).

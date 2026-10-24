@@ -1,7 +1,7 @@
-# UI requirements from the owner (2026-10-22)
+# UI requirements from the owner (2026-10-22 .. 2026-10-24)
 
-Input for plan phase 8 (GUI). Owner's answers 2026-10-22, quoted, then the requirement that follows. The design
-sketch discussed in chat is at the end; it is a proposal, not yet agreed in detail.
+Input for plan phases 5, 8 and 10. Owner's answers 2026-10-22 .. 2026-10-24, quoted, then the requirement that
+follows. The design sketch discussed in chat is at the end; it is a proposal, not yet agreed in detail.
 
 ## What was wrong with the LabVIEW panel
 Owner: "모든 항목이 다 스크린에 있어서 가독성이 떨어졌던 점. 화면에 딱 맞게 있지 않아서 화면 스크린을 드래그해서 움직여야
@@ -110,6 +110,8 @@ Owner: "위의 기준은 사실 single-biotin을 사용하는 나에게 맞고, 
 - Bead: M-270 amine (owner 2026-10-22), 2.8 µm diameter, R = 1.4 µm.
 - **Open:** a recording that contains a rotation test, to try the metrics offline.
 
+**U11 - UI language.** Owner 2026-10-22: "글자는 무조건 영어." All UI text in English only.
+
 **U12 - eWLC fitting on a selected range, and an honest extension zero.** Owner 2026-10-22: "현재 LabVIEW에서 expected
 WLC line을 그려주고, 파라미터를 조정할 수 있기는 한데 ... extensible WLC 모델이 아니어서 high force 영역에서 fitting이
 벗겨간다는 점. 약 7 pN에서 extension 기준을 0 nm로 잡기 때문에, force를 내려주면 마이너스로 감. 그리고 저장하는 값도 이렇게
@@ -169,8 +171,8 @@ fitting 해보고 거기서 persistence length 확인이 된다면 정말 좋을
 **U15 - device-settings presets, applied with read-back and saved with the data.** Owner 2026-10-22: "경우에 따라 장비
 셋팅을 바꿔야하는 일이 종종 있음. 가장 대표적으로는 카메라 셋업. Frame rate은 어떻게 할 것이며, signal magnification은
 무엇이며, acquisition mode는 무엇이며, 등등... 이 정보도 프리셋 적용하고, 데이터와 함께 저장하면 좋겠는데"
-- Named presets per device, e.g. "JAI 150 Hz tracking", "JAI 90 Hz wide field", "iXon ALEX 15 Hz". Camera fields:
-  frame rate, exposure, gain ("signal magnification"), acquisition mode (continuous / external trigger / ...), ROI,
+- Named presets per device, e.g. "JAI 150 Hz tracking", "JAI 90 Hz wide field", "iXon alternating excitation 15 Hz". Camera
+  fields: frame rate, exposure, gain ("signal magnification"), acquisition mode (continuous / external trigger / ...), ROI,
   binning, pixel format; iXon adds EM gain, readout speed, pre-amp gain, cooling set point, frame transfer, trigger
   mode. Other devices (lasers, rotor speed, ...) use the same structure.
 - **Applied after every device open, then read back and verified** before acquisition starts: the JAI resets ROI and
@@ -196,8 +198,7 @@ fitting 해보고 거기서 persistence length 확인이 된다면 정말 좋을
 
 **U16 - device and run metadata saved with every data file.** Owner 2026-10-22: "저장하는 데이터에 장비의 정보들이 같이
 저장되면 좋겠음. MT 데이터나 형광 데이터에 직접 들어가지 않지만 메타데이터로 두고 나중에 Matlab 분석에서도 참고할 수 있도록".
-Structure in decision 0006, "Later notes": a `metadata` group (devices, presets, run) apart from the data tables, a JSON
-copy for quick reading, one run ID shared by MT and fluorescence files, and a MATLAB `meta` struct.
+Specified in [decision 0006](../decisions/0006-data-format.md), "Later notes".
 
 **U17 - settings change while the program runs.** Owner 2026-10-22: "실험에 들어가기 전에도 장비를 가동하며 이리저리
 움직여 봐야함. 현행 코드는 configuration이 코드 시작부분에 있어서 한번 셋팅하면 코드 작동중에 바꾸는게 불가능함. 이 부분
@@ -283,10 +284,10 @@ the PC through shared memory.
   controller e.g. OBIS digital modulation); the sequence files and screens are shared, only the device settings differ
   (shutter open / close delay; AOM TTL polarity and analog power level; laser modulation mode and power). All three
   are driven by Arduino TTL locked to frames (0005). Before a run the program checks the chosen back-end's switching
-  time fits the gap between frames (e.g. warns for fast ALEX with a mechanical shutter). The back-end and its settings
-  are stored in the metadata. Typical switching times (mechanical ms, AOM µs, laser modulation µs to tens of µs) are to
+  time fits the gap between frames (e.g. warns for fast per-frame laser alternation with a mechanical shutter). The back-end and its
+  settings are stored in the metadata. Typical switching times (mechanical ms, AOM µs, laser modulation µs to tens of µs) are to
   be checked on the actual hardware.
-- **Open:** which back-end; which wavelengths.
+- **Open:** which back-end. (Wavelengths answered: **532 nm and 637 nm**, [rig-facts.md](../rig-facts.md).)
 
 **U25 - identify the right fluorescence signal under a large bead.** Owner 2026-10-23: "Bead가 워낙 거대하다보니, bead에
 연결된 DNA fluorescence signal이 뭔지 모를 수도 있다 임. 예를 들면, DNA labeling이 빽빽하게 되어 있을 때, bead 밑에 여러
@@ -301,8 +302,8 @@ one; the user decides.
 - Experimental side: lower labelling density, better passivation, a bead-free control for the surface background.
 - Feeds the troubleshooting guide (U9).
 
-**U26 - fluorescence focus away from the surface (discussion).** Owner: "만약 fluorescence dye가 바닥이 아닌 조금
-distant 한 곳에 위치한다면, focus를 바닥이 아닌 형광 위치정도로 두고 찍으면 되지 않을까 싶음. (다만 추가로 고려할 부분은,
+**U26 - fluorescence focus away from the surface (discussion) — superseded by U31 and U35 (2026-10-24).**
+Owner: "만약 fluorescence dye가 바닥이 아닌 조금 distant 한 곳에 위치한다면, focus를 바닥이 아닌 형광 위치정도로 두고 찍으면 되지 않을까 싶음. (다만 추가로 고려할 부분은,
 extension 및 force 값에 따라 형광 위치가 요동칠텐데 그 부분을 감당 가능할지 모르겠음)"
 - TIRF excites only ~100-200 nm above the surface; a dye higher up may need HILO / epi illumination, not just refocus.
 - Bright field and fluorescence share the objective: moving the objective focus changes the bead image and breaks the
@@ -314,12 +315,17 @@ extension 및 force 값에 따라 형광 위치가 요동칠텐데 그 부분을
 **U27 - comparable fields of view for fluorescence and bead tracking (discussion).** Owner: "형광 ROI와 magnetic bead
 ROI를 대체로 비슷한 스케일로 맞추고 싶음. 현재는 형광 영역에서 너무 좁게 보고 있는 것같으니 형광 영역을 키우면 좋겠음.
 아마도 렌즈 배율을 조정하는게 좋을 듯"
-- Estimates (assumed iXon 897: 16 µm pixels, 512 × 512; 50x; extra emission-path magnification unknown): JAI ≈ 256 ×
-  205 µm at ~200 nm/px; iXon without extra magnification ≈ 164 × 164 µm at ~320 nm/px, ≈ 82 × 164 µm per channel when
-  split in two.
-- A demagnifying relay widens the EMCCD field; larger pixels lower localisation precision but are fine (better SNR)
-  for intensity-based smFRET. The choice follows the main measurement (intensity FRET vs. fluorescence localisation).
-- **Open:** iXon model and the present emission-path magnification; main fluorescence measurement.
+- Estimates (EMCCD = Andor iXon Ultra 897: 16 µm pixels, 512 × 512; the emission path L4 f100 -> L5 f150 adds ≈1.5x,
+  so EMCCD ≈ objective × 1.5, standard tube lens assumed; [rig-facts.md](../rig-facts.md)):
+  - 50x: JAI ≈ 256 × 205 µm at ~200 nm/px; EMCCD ≈75x, ≈213 nm/px, ≈109 × 109 µm, ≈55 × 109 µm per channel when split
+    in two.
+  - 60x/1.50 (MT-TIRF): JAI ≈ 213 × 171 µm at ~167 nm/px; EMCCD ≈90x, ≈178 nm/px, ≈91 × 91 µm, ≈46 × 91 µm per channel.
+- A demagnifying relay (a different L4/L5 ratio) widens the EMCCD field; larger pixels lower localisation precision
+  but are fine (better SNR) for intensity-based smFRET. The choice follows the main measurement (intensity FRET vs.
+  fluorescence localisation).
+- ~~iXon model and the present emission-path magnification~~ answered (iXon Ultra 897; ≈1.5x after the objective,
+  above; to be confirmed by a pixel-size measurement).
+- **Open:** main fluorescence measurement.
 
 **U28 - FRET pipeline and MATLAB integration.** Owner 2026-10-23, from an explanation of smCamera received that day:
 "1) 데이터 얻음 (~.smm) 2) 데이터 형태 전환 (~.smt) 3) 이후 다른 데이터들로 전환 (*.trace, .... 대략 7개의 형태?) 4) 이후
@@ -363,8 +369,9 @@ fixed, and the JAI camera is moved so the beads image well.)
 - Facts found 2026-10-24: the SP-5000M-USB is C-mount (flange 17.526 mm per a distributor listing, to confirm). No
   off-the-shelf **motorised** C-mount focusing tube was found; manual ones exist (ASI C-mount focus adapters ±1.7 / ±4 mm,
   Edmund fine-focus tube, Thorlabs SM1Z).
-- Scale: moving the camera by Δ moves its conjugate plane at the sample by about Δ / M²; at 50x, about 2.5 mm of camera
-  travel per 1 µm at the sample (ASI ±4 mm ≈ ±1.6 µm). The needed range follows from the dye's height.
+- Scale: camera travel ≈ Δz_sample × M². Per objective: **50x** about 2.5 mm per 1 µm at the sample, **≈0.9 mm for
+  0.35 µm** (ASI ±4 mm ≈ ±1.6 µm); **60x** about 3.6 mm per 1 µm, **≈1.26 mm for 0.35 µm** (ASI ±4 mm ≈ ±1.1 µm). The
+  needed range follows from the dye's height.
 - **Only between samples, before calibration.** The z look-up table assumes a fixed objective-camera geometry: after
   any camera move the program marks the LUT invalid and blocks the experiment until a new calibration; the pixel size
   may change slightly and is re-checked per position.
@@ -372,31 +379,38 @@ fixed, and the JAI camera is moved so the beads image well.)
   added to the existing Tiger controller), or (2) a manual tube with a digital gauge / micrometer with USB readout read
   by the program; typing the value by hand is not relied on. The position is read at calibration start, stored in the
   `.cal` metadata and the run metadata (U16), and a later change raises a warning.
-- Owner 2026-10-24: the JAI sits on the IX73 at the turret position directly below the objective. If that branch has
-  its own tube lens in infinity space (likely, to be confirmed), refocusing the JAI does not touch the EMCCD path, and
-  besides moving the camera, **moving only the JAI tube lens** or putting an **electrically tunable lens** there are
-  options that may fit the tight turret space better. The JAI magnification is 50x × (its tube-lens focal length / 180 mm,
-  Olympus standard), so the nominal 200 nm/px and the travel estimate depend on that focal length.
-- **Open:** the dye's height above the surface (sets the travel); motorised vs manual + digital readout; the JAI tube
-  lens (present? focal length?) and the free space around the turret port.
+- Owner 2026-10-24: the JAI sits on the IX73 at the turret position directly below the objective. That branch has its
+  own tube lens (model unknown), completely separate from the TIRF path ([rig-facts.md](../rig-facts.md)), so
+  refocusing the JAI does not touch the EMCCD path. Besides moving the camera, **moving only the JAI tube lens** or
+  putting an **electrically tunable lens in the JAI branch** remain options that may fit the tight turret space better
+  (still open; the ETL dropped in U35 was the one in the fluorescence path). The JAI magnification is objective ×
+  (its tube-lens focal length / 180 mm, Olympus standard), so the nominal 200 nm/px and the travel estimate depend on
+  that focal length.
+- ~~JAI tube lens present?~~ answered: yes, model unknown ([rig-facts.md](../rig-facts.md)).
+- **Open:** the dye's height above the surface (sets the travel; owner's estimate 300-400 nm, U32); motorised vs
+  manual + digital readout; the JAI tube lens focal length; the free space around the turret port; a JAI-branch ETL
+  or tube-lens move as alternatives to moving the camera.
 
 **U32 - dye height, focus and following the dye (discussion).** Owner 2026-10-24: "현재 튜브렌즈가 있기는 한데,
 제품명을 확인할 수 없음. 형광 분자는 현재 생각으로는 약 300~400 nm 떠있을 것 같음. 이 부분도 사실 고민인데, magnetic bead
 위치에 따라서 형광 위치가 계속 움직일거임. 그렇다면 사실 트래킹은 형광 위치를 가장 핵심으로 해야할 것 같음."
 - Focus: a high-NA oil objective's depth of field is roughly 0.5-0.8 µm, so a dye 300-400 nm up may be in focus with the
-  surface focus; a 0.35 µm offset needs about 0.9 mm of JAI camera travel at 50x (scales with magnification²).
+  surface focus; a 0.35 µm offset needs about 0.9 mm of JAI camera travel at 50x and about 1.26 mm at 60x (camera
+  travel ≈ Δz_sample × M², U31).
 - Excitation: TIRF intensity decays exponentially with a typical 1/e depth of 100-200 nm; at 350 nm and 150 nm depth it
   is about 10 % of the surface value. A smaller TIRF angle (deeper field) or HILO may be needed. The FRET ratio is
   rather insensitive to height (both dyes at about the same height); absolute intensity is not, and could even be used
   to estimate height.
 - Dye motion: along a straight tether the dye moves by the bead's displacement × (dye height / bead height); e.g. bead
-  thermal sd ~100 nm (assumed), dye at 0.35 µm, extension 1 µm -> ~35 nm, well below an EMCCD pixel (~320 nm at 50x
-  without extra magnification). Proposal: **the MT tracking drives the fluorescence ROI** (predicted dye position per
+  thermal sd ~100 nm (assumed), dye at 0.35 µm, extension 1 µm -> ~35 nm, well below an EMCCD pixel (≈213 nm/px at 50x,
+  ≈178 nm/px at 60x, with the ≈1.5x emission-path magnification; estimates, U27).
+  Proposal: **the MT tracking drives the fluorescence ROI** (predicted dye position per
   frame from anchor, bead xy and extension; the ROI follows only when the predicted shift exceeds e.g. 0.3 px), and the
   measured spot position, when bright enough, is a cross-check (a mismatch flags trouble, e.g. sticking, U33).
-- The tube lens model is unknown; **measuring the pixel size** (stage micrometer or known stage steps) gives the real
-  magnification and settles nm/px and the travel estimates.
-- **Open:** is the TIRF angle / penetration depth adjustable?
+- The JAI tube lens is present but its model is unknown ([rig-facts.md](../rig-facts.md)); **measuring the pixel size**
+  (stage micrometer or known stage steps) gives the real magnification and settles nm/px and the travel estimates.
+- ~~Is the TIRF angle / penetration depth adjustable?~~ answered: yes, by a translation stage carrying L3 and the last
+  mirror ([rig-facts.md](../rig-facts.md)).
 
 **U33 - detect a molecule sticking to the surface.** Owner 2026-10-24: "실험 하다가 이유를 알 수 없게 분자가 바닥에
 붙어버리는 경우도 생김."
@@ -406,6 +420,19 @@ fixed, and the JAI camera is moved so the beads image well.)
 - Action: an event with an alert; the segment is marked as suspect; the case goes to the troubleshooting log (U9) with
   conditions (force history, buffer, time into the run) so causes can be found later. Any detach attempt (e.g. a short
   force pulse) only after the user confirms, inside the safety limits.
+- **Bead autofluorescence and coating (owner 2026-10-24):** "분자가 바닥에 붙어버리게 되면 magnetic bead의
+  autofluorescence를 무시할 수 없게 됨. bead autofluorescence를 실시간 측정하다가 해당 구간을 알려주는 것도 괜찮은 방법
+  같음. (그리고 만약 .tif 자체가 아닌 intensity 기록으로 남기게 된다면 이에 대한 보정 역시 프로그램이 진행을 해줘야함)" and
+  "바닥 부착의 경우 대개는 surface coating 문제임. 그러나 완벽한 샘플은 없을 것 같고, 아마 왠만한 조건에서도 어느정도 달고
+  살게 될 문제로 보임".
+  - A **bead-autofluorescence ROI** (the mapped bead blob) is measured every frame beside the molecule ROI; a rise (bead
+    entering the TIRF field) flags the segment, together with the other sticking signs.
+  - Correction: molecule ROI = signal + background + k × bead autofluorescence; k per bead from frames after the dye
+    has bleached, or from dye-free beads; subtract k × bead AF.
+  - **Keep the raw EMCCD movie** (0006) so corrections can be redone. If only intensities are kept, store per frame the
+    molecule ROI, a local background ROI and the bead-AF ROI, plus ROI geometry, k and the method.
+  - Sticking is expected to stay: the sample preset records the **surface coating type and batch**, so the
+    troubleshooting log (U9) can show sticking frequency per coating / batch.
 - **Open:** when sticking usually happens (low force for long, a buffer, late in a run, ...), to set the detection rules.
 
 **U34 - the molecule's z without moving the piezo.** Owner 2026-10-24: "분자 트래킹에서 Z-axis 마찬가지로 트래킹이 필요하다는
@@ -421,7 +448,8 @@ fixed, and the JAI camera is moved so the beads image well.)
   - A needs no eWLC when the extension is measured; it assumes **uniform relative stretching** along the DNA, which
     fails for nucleosomes / unwrapping (inhomogeneous), at low force (not straight) and with off-centre attachment.
   - Calibration-range-dependent bead-z precision enters the dye height scaled by f (dye's relative position, ~0.3-0.4):
-    e.g. 4 nm bead noise -> ~1.2-1.6 nm; the 1.4-2.3 nm height-dependent interpolation error -> ~0.5-0.9 nm. It cannot be
+    e.g. 4 nm bead noise -> ~1.2-1.6 nm; the height-dependent interpolation error, 2.0-2.4 nm rms
+    ([2026-10-24 results](../results/2026-10-24-radial-profile-crosstalk.md)) -> ~0.6-1.0 nm. It cannot be
     removed, but it can be **reported per frame** as an uncertainty (local LUT sensitivity + noise, as Kovari 2019).
   - Larger errors are elsewhere: the zero (surface reference), the focal-shift factor, off-centre attachment, and the
     structural model.
@@ -430,19 +458,6 @@ fixed, and the JAI camera is moved so the beads image well.)
     is in the LUT range; per-frame sigma for bead z and dye height (shown as bands); mark segments where A's assumptions
     are weak; validate A with (B)/(C) and once with a simple DNA of known dye position.
   - **Open:** dye position and total length in bp, and where nucleosomes sit relative to the dye.
-
-**U33 addendum (owner 2026-10-24).** "분자가 바닥에 붙어버리게 되면 magnetic bead의 autofluorescence를 무시할 수 없게 됨.
-bead autofluorescence를 실시간 측정하다가 해당 구간을 알려주는 것도 괜찮은 방법 같음. (그리고 만약 .tif 자체가 아닌
-intensity 기록으로 남기게 된다면 이에 대한 보정 역시 프로그램이 진행을 해줘야함)" and "바닥 부착의 경우 대개는 surface
-coating 문제임. 그러나 완벽한 샘플은 없을 것 같고, 아마 왠만한 조건에서도 어느정도 달고 살게 될 문제로 보임".
-- A **bead-autofluorescence ROI** (the mapped bead blob) is measured every frame beside the molecule ROI; a rise (bead
-  entering the TIRF field) flags the segment, together with the other sticking signs.
-- Correction: molecule ROI = signal + background + k × bead autofluorescence; k per bead from frames after the dye has
-  bleached, or from dye-free beads; subtract k × bead AF.
-- **Keep the raw EMCCD movie** (0006) so corrections can be redone. If only intensities are kept, store per frame the
-  molecule ROI, a local background ROI and the bead-AF ROI, plus ROI geometry, k and the method.
-- Sticking is expected to stay: the sample preset records the **surface coating type and batch**, so the
-  troubleshooting log (U9) can show sticking frequency per coating / batch.
 
 **U35 - keeping the fluorescence in focus without disturbing bead tracking (discussion).** Owner 2026-10-24: "우선
 현재로서는 형광 z-position을 기록할 계획이 없음. Z-position은 Bead에 대한 기록만 할거임. 그런데, 내 말은 형광체가 워낙
@@ -459,7 +474,8 @@ U34's computed dye height is used, if at all, only as a focus target.)
 - If the piezo is used: small smooth ramps between segments only; settling frames auto-excluded (settling time from a
   reference-bead step response); bead z corrected by the piezo position recorded every frame; LUT-region effects
   handled by the error-vs-height map and per-frame uncertainty (U34).
-- **Preferred alternative: an electrically tunable lens in front of the EMCCD** (one C-mount part; the EMCCD itself does
+- ~~**Preferred alternative: an electrically tunable lens in front of the EMCCD**~~ (withdrawn, see ETL dropped
+  below) (one C-mount part; the EMCCD itself does
   not move): changes only the fluorescence focus, so the objective and bead tracking are untouched (no shock, no LUT
   shift); ms response. Costs: slight magnification change (JAI <-> EMCCD map per ETL setting or modelled), space with
   the image splitter, price (about USD 1,400-2,600 for EL-16-40 C-mount types).
@@ -494,30 +510,15 @@ U34's computed dye height is used, if at all, only as a focus target.)
 - **Open:** how that experiment was analysed (manual picking? scripts?), and whether it used magnetic force or TIRF
   only (a "fluorescence only" mode may be needed).
 
-**U37 - handling experiment structures nobody foresaw (proposal, not yet a decision).** Owner 2026-10-24: "결국 어느
-시점에는 지금은 생각하지 못한 방식으로 실험 구조 수정이 필요할 수 있겠는데, 이를 어떻게 대처할지가 의문"
-- **A hard core that does not change:** complete raw data + metadata (MT, EMCCD, events, settings); the time base
-  (frame / buffer numbers, Arduino sync, 0005); device interfaces; the safety layer. Many "new" needs are analysis and
-  can be met afterwards from the raw data.
-- **Extension levels, lowest first:** 0 settings / presets; 1 scripts in the defined grammar (protocols, illumination
-  sequences, analysis recipes); 2 Python plug-ins at defined extension points (detectors, observables / event rules,
-  protocol step types, **new devices**); 3 **Python experiment scripts** against the program's public API (move magnet,
-  set illumination, wait for an event, read signals) for whole new procedures; 4 core changes through the normal
-  development process (rare).
-- The level-3 API is the same gateway as for AI (0014): same safety layer, always stoppable from the UI.
-- Reproducibility: the content and version of every script / plug-in / recipe used is stored with the data; good ones
-  go to the lab library with examples.
-- After the project (0001, no AI): documented plug-in and scripting APIs with examples, so lab members who know Python
-  can extend it; rule of thumb: solve a new need at the lowest level that works.
-- Owner 2026-10-24: "이를 위해서는 모듈화 함수가 잘 준비되어 있어야겠네." So one **public function layer** used by the GUI,
-  scripts, plug-ins and the AI gateway alike: one job per function; units in names / arguments (`force_pN`,
-  `exposure_ms`); safety inside the function (limits, read-back, logging) so no caller can skip it; docstring, example,
-  test and simulator support for every function; a versioned API with a deprecation period so lab scripts do not break.
-  Groups: devices, acquisition, tracking stages, fluorescence signals, events, analysis, data.
-- **Next (proposed):** write this as an API specification (names, arguments and units, returns, safety behaviour,
-  examples) before the phase-5 device-layer code; documents only, so it does not collide with code work in progress.
-
-**U11 - UI language.** Owner 2026-10-22: "글자는 무조건 영어." All UI text in English only.
+**U37 - handling experiment structures nobody foresaw — adopted as decision 0015 (2026-10-24).** Owner 2026-10-24:
+"결국 어느 시점에는 지금은 생각하지 못한 방식으로 실험 구조 수정이 필요할 수 있겠는데, 이를 어떻게 대처할지가 의문" and
+"이를 위해서는 모듈화 함수가 잘 준비되어 있어야겠네."
+- Summary: a fixed core (raw data + metadata, time base, device interfaces, safety layer), extension levels from
+  presets up to Python experiment scripts, and one public function layer shared by the GUI, scripts, plug-ins and the
+  AI gateway. Details: [decision 0015](../decisions/0015-extension-architecture.md) and the API specification
+  [../design/api.md](../design/api.md).
+- **Next** (API specification before the phase-5 device-layer code): done, draft v0 in
+  [../design/api.md](../design/api.md).
 
 **Note - local AI model.** Owner 2026-10-22: "Laya 내장하는거는 염두에 두고 있음. 로컬로 트레이닝한다면 내 계정이
 필요없음." The owner is considering embedding "Laya", trained locally so no personal account is needed. What Laya
@@ -554,5 +555,20 @@ of the normal interfaces; a natural use is the troubleshooting guide (U9), train
 A clickable mock-up with fake data, for the owner and lab members to try before any GUI code is written.
 - **Mock-up (2026-10-22/23):** https://claude.ai/artifact/Hg7YRQbKfDN8jZyEDeMLHd (private until shared from its Share
   menu). Version 1 covered U1-U17; version 2 added U18-U21 (mid-run protocol edits, block + script editors, save /
-  load buttons, save dialog with start folder). Not yet in it: mapping screens (U22), parameter-based candidate
-  finding (U23), illumination sequence editor (U24), signal identification (U25).
+  load buttons, save dialog with start folder); **version 3 (2026-10-24) covers U1-U30**. Not yet in it: the U31-U37
+  items that have screens, i.e. the JAI camera position readout (U31), sticking alerts (U33), and flexible observables
+  / analysis recipes (U36).
+
+## Open questions index
+Every remaining "Open:" item above, by requirement number (answered items are struck through in place).
+- **U7:** the owner's actual screening criteria and accept ranges.
+- **U10:** a recording that contains a rotation test, to try the metrics offline.
+- **U24:** which light-switch back-end (mechanical shutter, AOM or laser controller).
+- **U27:** the main fluorescence measurement (intensity FRET vs. localisation), which sets the EMCCD field / pixel size.
+- **U28:** example smCamera data (`.smm`, `.smt`, `.trace`, shutter `.txt`) and which of the ~7 formats are still used.
+- **U31:** dye height (sets the travel); motorised vs manual + digital readout; JAI tube-lens focal length; space around
+  the turret port; JAI-branch ETL or tube-lens move as alternatives.
+- **U33:** when sticking usually happens, to set the detection rules.
+- **U34:** dye position and total length in bp, and where nucleosomes sit relative to the dye.
+- **U35:** the defocus-vs-intensity measurement, which decides between fixed focus per sample and piezo steps.
+- **U36:** how the enzyme-cleavage experiment was analysed, and whether it used magnetic force or TIRF only.

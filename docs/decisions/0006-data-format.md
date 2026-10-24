@@ -30,3 +30,4 @@
   - A human-readable JSON copy of the same metadata is written next to the files, for a quick look without tools.
   - Fluorescence files carry the same run ID and metadata, so MT and fluorescence data of one run are linked.
   - MATLAB: the extended-mode reader returns this as a struct `meta` beside the data.
+- **Field-level specification of the HDF5 file:** [../format/hdf5-v1.md](../format/hdf5-v1.md).

@@ -12,7 +12,7 @@ changes, add the new line with its date and keep the old one marked "superseded"
 | Microscope / JAI position | Olympus **IX73**; the JAI sits at the turret position directly below the objective (owner 2026-10-24: "현재 JAI 위치는 IX73 현미경 시스템 상에서 렌즈 바로 밑에 위치한 터렛."). It has its own tube lens (model unknown), **completely separate from the TIRF path** (owner 2026-10-24: "현재 튜브렌즈가 있기는 한데, 제품명을 확인할 수 없음", "튜브는 TIRF 경로와는 완전히 분리되어 있음") | owner 2026-10-24 |
 | TIRF illumination | laser beam sent into the IX73 back port from outside; the TIRF angle (penetration depth) can be set by adjusting that beam path (owner 2026-10-24: "TIRF 각도는 IX73 외부에서 backport로 쏴주는 레이저 빔 경로를 조정하면 컨트롤 가능할듯") | owner 2026-10-24 |
 | Dye height (planned samples) | about 300-400 nm above the surface (owner's estimate 2026-10-24) | owner 2026-10-24 |
-| Objective | **50x oil immersion** since the field of view was widened; **100x oil** before | owner 2026-10-22 |
+| Objective | **MT: 50x oil immersion** since the field of view was widened (**100x oil** before); **MT-TIRF: Olympus UPlanApo 60x / 1.50 Oil HR** (decided 2026-10-24, see the MT-TIRF section below) | owner 2026-10-22, 2026-10-24 |
 | Image pixel, nominal | 5.0 µm x 2 (binning) / 50 ≈ **200 nm/px** (assumes the objective's matching tube lens) | computed 2026-10-22, not measured |
 | `pixel distance (nm)` in the calibration file | **84 nm/px** (last DBL of the `cal002` tail; also the panel default) — stale, from the 100x objective | `cal002`; `spec/3-calibration.md` F3.01; owner 2026-10-22 |
 
@@ -40,7 +40,7 @@ when the setup changes, git keeps the old versions; update this table with it). 
 | Magnets | antiparallel pair; z translation; rotation about z (±) |
 | Tracking camera | JAI SP-5000M-USB, "z tracking, 60–150 Hz" |
 | Emission path | DM1 → mirror → **slit** → L4 f = 100 mm → DM3 640rdc-UF1 (**Cy5 channel planned**, not built) → mirror → L5 f = 150 mm → notch filters NF 537/635 → **EMCCD = Andor iXon Ultra 897** |
-| Synchronisation | JAI → Arduino → EMCCD trigger, frame ratio ≈ 3:1 (decision 0005) |
+| Synchronisation | JAI → Arduino → EMCCD trigger; frame ratio ≈3:1 as drawn in the schematic; N is set per experiment (0005) |
 
 Consequences (inference, to be confirmed by a pixel-size measurement):
 - L4 → L5 adds ≈1.5× after the slit, so the EMCCD magnification ≈ objective × 1.5 (assuming the standard Olympus tube
@@ -57,8 +57,9 @@ Consequences (inference, to be confirmed by a pixel-size measurement):
   likely better XY (more pixels per bead) and z sensitivity (higher NA).
 - **Decided (owner 2026-10-24): MT-TIRF uses the 60x/1.50.** "어쨌든 MT-TIRF 할 때는 저걸 확실히 사용할거임. 보정이야
   Refractive index 보정 factor 있으니 나중에 적용하면 되는 부분이고." So raw z is stored uncorrected and the
-  refractive-index (focal-shift) factor is applied in analysis from the recorded preset value and its source (U13,
-  decision 0010's raw-first rule); measuring this lens's factor once remains worthwhile, since it scales extension.
+  refractive-index (focal-shift) factor is applied in analysis from the recorded preset value and its source (U12/U13:
+  raw stored, corrections recorded and applied later); measuring this lens's factor once remains worthwhile, since it
+  scales extension.
 - **Decided (owner 2026-10-24): the running MT (nucleosome) project keeps the 50x** for data continuity: "현재 MT
   프로젝트 (nucleosome) 실험에서는 렌즈 갑자기 바꿔버리면 안되니까 우선은 50X 계속 써야겠네. 데이터 연속성을 위해서".
   So for now two rig presets: "MT, 50x oil" (current nucleosome project) and "MT-TIRF, 60x/1.50". The program proposes
@@ -87,8 +88,8 @@ Consequences (inference, to be confirmed by a pixel-size measurement):
 ## The recorded fixture (`G:\Data\SiHyeong\20260906 Kimlab - 50bp 16X WT 90Hz 1p2 Ramp_Newbatch\test`)
 
 Taken with the **50x** objective (owner 2026-10-22). From the original program's own output `tra002-000`
-(10 043 frames at 90 Hz; frame-to-frame noise = standard deviation of successive differences / √2; computed
-2026-10-22):
+(10,043 tracked frames at 90 Hz (10,044 image files; the last file, `img11825`, is not in the LabVIEW trace);
+frame-to-frame noise = standard deviation of successive differences / √2; computed 2026-10-22):
 
 | Bead | z range | x noise per frame | z noise per frame | Reading |
 |---|---|---|---|---|

@@ -24,10 +24,10 @@ JSON because it is small, human-readable, diff-able and read by MATLAB `jsondeco
 ```json
 {
   "schema": "mt-map/1",
-  "id": "2026-10-23_2ch_Cy3Cy5_50x",
+  "id": "2026-10-23_2ch_Cy3Cy5_60x",
   "created": "2026-10-23T14:00:00+09:00",
   "user": "SiHyeong",
-  "rig": {"objective": "50x oil", "jai_binning": 2, "emccd_model": "iXon Ultra [model]"},
+  "rig": {"objective": "60x/1.50 oil", "jai_binning": 2, "emccd_model": "iXon Ultra 897"},
   "channels": [
     {"id": "ch1", "name": "Donor Cy3", "region_px": [0, 0, 256, 512], "excitation_nm": 532, "emission": "585/40", "color": "#22C55E"},
     {"id": "ch2", "name": "Acceptor Cy5", "region_px": [256, 0, 256, 512], "excitation_nm": 637, "emission": "680/40", "color": "#EF4444"}
@@ -42,7 +42,7 @@ JSON because it is small, human-readable, diff-able and read by MATLAB `jsondeco
      "forward": [[1, 0, 0], [0, 1, 0]], "inverse": [[1, 0, 0], [0, 1, 0]],
      "rms_px": 0.6, "n_points": 24}
   ],
-  "control_points": "2026-10-23_2ch_Cy3Cy5_50x_points.csv",
+  "control_points": "2026-10-23_2ch_Cy3Cy5_60x_points.csv",
   "notes": ""
 }
 ```

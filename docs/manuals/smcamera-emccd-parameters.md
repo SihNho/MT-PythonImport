@@ -98,7 +98,7 @@ found) [D].
 | Recording length | Movie Recorder "Set Max Length : ... Frames" | none (program side) | | - | [F] |
 | 8-bit saving | Movie Recorder "Save as PMA files", "Save a Pixel in 8 Bit", "Data Scaler", "Background" | none (program side) | 16/32-bit -> 8-bit by scaler and background [I] | - | [F] labels |
 
-## 4. FrameSequence files - an analysis frame mask, not a laser sequence
+## 4. FrameSequence files — frame masks for analysis, also used to label excitation per frame (see correction)
 
 Format [F]: plain text, one integer per line (`\r\n`), `1` or `0`; line i = frame i. Examples:
 
@@ -207,7 +207,7 @@ already the U15 idea: the settings travel with the movie.**
 1. **Trigger mode differs on purpose.** smCamera free-runs (trigger 0 internal, run till abort, frame transfer on).
    Decision 0005 needs `SetTriggerMode(1)` External, or 7 External Exposure, with frame transfer [M]; `SetTriggerMode`
    is exported by atmcd64d [F]. Use `IsTriggerModeAvailable` before setting [M, exported F].
-2. **ALEX moves into hardware.** The old way (ShutterManager, PC-timed DIO per frame) is exactly what decision 0005
+2. **Per-frame laser alternation (used as a FRET correction, U28) moves into hardware.** The old way (ShutterManager, PC-timed DIO per frame) is exactly what decision 0005
    forbids. Decision 0013's "illumination sequence" replaces ShutterManager's header/body/footer files; their format
    (one row per EMCCD frame, one 0/1 column per light source) is a ready model for the sequence description, executed
    by the Arduino instead of the PC [I].
@@ -229,7 +229,8 @@ already the U15 idea: the settings travel with the movie.**
 1. Is "smCamera2" a different build than this 2012 `smCamera.exe` 1.0? Nothing named 2 was found.
 2. Last-used EM gain, exposure, temperature and HS index: `camera.save` / `recorder.save` are missing; are they on the
    old acquisition PC (`C:\Users\HJKIM\Desktop\TIR Programs\...`)?
-3. Which iXon is the old camera (512 x 512 maps suggest 897/887) and is it the same unit planned for MT-TIRF?
+3. ~~Which iXon is the old camera?~~ Answered: the MT-TIRF EMCCD is an **iXon Ultra 897** (512 x 512, 16 µm; owner's
+   optical schematic, [andor-ixon.md](andor-ixon.md)), consistent with the 512 x 512 maps.
 4. ShutterManager columns -> lasers: the file names and contents disagree (section 7).
 5. Did the lab ever run smCamera with an external trigger? The binary has no path for it (trigger fixed at 0).
 6. Not decoded: the warm-up temperature threshold before `ShutDown`, the `WaitForAcquisitionTimeOut` timeout, and the

@@ -9,7 +9,8 @@ porting any alternative.
 ## Method
 - **Variants of the XY step** (decision 0003): `passes=1` result = P1; `passes=2` adds the first phase-shifted pass;
   `passes=3` adds the second = the current method. Check: `passes=3` equals `track.find_avg_profile_center` exactly
-  (difference 0 on frame 4, all beads), and on all 10 043 recorded frames it matches LabVIEW's `.tra` within
+  (difference 0 on frame 4, all beads), and on all 10,043 tracked frames (10,044 image files; the last file, `img11825`, is not in the LabVIEW
+  trace) it matches LabVIEW's `.tra` within
   4.2e-6 px; z within 4.7e-3 µm (the known frame-1937 slice tie only).
 - **B, recorded data:** fixture `20260906 ... test` (5 beads, 90 Hz, 50x; bead 1 = reference bead,
   [rig-facts.md](../rig-facts.md)). Each variant feeds its own output to the next frame, like the program.
@@ -51,7 +52,8 @@ systematic error, the noise is random).
 > With realistic noise (sigma 1.66 grey levels) the current stage's systematic crosstalk is about **1.0-1.3 nm sd**
 > (p2p 3.5-6.5 nm on a 5 x 5 grid). It is still systematic, but smaller than stated here.
 
-**3. XY→Z crosstalk is the largest systematic error found.** At one fixed height, moving the bead within one pixel
+**3. XY→Z crosstalk is the largest systematic error found** (superseded: ~1 nm with realistic noise; see correction
+above). At one fixed height, moving the bead within one pixel
 changes z by **6.3 nm (bead 1) and 7.6 nm (bead 2) peak-to-peak**, the same for all XY variants. It comes from the
 radial profile depending on the sub-pixel centre. A tethered bead moving 0.1 px per frame carries this into its z.
 
@@ -71,7 +73,8 @@ positions are strongly correlated and the beads drift with the magnet ramp, so t
   does reduce bias; there is nothing to gain by removing them, and nothing to gain by adding more.
 - **Porting quadrant interpolation for XY precision is low priority**: the current XY bias (≤ 0.015 px) is below the
   noise. QI may still matter for robustness (neighbours, defocus), which was not tested here.
-- **The next target is the XY→Z crosstalk (6-8 nm).** Candidates: a radial profile less sensitive to the sub-pixel
+- **The next target is the XY→Z crosstalk (6-8 nm)** (superseded: ~1 nm with realistic noise; see correction above).
+  Candidates: a radial profile less sensitive to the sub-pixel
   centre (QI-style polar resampling with bilinear interpolation), or a look-up table that accounts for the sub-pixel
   position. Each would change results, so each needs its own decision (0003).
 - **Z slice step:** no evidence yet that 100 nm is too coarse; confirm with a slow piezo scan of a reference bead on

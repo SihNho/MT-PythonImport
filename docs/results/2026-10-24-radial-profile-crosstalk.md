@@ -44,7 +44,8 @@ XY stage and Z stage (`z_phase`, phase interpolation, 60 slices x 100 nm) unchan
 - S3 interpolation: slice 3-56 in 0.05-slice steps at the LUT offset (0.3, 0.6), and in 0.1-slice steps at (0.8, 0.1);
   profiles between slices are the linear blend of the two neighbours (a model).
 - S4 noise: slice 30, sigma 1.66, 200 images at offsets 0, 0.25, 0.5 px; the same noisy images for every variant.
-- Replay: bead 1 of the recorded fixture (10 044 frames), each variant with a LUT rendered from cal002's bead-1 profiles.
+- Replay: bead 1 of the recorded fixture (all 10,044 image files = the 10,043 tracked frames plus the last file,
+  `img11825`, which is not in the LabVIEW trace), each variant with a LUT rendered from cal002's bead-1 profiles.
 
 ## Results
 
@@ -84,7 +85,7 @@ has about 0.3 nm standard error).
 `area4` is slow in numpy because it builds 240 000 sub-sample radii per call; a numba loop (as in `fast.py`) should
 bring it near the current stage's cost, since the work is the same loop with 16 times more points. Not measured.
 
-**Replay, recorded bead 1 (reference bead), 10 044 frames**
+**Replay, recorded bead 1 (reference bead), 10,044 image files (see Method)**
 
 | Variant | frame-to-frame z | z vs program, mean / rms about mean |
 |---|---|---|

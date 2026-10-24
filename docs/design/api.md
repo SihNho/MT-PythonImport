@@ -6,6 +6,8 @@ scripts and the AI gateway (0014) all call **these functions and nothing below t
 proposals; phase 5 may refine them, and every change after the first release follows the versioning rule below.
 
 ## 1. Conventions
+- **Origin:** owner requirement [U37](../spec/ui-requirements.md) (one public function layer) and decision
+  [0015](../decisions/0015-extension-architecture.md).
 - **Package:** `mtpy` (existing). Public API under `mtpy.api` (one import for scripts: `from mtpy import api`).
   Existing internal modules (`track`, `fast`, `calib`, `lvfiles`) stay as they are; the API wraps them.
 - **Units in the name or the argument**: `force_pN`, `position_mm`, `exposure_ms`, `turns`, `z_um`, `rate_Hz`,
@@ -30,7 +32,7 @@ proposals; phase 5 may refine them, and every change after the first release fol
 ### 2.1 Rig and presets
 | Function | Purpose |
 |---|---|
-| `api.rig.state()` | rig state (disassembled / assembled / experiment) and lock status |
+| `api.rig.state()` | **development builds only**: shows the shared rig lock (disassembled / assembled / experiment) while the project is under development; absent from the released application (0001, 0009) |
 | `api.presets.list(kind)` / `load(kind, name)` / `active(kind)` | rig, sample, camera, protocol, channel-layout presets (U13, U15, U22) |
 | `api.presets.save(kind, name, content)` | save a preset (not for the safety profile) |
 | `api.safety.profile()` | the active rig safety profile (read-only for every caller except the rig-admin settings screen) |
@@ -47,7 +49,7 @@ proposals; phase 5 may refine them, and every change after the first release fol
 | `api.magnet.move_to(position_mm, speed_mm_s=None)` | inside the profile's travel; returns `Motion` |
 | `api.magnet.set_force(force_pN, table=None)` | via the recorded position-to-force table (0010) |
 | `api.magnet.position()` | position_mm read back |
-| `api.rotor.rotate(turns, speed=None)` / `api.rotor.position()` | signed turns, inside the profile |
+| `api.rotor.rotate(turns, speed_turns_s=None)` / `api.rotor.position()` | signed turns, inside the profile |
 | `api.stage.move_to(x_mm, y_mm)` / `api.focus.move_to(z_um)` | ASI; inside the window; focus moves invalidate nothing but are logged (U35) |
 | `api.light.set(laser, on: bool)` | manual on / off (U24); refused while a sequence runs |
 | `api.light.load_sequence(seq)` / `start_sequence()` / `stop_sequence()` | illumination sequence run by the Arduino (0005, U24) |
@@ -71,7 +73,7 @@ proposals; phase 5 may refine them, and every change after the first release fol
 | `api.calib.run(slices, step_nm, n_avg)` | z scan; refused if the JAI camera position changed and not re-read (U31) |
 | `api.calib.valid()` | is the LUT valid for the current geometry |
 | `api.tracking.stages()` / `set_stages(...)` | swappable XY / radial / Z stages (0003); recorded in the data |
-| `api.tracking.latest(bead)` | latest x, y, z (µm) with per-frame uncertainty (U34) |
+| `api.tracking.latest(bead)` | latest x, y (px) and z (µm), each with its per-frame uncertainty (U34) |
 | `api.tracking.zero(bead_or_all, mode)` | zero at zero force / set zero here / bridge a step (U12, U14) |
 | `api.tracking.exclude(bead, t0_s, t1_s, reason)` | excluded segment (U14) |
 

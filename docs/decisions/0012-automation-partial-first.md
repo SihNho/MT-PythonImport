@@ -16,3 +16,6 @@ Owner: "우선 반드시 필요한 것은 부분 자동화: 프로토콜을 정�
 
 ## Consequences
 - Screening protocols (U10) and experiment protocols share one format and one engine.
+
+## Later notes (not changes to the decision)
+- Mid-run protocol edits and the block / script editors: [ui-requirements.md](../spec/ui-requirements.md) U18, U19.

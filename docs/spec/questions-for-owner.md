@@ -58,11 +58,11 @@ here; they are the `unknown — needs VI read` entries in the step files and in 
 - **Q3.07 (F3.01)** The calibration file stores `pixel distance (nm)` = 84, but the 50x objective with binning 2 gives
   about 200 nm/px nominally (100x would give about 100). Is 84 a value left from the 100x setup, or was it measured?
   Where is it used? ([rig-facts.md](../rig-facts.md)) *Answered (owner 2026-10-22):* "예전 렌즈 사용할 때 기록인듯.
-  (100X)" — stale for 50x. Still open: where the program uses it, and the measured 50x pixel size.
-  *Answered (owner 2026-10-22):* "Matlab 분석할때 거기 있는 파라미터 사용함. 그러니 사실 랩뷰에서는 사용 안하는 숫자" —
-  analysis is done in MATLAB with its own parameters; LabVIEW does not use this number. (An earlier worry that the
-  LabVIEW force subVI might apply 84 nm/px to 50x data is withdrawn.) The port keeps writing the field for format
-  compatibility (decision 0006) and should show it as "not used by tracking".
+  (100X)" — stale for 50x. Where it is used, *answered (owner 2026-10-22):* "Matlab 분석할때 거기 있는 파라미터 사용함.
+  그러니 사실 랩뷰에서는 사용 안하는 숫자" — analysis is done in MATLAB with its own parameters; LabVIEW does not use
+  this number. (An earlier worry that the LabVIEW force subVI might apply 84 nm/px to 50x data is withdrawn.) The port
+  keeps writing the field for format compatibility (decision 0006) and should show it as "not used by tracking".
+  Still open: the measured 50x pixel size.
 - **Q3.02 (F3.02)** Does the Z scan start at the current focus and go up, and is the bead expected to be in focus at
   the start or in the middle of the scan?
 - **Q3.05 (F3.04)** Do you choose the bandpass and forget radius by hand during calibration? What do the three numbers
@@ -91,8 +91,15 @@ here; they are the `unknown — needs VI read` entries in the step files and in 
   `Start Moving?` mean?
 - **Q4.09 (F4.09)** What does `Correction Factor` correct (the oil/water index note of the `.tra` header?), and which
   value do you use?
+  *Partly answered (owner 2026-10-22):* the focal-shift (refractive-index) factor, 0.88 in use, believed to be the
+  oil-to-water correction; kept as a preset value with its source, z stored uncorrected and corrected
+  ([ui-requirements.md](ui-requirements.md) U13, [rig-facts.md](../rig-facts.md)). Still open: whether `Correction
+  Factor` in the VI is exactly this factor.
 - **Q4.10 (F4.10)** Is the live force–extension (WLC) display used during runs? Which magnet / bead does
   `Magnet2Force v3_for M270` describe? What do `Value 2` and `Value 3` show?
+  *Partly answered (owner 2026-10-22):* the LabVIEW expected-WLC line is used but is not extensible, so the owner wants
+  an eWLC fit on a selected range ([ui-requirements.md](ui-requirements.md) U12); the bead is M-270 amine, 2.8 µm
+  ([rig-facts.md](../rig-facts.md)). Still open: `Value 2` / `Value 3`.
 - **Q4.11 (F4.11)** Is the nominal 2,000,000 rows per `.tra` file and the `cal…` → `tra…` naming fixed by your
   analysis scripts?
 
@@ -108,3 +115,6 @@ here; they are the `unknown — needs VI read` entries in the step files and in 
 
 - **Q-F1 ([../format/hdf5-v1.md](../format/hdf5-v1.md))** Which fields of the HDF5 draft do you need first? Should
   command and event logs (schedule steps, button presses) be in the data file?
+  *Partly answered (owner 2026-10-22/23):* yes for events — re-zero and excluded segments (U14), device and run
+  metadata (U16) and applied protocol edits (U18) are recorded as events in the data
+  ([ui-requirements.md](ui-requirements.md)). Still open: which fields are needed first.

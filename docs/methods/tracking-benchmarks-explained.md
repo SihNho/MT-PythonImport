@@ -26,9 +26,9 @@ to the references at the end.
 ## 2. How the current tracker works
 For every bead and every frame (decision 0003; code `src/mtpy/track.py`):
 
-1. **Cut a window** of 144 × 144 px around the bead's previous position.
+1. **Cut a window:** a 144 × 144 px window with 120 px cross profiles, around the bead's previous position.
 2. **XY - mirrored profile correlation** [1, 6, 7]. A bead image is round, so it is symmetric about its centre. The
-   program averages a horizontal and a vertical band (10 px wide) through the window into two 1-D profiles, removes
+   program averages a horizontal and a vertical band (10 px wide, 120 px long: the cross profiles) through the window into two 1-D profiles, removes
    the baseline and multiplies by a window function. Correlating a profile with its own mirror image (done with an
    FFT) gives a peak whose position is twice the distance from the window centre to the bead centre.
 3. **Sub-pixel peak - parabola fit.** A parabola through the 5 points around the peak gives the peak to a fraction of
@@ -71,7 +71,8 @@ The XY step and the Z step were left unchanged, so only the radial profile diffe
 ## 4. How it was tested
 
 ### 4.1 Recorded data (replay)
-The fixture recording (2026-09-06, 50x, 90 Hz, 10,043 frames, 5 beads) was tracked again with each variant; each
+The fixture recording (2026-09-06, 50x, 90 Hz, 10,043 tracked frames (10,044 image files; the last file, `img11825`, is not in
+the LabVIEW trace), 5 beads) was tracked again with each variant; each
 variant feeds its own result to the next frame, as the program does. **Bead 1 is the reference bead** (stuck to the
 surface; it does not follow the magnet). Measures:
 - **Frame-to-frame noise**: standard deviation of the differences between successive frames, divided by √2. For a

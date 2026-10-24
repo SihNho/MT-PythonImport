@@ -16,3 +16,7 @@ Owner: "분석은 Matlab에서 하는 것이 기본. 다만, 현장에서 기본
 
 ## Consequences
 - No result computed only in the GUI: anything shown on screen can be reproduced from the saved data by the library.
+
+## Later notes (not changes to the decision)
+- The FRET pipeline and the merged MATLAB package (MT + FRET) extend this decision:
+  [ui-requirements.md](../spec/ui-requirements.md) U28.

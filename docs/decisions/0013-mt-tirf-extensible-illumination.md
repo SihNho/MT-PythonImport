@@ -15,6 +15,12 @@ excitation; to be confirmed.)
    stoichiometry, ...), so a new method does not change the core program.
 
 ## Open (to discuss)
-- Lasers and wavelengths; whether each OBIS unit accepts the digital modulation needed (check `docs/manuals/coherent-obis.md`).
+- ~~Lasers and wavelengths~~ answered: **532 nm and 637 nm** ([rig-facts.md](../rig-facts.md), MT-TIRF optical
+  layout). Still open: whether each OBIS unit accepts the digital modulation needed (check `docs/manuals/coherent-obis.md`).
 - How the EMCCD image is split into donor / acceptor channels and how channels are registered.
 - Exposure and laser-on timing, photobleaching management, the experiment flow with fluorescence.
+
+## Later notes (not changes to the decision)
+- Requirements that build on this decision ([ui-requirements.md](../spec/ui-requirements.md)): U22 (mapping /
+  channel registration), U24 (shutter and laser control, illumination sequence editor), U28 (FRET pipeline; the
+  red-excited frames are a FRET correction per the owner, not ALEX), U36 (flexible fluorescence measurements).

@@ -6,7 +6,7 @@
 It is a classic Gosse & Croquette (2002) style tracker. The code lineage appears to come from the Saleh lab LabVIEW code.
 
 Per bead, per frame:
-1. **Cut a square around the previous position** (cross size 120).
+1. **Cut a square around the previous position** (a 144 × 144 px window; cross profiles 120 px).
 2. **XY:**
    - average a horizontal and a vertical band through the centre into two 1D profiles;
    - remove the baseline and apply a window;

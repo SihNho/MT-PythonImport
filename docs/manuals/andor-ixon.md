@@ -86,7 +86,8 @@ file bytes on 2026-10-22, no LabVIEW; **names only - its wiring was never read**
 
 ## Open questions for the owner
 
-1. The exact iXon model and cooling (air or liquid)?
+1. ~~The exact iXon model~~ answered: **iXon Ultra 897** (owner's optical schematic, see the table above). Still
+   open: cooling (air or liquid)?
 2. Which trigger mode (External, External Exposure, or Frame Transfer + External)? It decides what k means.
 3. Voltage levels: Arduino D9 is 5 V TTL; does the iXon EXT TRIG input accept it as wired?
 4. Is the 4.4 VI's EMCCD set-up (gain, speeds, temperature) the reference for the port, and should its wiring be read?
