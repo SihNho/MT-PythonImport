@@ -355,6 +355,84 @@ checked separately in phases 6/7):**
   on an emergency stop; read back the segment end loss (`end_loss`) if IMAQdx can report it.
 - **WP6:** a camera reconnect as a segment end; the `mtpy.api` <-> `mtpy.devices` circular import; long runs.
 
+**Carried (agreed in l2s-wp3-r2):**
+- **WP4 (a) - done in WP4:** the writer refuses a recording-on event missing any of the four settings (roi, rate_Hz,
+  exposure_ms, gain_dB): `RecordingRefused`, no file opened, no recording or segment started from it.
+- **WP4 (b) - done in WP4:** recording-on precedes the acquisition-start event in arrival; the writer assumes no
+  arrival order between recording-on, acquisition start, segment events and frames (both orders tested).
+- **Driver / WP6 (d) - not implemented:** a `stop_acquisition` failure still clears `_pipe` (`_finish` runs
+  `pipe.stop` in `finally`); whether the camera really stopped must be checked separately (read `acquiring()` after
+  the failed stop and show it).
+- **WP6 / U23 - not implemented:** store the ROI at bead selection and compare its origin at `acq.start` (today
+  `start` checks the size only; a moved origin while stopped is not caught).
+
+**Implemented in WP4 (2026-10-24, `api.VERSION = "0.4.0"`, simulators and files only):**
+- `mtpy.data.HDF5Writer(path, beads=None, roles=None, metadata=None, flush_frames=150, flush_s=1.0)` implements
+  `ResultSink`; `api.acq.start(..., folder=..., roles=...)` builds it for `<folder>/<name>.h5` when no `sink` is given
+  (an existing file is refused, `NotReady`; it stores the camera identity and settings at start). The file is opened
+  at the first **accepted** recording-on event, never before; frames and events that arrive earlier are held in
+  memory (frames bounded by `max_pending`, default 20000) and written then.
+- **Arrival order:** nothing is inferred from it. Segment rows are merged from the recording-on `segment_info`, the
+  segment begin / end events and the frame records (start settings: first value received; counters: the segment-end
+  event is final; the segment's own `start_pc_s` is preferred to the begin event's log time). Recording rows pair each
+  on with the first off after it by event time. The same items in both orders give the same `/mt` and `/segments`
+  (test).
+- **Refusal (carry a):** `RecordingRefused` (a `NotReady`) from `write_event`; the pipeline shows it as
+  `sink_error` / `sink_failures` in `api.acq.status()`; the refusal is kept in `writer.refused` and, once a file
+  exists, written to `/events/writer_refused` (root attribute `recordings_refused`). Frames no accepted recording-on
+  covers raise `RecordingRefused` at close (count in `writer.unwritten_frames`), never dropped silently.
+- **Rate never missing (U15):** every `/segments` row has `rate_Hz` (read back: from the segment events or the
+  recording-on snapshot, else from the frame records, which carry the same read-back; `settings_source` says which),
+  `rate_Hz_measured` (recorded frames' `t_camera` and buffer numbers), `roi`, `exposure_ms` and `gain_dB` in force
+  at the segment's first recorded frame, and `settings` (JSON: every known value with time and source, changes during
+  the segment). Setting changes recorded while recording (`act` read-backs of camera settings, preset read-backs,
+  segment begins) are spliced in by event time. `/metadata/run/frame_rate_hz` = preset / read back / measured of the
+  first recorded segment, attribute `warning` when they disagree or the rate changes between segments.
+- **Drops and gaps:** a pipeline drop is a `/mt` row with `dropped = 1` and NaN positions; a camera gap is
+  `lost_before` on the next row; per segment `frames_dropped`, `camera_gaps` (recorded rows) and
+  `pipeline_drops_segment`, `camera_gaps_segment`, `frames_received` (whole segment, from the end event; -1 before
+  it); `end_loss = -1` (unknown). A frame whose tracking raised has `track_error = 1` and a
+  `/events/writer_tracking_error` row.
+- **Magnet / rotor:** `magnet_mm` / `rotor_deg` per frame are the last `act` read-back of `magnet_position_mm` /
+  `rotor_turns` (x 360) logged before the frame's PC receive time, filled at flush (so a reading that arrives late,
+  but before the flush, is still used), with its time in `magnet_t` / `rotor_t`. NaN before the first reading: there
+  is no motor polling thread yet (WP6), so between moves the value is the last move's read-back.
+- **Crash bound:** rows are buffered in memory and written only at a flush (every `flush_frames` rows or `flush_s`
+  seconds, checked at each write, and at close); between flushes the HDF5 file is not touched. A crash loses at most
+  the rows since the last flush: at most 150 frames (1 s at 150 Hz) and, while frames arrive, about 1 s. Tested by a
+  subprocess killed with `os._exit` after a flush plus 40 unflushed frames: the file opens, holds exactly the flushed
+  100 rows, `closed_cleanly = 0`. Not tested: a crash during a flush itself (the file may then need repair; open
+  item 1 of hdf5-v1.md - plain chunked HDF5 with periodic flush, option (c), is what is implemented, without a repair
+  tool). No SWMR (event tables are created when a kind first appears, which SWMR does not allow).
+- **Readers / export:** `mtpy.data.read_run(path)` (nested dicts, JSON columns parsed), `legacy_matrix(path)`
+  (`.tra` columns per segment), `export_tra(path, base=None, nominal=2_000_000)` (tracked rows only; frame =
+  buffer - segment first buffer; one series per segment when there are several: `<base>-s<k>-000`; header by
+  `lvfiles.tra_header` with the local start time and the `.cal` path), `export_cal(path, out)` (the `.cal` bytes stored
+  in the file, checked by sha256; byte-identical to the fixture `cal002`, test). `api.data.open_run(path)`,
+  `api.data.export("tra" | "cal", path, out)`. MATLAB: `matlab/read_mtpy_h5.m` (`[data, run]`: legacy matrix and
+  every group); **not run in MATLAB** (none here) - the datasets it names are checked from Python.
+- **Bead roles:** `roles` given -> `role_source = "user"`; else the `.cal` exp/ref flag (0 -> `reference`,
+  1 -> `tethered`, `role_source` says the meaning is inferred); else `candidate` / `not set`. The `.cal` is read from
+  `beads.source` or the acquisition-start event's `cal`.
+- **Deviations from docs/format/hdf5-v1.md** (the draft is updated to match; schema_version stays "1.0" while the
+  draft is not fixed): new groups `/segments` and `/recordings`; `/mt` gains `segment`, `dropped`, `track_error`,
+  `track_ms`; `/mt/frame` is not stored (buffer numbers restart per segment: frame = `buffer_number` -
+  `/segments/first_buffer`); `t_camera` is float64 seconds with attribute `source` (no camera ticks: the JAI has no
+  timestamp, 0005); event tables keep the common columns plus `segment`, `request`, `readback` and `data` (JSON of
+  the event's own fields) instead of one dataset per own column, and `buffer_number` is int64 with -1 when the event
+  carries none (only events with a frame position carry one; arrival order is not used to guess); event kinds are
+  the `api.events` kinds (`act`, `refused`, `recording`, `segment`, `acquisition`, `mark`, `guarded_change`, ...),
+  plus the writer's `writer_refused` and `writer_tracking_error`. Not written yet (no source in WP3/WP4): `focus_pos`,
+  `cal_slice`, `reseed`, `autofocus_move`, `protocol_*`, `clamp_state`, `emccd_frame`, `light_state`,
+  `/fluorescence`, `/derived`, `/metadata/presets` content (only what `metadata=` passes), `git_commit`,
+  `legacy_tra_files` (stays empty: export does not modify the data file). `/metadata/calibration` adds `cal_bytes`,
+  `n_slices`, `date`, `path`.
+- **Open for the owner:** HDF5 field names (`/segments`, `/recordings`, the event `data` column); whether event own
+  columns must be separate datasets for MATLAB; `.tra` export of a multi-segment run (one series per segment, or one
+  file with a running frame number); whether magnet / rotor need a polling thread (LabVIEW reads them every frame)
+  before `.tra` column 1-2 match LabVIEW's meaning; how storage errors during recording are stored (now: only
+  `api.acq.status()` `sink_error`, the file may not be writable).
+
 ## 4. Example: the enzyme-cleavage experiment as a Python experiment script (level 3)
 ```python
 from mtpy import api   # api.VERSION >= 0.1

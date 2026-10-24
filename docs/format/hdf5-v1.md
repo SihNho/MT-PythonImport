@@ -13,6 +13,13 @@ protocol engine; per-spot raw fluorescence signals. **Still draft:** field names
 fluorescence spot layout are proposals; nothing here is fixed until the owner agrees and a reader / writer passes
 its tests. Open items are at the end.
 
+**Updated 2026-10-24 (WP4, first writer):** what `mtpy.data.HDF5Writer` writes now and every difference from this
+draft is listed in [api.md](../design/api.md) "Implemented in WP4". Changes made to this page by WP4: the new
+`/segments` and `/recordings` groups; `/mt` columns `segment`, `dropped`, `track_error`, `track_ms`; `/mt/frame`
+derived, not stored; `t_camera` in seconds; event tables with `segment`, `request`, `readback`, `data` (JSON) columns;
+`/metadata/calibration/cal_bytes`; crash tolerance option (c) implemented (open item 1). `schema_version` stays "1.0"
+while this page is a draft.
+
 ## Conventions
 
 - File name: the `.tra` base name with `.h5` (e.g. `tra002.h5`); one file per run, not split.
@@ -129,11 +136,15 @@ only devices present in the run.
 
 | dataset | dtype | unit | meaning | source |
 |---|---|---|---|---|
-| `buffer_number` | uint64 | 1 | absolute camera buffer number (decision 0005) | camera driver |
-| `frame` | int64 | 1 | `buffer_number − first buffer number` — identical to `.tra` column 0 | computed |
-| `lost_before` | uint32 | 1 | frames lost between this row and the previous one (0 = none) | buffer numbers |
-| `t_host` | float64 | s | host clock when the frame was received, from the run start | host clock |
-| `t_camera` | uint64 | camera ticks | the camera's own per-frame timestamp (U15: with `buffer_number` it keeps the frame rate recoverable); attribute `tick_hz`. If the camera gives none (the JAI SP-5000M-USB has no hardware timestamp feature, decision 0005), the driver's per-buffer timestamp is stored and the attribute `source` says which (*open*: tick unit) | camera driver |
+| `buffer_number` | uint64 | 1 | original camera buffer number (decision 0005); it restarts at 0 in every acquisition segment (WP3 frame contract), so it is unique only together with `segment` | camera driver |
+| `segment` | int32 | 1 | acquisition segment (row of `/segments`) — *added in WP4* | pipeline |
+| `frame` | — | 1 | **not stored (WP4)**: `buffer_number − /segments/first_buffer` of its segment = `.tra` column 0 (readers and the `.tra` export compute it) | computed |
+| `lost_before` | uint32 | 1 | camera-side frames lost between this row and the previous received one (0 = none) | buffer numbers |
+| `dropped` | uint8 | 1 | 1 = pipeline drop (received, dropped from the full ring, never tracked; positions NaN) — *added in WP4* | pipeline |
+| `track_error` | uint8 | 1 | 1 = tracking raised on this frame (positions NaN) — *added in WP4* | pipeline |
+| `track_ms` | float64 | ms | tracking time of the frame — *added in WP4* | pipeline |
+| `t_host` | float64 | s | host clock when the frame was received, from the run start (root attribute `t0_unix`) | host clock |
+| `t_camera` | float64 | s | the camera-side frame time (U15: with `buffer_number` it keeps the frame rate recoverable); attribute `source` names the clock. The JAI SP-5000M-USB has no hardware timestamp (decision 0005), so the real driver stores PC receive time; the simulator its own clock. *WP4: seconds, not camera ticks* | camera driver |
 | `magnet_mm` | float64 | mm | last magnet position read — identical to `.tra` column 1. **This is the raw record; force is never stored as raw** (0010), only in `/derived` with the table id | motor thread |
 | `magnet_t` | float64 | s | host time of that magnet reading | motor thread |
 | `rotor_deg` | float64 | deg | last rotor angle read (signed) — `.tra` column 2 | rotor thread |
@@ -153,6 +164,23 @@ only devices present in the run.
 | `clamp_state` | uint8 | 1 | LabVIEW-compatible scheduler state; dataset absent when the general engine runs (enum stored as attribute `states`; names fixed after Q4.08) | scheduler |
 | `emccd_frame` | int64 | 1 | EMCCD frame exposed during this JAI frame, −1 if none | sync (decision 0005) |
 | `light_state` | uint8 | 1 | bit mask of the lights on during this frame, from the illumination sequence actually executed (bit order in attribute `lights`, e.g. `["532", "637"]`) (U24) | sync / sequence |
+
+## `/segments` — one row per acquisition segment (*added in WP4*)
+
+Every acquisition start (also the restart after a "needs a short pause" change, U17) begins a segment. The table is
+rebuilt at every flush from everything received (recording-on snapshot, segment begin / end events, frame records),
+so it never depends on arrival order. Columns: `number`, `reason`, `t_start`, `t_end`, `pc_gap_s`, `rate_Hz` (read
+back, U15: never missing), `rate_Hz_measured`, `roi` int32 `[4]`, `exposure_ms` and `gain_dB` (in force at the
+segment's first recorded frame), `settings` (JSON: values with time and source, changes during the segment),
+`settings_source`, `t_source`, `first_buffer`, `last_buffer`, `frames_received`, `frames_recorded`, `frames_dropped`,
+`camera_gaps`, `camera_gaps_segment`, `pipeline_drops_segment`, `tracking_errors`, `end_loss` (-1 = unknown, never 0
+unless confirmed). -1 marks an unknown integer, NaN an unknown float. Each dataset has `unit` and `description`.
+
+## `/recordings` — one row per accepted recording-on (*added in WP4*)
+
+`name`, `event_id_on`, `t_on`, `t_off`, `on_segment` / `on_buffer` (the last frame received before recording on;
+recorded frames come after it), `off_segment` / `off_buffer`, `settings` (JSON: roi, rate_Hz, exposure_ms, gain_dB
+read back at recording on; a recording-on without all four is refused and no row is written).
 
 ## `/fluorescence` — one row per EMCCD frame (absent without an EMCCD)
 
@@ -208,6 +236,13 @@ Common columns in every table:
 | `caller` | string | — | who caused it: GUI user name, script / plug-in name, protocol, AI gateway (0014), device service |
 | `supersedes` | int64 | 1 | event replaced by this one, −1 if none |
 | `note` | string | — | free text |
+| `segment` | int32 | 1 | segment of `buffer_number`, −1 if none — *added in WP4* |
+| `request`, `readback`, `data` | string (JSON) | — | the `api.events` request, read-back and the event's own fields — *WP4: the own columns below are kept in `data` for now, not as separate datasets* |
+
+*WP4:* `buffer_number` is int64 with −1 when the event carries no frame position (the writer never guesses one from
+arrival order); `event_id` is the order of arrival at the writer, not event order. The tables are the `api.events`
+kinds as logged (`act`, `refused`, `recording`, `segment`, `acquisition`, `mark`, `guarded_change`, ...) plus the
+writer's `writer_refused` and `writer_tracking_error`; the named tables below are the target.
 
 Tables and their own columns:
 
@@ -244,6 +279,10 @@ needs them.
 1. **Crash tolerance — undecided** (decision 0006 item 5). Options: (a) HDF5 SWMR mode with a flush every N frames;
    (b) an append-only raw binary stream during the run, converted to HDF5 at the end and on recovery; (c) plain
    chunked HDF5 with periodic `flush` plus a repair step. To be chosen with a crash test in phase 5.
+   **WP4:** (c) is implemented without a repair step: rows are buffered in memory and written only at a flush
+   (every 150 rows or 1 s, and at close), so a crash loses at most the rows since the last flush; a subprocess
+   killed after a flush left a readable file with exactly the flushed rows (`closed_cleanly = 0`). A crash during a
+   flush itself is not tested; SWMR is not used (event tables are created on first use).
 2. Per-bead ROI images (decision 0006 item 6) — not in v1.
 3. ~~A command / event log — needed?~~ **Resolved** by the owner's requirements: re-zero / exclusion events (U14),
    device errors (U8), mid-run protocol edits (U18), light changes (U24) and setting changes (U17) are all stored with

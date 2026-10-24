@@ -50,12 +50,14 @@ def _seg_event(action, seg):
                    end_loss="unknown" if seg.end_loss is None else seg.end_loss)
 
 
-def start(record=False, name=None, sink=None, ring_capacity=64):
+def start(record=False, name=None, sink=None, ring_capacity=64, folder=None, roles=None):
     """Start acquisition (and tracking of the selected beads, if any). record=True also starts recording.
 
-    name: the run name (used by the WP4 writer). sink: a `mtpy.acq.ResultSink`; None -> an in-memory sink until the
-    WP4 writer exists (read it with `api.acq.sink()`). NotReady if acquisition already runs, the camera is not
-    connected or the selected beads do not fit the camera ROI. Returns status()."""
+    name: the run name. sink: a `mtpy.acq.ResultSink`. folder (WP4): with no sink given, the recorded data go to the
+    HDF5 v1 file `<folder>/<name>.h5` (`mtpy.data.HDF5Writer`; name None -> `run_<local time>`; an existing file is
+    refused, NotReady); roles: {bead_id: "reference" | "tethered" | "candidate"} for that file. Neither sink nor
+    folder -> an in-memory sink (read it with `api.acq.sink()`). NotReady if acquisition already runs, the camera is
+    not connected or the selected beads do not fit the camera ROI. Returns status()."""
     global _pipe, _svc
     if _pipe is not None:
         raise NotReady("acquisition is already running")
@@ -65,6 +67,8 @@ def start(record=False, name=None, sink=None, ring_capacity=64):
         raise NotReady("the camera is already acquiring outside api.acq")
     beads = _beads.selected()
     s = svc.call(dev.settings, what="read settings")
+    if sink is None and folder is not None:
+        sink = _hdf5_sink(folder, name, beads, roles, svc, dev, s)
     kernel = None
     if beads is not None:
         _, _, w, h = s["roi"]
@@ -89,6 +93,24 @@ def start(record=False, name=None, sink=None, ring_capacity=64):
         _finish()
         raise
     return status()
+
+
+def _hdf5_sink(folder, name, beads, roles, svc, dev, settings):
+    """The WP4 writer for start(folder=...): file name, beads and the camera's identity / settings at start."""
+    import time
+    from pathlib import Path
+
+    from mtpy.data import HDF5Writer
+    name = name or time.strftime("run_%Y%m%d_%H%M%S")
+    path = Path(folder) / f"{name}.h5"
+    if path.exists():
+        raise NotReady(f"{path} exists; choose another run name (a data file is never overwritten)")
+    try:
+        identity = svc.call(dev.identity, what="identity")
+    except Exception as e:  # noqa: BLE001 - identity is metadata; its absence is recorded, acquisition goes on
+        identity = {"error": f"{type(e).__name__}: {e}"}
+    meta = {"devices": {"jai": {"identity": identity, "settings_at_start": settings}}}
+    return HDF5Writer(path, beads=beads, roles=roles, metadata=meta)
 
 
 def _finish(timeout_s=10.0):

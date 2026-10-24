@@ -3,7 +3,7 @@ name = "mtpy"
 version = "0.0.1"
 description = "Python port of the Kim Lab magnetic-tweezers tracking and experiment-control program"
 requires-python = ">=3.10"
-dependencies = ["numpy"]
+dependencies = ["numpy", "h5py>=3.8"]
 
 [project.optional-dependencies]
 fast = ["numba", "rocket-fft"]
