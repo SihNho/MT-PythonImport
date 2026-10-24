@@ -28,6 +28,7 @@ _pipe = None          # the running Pipeline
 _last = None          # the last finished one (status, sink and latest stay readable after stop)
 _svc = None           # the camera service of the running acquisition
 _make_kernel = make_kernel
+SNAPSHOT_FIELDS = ("roi", "rate_Hz", "exposure_ms", "gain_dB")   # = api.camera.PRESET_FIELDS (no import: cycle)
 
 
 def running():
@@ -79,7 +80,7 @@ def start(record=False, name=None, sink=None, ring_capacity=64):
     try:
         seg = pipe.begin_segment(s)
         if record:
-            set_recording(True, name)
+            set_recording(True, name, _settings=s)       # the read above is the snapshot: nothing ran in between
         events.log("acquisition", action="start", name=name, record=bool(record),
                    beads=list(pipe.bead_ids), cal=beads.source if beads is not None else None)
         _seg_event("begin", seg)
@@ -90,46 +91,83 @@ def start(record=False, name=None, sink=None, ring_capacity=64):
     return status()
 
 
-def _finish():
+def _finish(timeout_s=10.0):
     global _pipe, _last, _svc
     pipe = _pipe
+    done = False
     try:
-        try:
-            _svc.call(_svc.device.stop_acquisition, what="stop acquisition")
-        finally:
-            _seg_event("end", pipe.end_segment())
-            events.log("acquisition", action="stop", frames_received=pipe.frames_received,
-                       pipeline_drops=sum(s.pipeline_drops for s in pipe.segments),
-                       camera_gaps=sum(s.camera_gaps for s in pipe.segments))
-            if pipe.recording:
-                set_recording(False)
+        if pipe.stop_state is None:               # first stop: camera, segment end, recording off (once)
+            try:
+                _svc.call(_svc.device.stop_acquisition, what="stop acquisition")
+            finally:
+                _seg_event("end", pipe.end_segment())
+                events.log("acquisition", action="stop", frames_received=pipe.frames_received,
+                           pipeline_drops=sum(s.pipeline_drops for s in pipe.segments),
+                           camera_gaps=sum(s.camera_gaps for s in pipe.segments))
+                if pipe.recording:
+                    set_recording(False)
     finally:
-        pipe.stop()
-        _pipe, _last, _svc = None, pipe, None
+        done = pipe.stop(timeout_s)
+        if done:
+            _pipe, _last, _svc = None, pipe, None
+        else:                                     # keep _pipe: inspect it (status) or call stop() again
+            events.log("acquisition", action="stop incomplete", state=pipe.stop_state,
+                       frames_received=pipe.frames_received, frames_tracked=pipe.frames_tracked,
+                       ring_fill=len(pipe.ring))
+    return done
 
 
-def stop():
+def stop(timeout_s=10.0):
     """Stop acquisition (and recording); the worker finishes the frames already received, the sink is flushed and
-    closed. Returns the final status()."""
+    closed. Returns the final status(); its `stop` is "complete" when everything was drained into the sink.
+
+    Review l2s-wp3-r1: when a thread (worker or sink) is still busy after timeout_s, the stop is incomplete:
+    status() shows `running: True` and `stop: "incomplete: ..."`, an `acquisition` event (action "stop incomplete")
+    is logged, the sink is NOT closed and the pipeline is kept; call stop() again to finish (the camera is already
+    stopped and recording already off, so only the draining is resumed)."""
     _require()
-    _finish()
+    _finish(timeout_s)
     return status()
 
 
-def set_recording(on, name=None):
+def _settings_snapshot(name, settings=None):
+    """The camera settings read back now (roi, rate_Hz, exposure_ms, gain_dB) for a recording-on event. A failed
+    read refuses the recording (U15 / 0006: settings are stored as read back, never missing): a `refused` event and
+    NotReady; acquisition and display keep running."""
+    if settings is None:
+        try:
+            settings = _svc.call(_svc.device.settings, what="read settings")
+        except Exception as e:                    # any failed read refuses the recording
+            reason = f"camera settings could not be read back ({type(e).__name__}: {e}); recording not started"
+            events.log("refused", request={"recording": "on", "name": name}, reason=reason)
+            raise NotReady(f"{reason}; acquisition keeps running, try again") from e
+    return {k: tuple(settings[k]) if k == "roi" else settings[k] for k in SNAPSHOT_FIELDS if k in settings}
+
+
+def set_recording(on, name=None, _settings=None):
     """Turn recording on or off while acquisition runs (exploration without recording, U17). Logs a `recording`
     event with the last frame received before the change (`buffer_number`): with on, frames after it are recorded;
-    with off, frames up to it. The sink receives both events. Returns the flag."""
+    with off, frames up to it. The sink receives both events. Returns the flag.
+
+    Every `on` event also carries `segment_info` (the current segment, `Segment.as_dict()`; the key `segment` stays
+    the segment number, as in every event with a frame position) and `settings` (roi, rate_Hz,
+    exposure_ms, gain_dB read back from the camera at that moment). The read comes first and the flag is set only
+    after it succeeded; if it fails, recording stays off: NotReady with a `refused` event, acquisition and display
+    keep running (review l2s-wp3-r1)."""
     pipe = _require()
     on = bool(on)
     if on == pipe.recording:
         return on
+    if on and pipe.stop_state is not None:
+        raise NotReady(f"acquisition is stopping ({pipe.stop_state}); recording cannot start; call api.acq.stop()")
+    snap = _settings_snapshot(name, _settings) if on else None
     for svc in _services.values():
         svc.recording = on                    # 'guarded while recording' settings need confirm=True while on
-    last = pipe.set_recording(on)
-    ev = events.log("recording", action="on" if on else "off", name=name, **last)
-    if not on:
-        pipe.forward(ev)                      # logged after the flag was cleared, so not forwarded by itself
+    last, seg = pipe.set_recording(on)
+    if on:
+        events.log("recording", action="on", name=name, segment_info=seg, settings=snap, **last)
+    else:
+        pipe.forward(events.log("recording", action="off", name=name, **last))   # flag already cleared
     return on
 
 
@@ -169,6 +207,23 @@ def display():
 
 
 # --- hooks for api.camera: the "needs a short pause" restart opens a new segment --------------------------------------
+def _roi_refusal(roi, current_roi):
+    """Why the ROI `roi` (x, y, w, h) cannot replace `current_roi` while the selected beads are tracked, or None.
+    Bead positions are image (ROI) pixels and are not translated (review l2s-wp3-r1), so a moved ROI origin would
+    point every bead at other sensor pixels, and a smaller ROI must still hold every bead's tracking window."""
+    pipe = _pipe
+    if pipe is None or pipe.beads is None or roi is None:
+        return None
+    x, y, w, h = roi
+    if (x, y) != tuple(current_roi[:2]):
+        return (f"ROI origin {tuple(current_roi[:2])} -> {(x, y)} while beads {list(pipe.bead_ids)} are tracked: "
+                "bead positions are ROI pixels and are not translated; stop acquisition and select beads again")
+    if not pipe.beads.fit((h, w)):
+        return (f"ROI {w} x {h} does not hold the tracking windows of beads {list(pipe.bead_ids)}; stop acquisition "
+                "and select beads again")
+    return None
+
+
 def _camera_paused():
     if _pipe is not None:
         _seg_event("end", _pipe.end_segment())

@@ -28,6 +28,14 @@ def _guard(svc, dev, names, value, confirm):
         events.log("guarded_change", device="camera", settings=guarded, value=value)
 
 
+def _beads_fit(roi, current_roi):
+    """Refuse (SafetyRefused, logged as `refused` by precheck) an ROI that does not suit the beads being tracked:
+    checked in precheck, so before the camera stops (review l2s-wp3-r1)."""
+    why = acq._roi_refusal(roi, current_roi)
+    if why is not None:
+        raise SafetyRefused(f"camera {why}")
+
+
 def _run(svc, dev, names, act):
     """Run act() inside a pause when a 'needs a short pause' setting changes during acquisition."""
     if not (any(dev.settings_kinds[n][0] == NEEDS_PAUSE for n in names)
@@ -50,6 +58,7 @@ def _set(name, value, confirm=False):
 
     def check(v):
         dev.check_setting(name, v, s["rate_Hz"], s["exposure_ms"])
+        _beads_fit(v if name == "roi" else None, s["roi"])
         return True
     quantity, tol = f"camera_{name}", dev.tol(name, value)
     match = (lambda got: tuple(got) == tuple(value)) if name == "roi" else None
@@ -101,6 +110,7 @@ def apply_preset(preset, confirm=False):
             raise SafetyRefused(f"camera preset needs a 'name' and only the fields {PRESET_FIELDS}; got {sorted(preset)}")
         for k, x in v.items():
             dev.check_setting(k, x, rate, exp)
+        _beads_fit(v.get("roi"), s["roi"])
         return True
 
     shorter = isinstance(exp, (int, float)) and exp <= s["exposure_ms"]

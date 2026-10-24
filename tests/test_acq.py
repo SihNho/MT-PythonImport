@@ -9,7 +9,7 @@ from conftest import FIXTURE, need
 from test_devices import _config
 
 from mtpy import api
-from mtpy.acq import Beads, FrameRing
+from mtpy.acq import Beads, FrameRing, MemorySink
 from mtpy.api import estop, events
 from mtpy.api.errors import NotReady, SafetyRefused
 from mtpy.track import Tracker
@@ -230,6 +230,170 @@ def test_estop_stops_motion_acquisition_continues(cam):
     kinds = [e.kind for e in api.acq.sink().events]
     assert "estop" in kinds and "cancelled" in kinds
     assert api.acq.sink().frames[-1].record.buffer_number > n0
+
+
+# --- review l2s-wp3-r1 fixes ------------------------------------------------------------------------------------------
+class StubKernel:
+    """Stands in for FastKernel: returns the input positions after `delay_s`."""
+
+    def __init__(self, delay_s=0.0):
+        self.delay_s = delay_s
+
+    def track(self, image, xin, yin, good_in):
+        if self.delay_s:
+            time.sleep(self.delay_s)
+        n = len(xin)
+        return np.column_stack([xin, yin, np.zeros(n)]).astype(float), np.zeros(n, dtype=np.int64), np.ones(n, bool)
+
+
+def _stub_beads(monkeypatch, delay_s=0.0):
+    """One bead at (640, 512), cross 120 -> tracking window half-size 72 px."""
+    monkeypatch.setattr(api.acq, "_make_kernel", lambda beads: StubKernel(delay_s))
+    monkeypatch.setattr(api.beads, "_selected", Beads((1,), np.array([[640.0, 512.0]]), [], 120, None, None, "test"))
+
+
+class SlowSink(MemorySink):
+    def write_frame(self, result):
+        time.sleep(0.05)
+        super().write_frame(result)
+
+
+def _all_buffers(res, seg):
+    return sorted(r.record.buffer_number for r in res) == list(range(seg["last_buffer"] + 1))
+
+
+def test_stop_timeout_slow_worker_keeps_incomplete_pipeline(cam, monkeypatch):
+    _stub_beads(monkeypatch, delay_s=0.3)
+    api.acq.start(record=True, ring_capacity=8)
+    api.acq.wait_frames(30, 5)
+    n = len(events.events())
+    st = api.acq.stop(timeout_s=0.1)
+    assert st["running"] and st["stop"].startswith("incomplete") and "acq-tracking" in st["stop"], st["stop"]
+    assert api.acq.running() and not api.acq.sink().closed           # no end marker sent, reference kept
+    assert not cam.device.acquiring() and not st["recording"]
+    assert any(e.kind == "acquisition" and e.extra.get("action") == "stop incomplete" for e in events.events()[n:])
+    with pytest.raises(NotReady, match="stopping"):
+        api.acq.set_recording(True)
+    with pytest.raises(NotReady, match="already running"):
+        api.acq.start()
+    st = api.acq.stop(timeout_s=30)                                   # resumes the draining
+    assert st["stop"] == "complete" and not st["running"] and not api.acq.running()
+    sink = api.acq.sink()
+    assert sink.closed and _all_buffers(sink.frames, st["segments"][0])
+    assert sum(r.dropped for r in sink.frames) == st["pipeline_drops"] == st["frames_received"] - st["frames_tracked"]
+    ends = [e for e in sink.events if e.kind == "segment" and e.extra["action"] == "end"]
+    assert len(ends) == 1 and sink.events[-1].kind == "recording" and sink.events[-1].extra["action"] == "off"
+
+
+def test_stop_timeout_slow_sink_keeps_incomplete_pipeline(cam):
+    sink = SlowSink()
+    api.acq.start(record=True, sink=sink)
+    api.acq.wait_frames(45, 5)
+    st = api.acq.stop(timeout_s=0.2)
+    assert st["running"] and "acq-sink" in st["stop"] and not sink.closed, st["stop"]
+    n_before = len(sink.frames)
+    st = api.acq.stop(timeout_s=30)
+    assert st["stop"] == "complete" and sink.closed and len(sink.frames) > n_before
+    assert _all_buffers(sink.frames, st["segments"][0]) and st["pipeline_drops"] == 0
+
+
+@pytest.mark.parametrize("change", [
+    lambda: api.camera.set_roi(8, 0, 1272, 1024),                               # ROI move (origin changes)
+    lambda: api.camera.set_roi(0, 0, 640, 512),                                 # ROI shrink: bead window outside
+    lambda: api.camera.apply_preset({"name": "moved", "roi": (0, 8, 1280, 1016)}),
+    lambda: api.camera.apply_preset({"name": "small", "roi": (0, 0, 704, 1024), "exposure_ms": 2.0}),
+], ids=["set_roi-move", "set_roi-shrink", "preset-move", "preset-shrink"])
+def test_roi_incompatible_with_beads_refused_before_stop(cam, monkeypatch, change):
+    _stub_beads(monkeypatch)
+    api.acq.start()
+    api.acq.wait_frames(10, 5)
+    n = len(events.events())
+    with pytest.raises(SafetyRefused, match="beads"):
+        change()
+    new = events.events()[n:]
+    assert [e.kind for e in new] == ["refused"], [e.kind for e in new]   # nothing paused, nothing sent
+    assert cam.device.acquiring() and cam.device.get("roi") == (0, 0, 1280, 1024)
+    assert cam.device.get("exposure_ms") == pytest.approx(1.909)
+    f0 = api.acq.status()["frames_received"]
+    api.acq.wait_frames(10, 5)
+    st = api.acq.stop()
+    assert len(st["segments"]) == 1 and st["frames_received"] > f0 and st["tracking_errors"] == 0
+
+
+def test_roi_compatible_with_beads_allowed(cam, monkeypatch):
+    _stub_beads(monkeypatch)
+    api.acq.start()
+    api.acq.wait_frames(10, 5)
+    assert api.camera.set_roi(0, 0, 1024, 1024) == (0, 0, 1024, 1024)   # same origin, bead window still inside
+    api.acq.wait_frames(10, 5)
+    st = api.acq.stop()
+    assert len(st["segments"]) == 2 and st["segments"][1]["roi"] == (0, 0, 1024, 1024) and st["tracking_errors"] == 0
+
+
+def test_recording_on_carries_segment_and_settings_read_then(cam):
+    api.acq.start(record=False)
+    api.acq.wait_frames(10, 5)
+    api.camera.set_exposure(4.0)                                  # changed while exploring (not recorded)
+    api.camera.set_gain(6.0)
+    api.acq.set_recording(True, name="r1")
+    api.acq.wait_frames(10, 5)
+    api.acq.set_recording(False)
+    api.acq.set_recording(True, name="r2")                        # every 'on' carries both again
+    api.acq.wait_frames(5, 5)
+    api.acq.stop()
+    ons = [e.extra for e in api.acq.sink().events if e.kind == "recording" and e.extra["action"] == "on"]
+    assert [o["name"] for o in ons] == ["r1", "r2"]
+    for o in ons:
+        s = o["settings"]
+        assert s["exposure_ms"] == pytest.approx(4.0) and s["gain_dB"] == pytest.approx(6.0)
+        assert s["roi"] == (0, 0, 1280, 1024) and s["rate_Hz"] == pytest.approx(90.0009, rel=1e-5)
+        seg = o["segment_info"]                                   # opened before the exposure change
+        assert seg["number"] == o["segment"] == 1 and seg["exposure_ms"] == pytest.approx(1.909)
+        assert o["segment_info"]["frames_received"] <= o["buffer_number"] + 1
+
+
+def test_start_record_reuses_the_settings_read(cam, monkeypatch):
+    dev, calls = cam.device, []
+    real = dev.settings
+    monkeypatch.setattr(dev, "settings", lambda: calls.append(1) or real())
+    for record in (False, True):
+        calls.clear()
+        api.acq.start(record=record)
+        n_start = len(calls)
+        api.acq.wait_frames(5, 5)
+        api.acq.stop()
+        assert n_start == 1, (record, n_start)                     # no second read for the snapshot
+    on = next(e.extra for e in api.acq.sink().events if e.kind == "recording")
+    assert on["settings"]["exposure_ms"] == pytest.approx(1.909) and on["segment_info"]["number"] == 1
+
+
+def test_settings_read_failure_refuses_recording_acquisition_continues(cam, monkeypatch):
+    api.acq.start(record=False)
+    api.acq.wait_frames(10, 5)
+
+    real, broken_on = cam.device.settings, [True]
+
+    def broken():
+        if broken_on[0]:
+            raise TimeoutError("no reply")
+        return real()
+    monkeypatch.setattr(cam.device, "settings", broken)
+    n = len(events.events())
+    f0 = api.acq.status()["frames_received"]
+    d0 = api.acq.status()["display_updates"]
+    with pytest.raises(NotReady, match="settings could not be read back"):
+        api.acq.set_recording(True, name="r1")
+    st = api.acq.status()
+    assert not st["recording"] and not cam.recording and st["running"]
+    refused = [e for e in events.events()[n:] if e.kind == "refused"]
+    assert len(refused) == 1 and refused[0].request == {"recording": "on", "name": "r1"}
+    assert not any(e.kind == "recording" for e in events.events()[n:])
+    api.acq.wait_frames(30, 5)
+    st = api.acq.status()
+    assert st["frames_received"] >= f0 + 30 and st["display_updates"] > d0
+    broken_on[0] = False
+    api.acq.stop()
+    assert api.acq.sink().frames == [] and api.acq.sink().events == []
 
 
 def test_select_and_start_refusals(cam):

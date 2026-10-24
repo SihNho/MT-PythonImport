@@ -287,10 +287,73 @@ checked separately in phases 6/7):**
 - **Emergency stop:** 0007 stops motion only, so acquisition and recording continue through an e-stop and `start`
   is allowed while it is engaged (the camera's `stop()` is a no-op; a real camera driver's `stop()` must stay one).
 - **Speed through the pipeline** (`tools/bench_pipeline.py`, 150 Hz sim replay, 5 s, beads repeated): tracking
-  p50 / p99 0.39 / 1.07 ms (5 beads), 0.87 / 1.51 ms (20), 2.88 / 4.11 ms (80); no drops, no gaps.
+  p50 / p99 0.39 / 1.07 ms (5 beads), 0.87 / 1.51 ms (20), 2.88 / 4.11 ms (80); no drops, no gaps. (Superseded by
+  the l2s-wp3-r1 rerun below with wall-clock rates.)
 - **Not done here:** a camera reconnect during acquisition ends the frames without a segment end (stop and start
-  acquisition again); bead positions are image (ROI) pixels, so an ROI change that moves beads out of the image
-  turns tracking off with a per-frame error until beads are selected again; per-frame uncertainty (U34).
+  acquisition again); per-frame uncertainty (U34). (The ROI change that moved beads out of the image is now refused
+  while beads are tracked: see the l2s-wp3-r1 fixes below.)
+
+**Review l2s-wp3-r1 fixes (simulators only; evidence level: unit tests on the sim camera, not the real driver):**
+- **Stop that does not finish:** `Pipeline.stop(timeout_s)` checks `is_alive()` after each join (camera thread, then
+  worker, then sink). On a timeout it returns False with `stop_state = "incomplete: <thread> still running after
+  <t> s"`; the sink's end marker is queued only after the worker ended (so a late result is never cut off) and the
+  sink is not closed. `api.acq.stop(timeout_s=10.0)` then keeps `_pipe` (status shows `running: True`,
+  `stop: "incomplete: ..."`), logs an `acquisition` event with action `stop incomplete`, refuses `start` and
+  `set_recording(True)`, and a second `stop()` resumes only the draining (the camera stop, segment end and recording
+  off ran once). A completed stop (`stop: "complete"`) means everything was drained into the sink and the sink closed.
+  Tested with a slow tracking worker (0.3 s per frame) and a slow sink (50 ms per frame).
+- **ROI changes that do not suit the tracked beads are refused before the camera stops**, in `set_roi` and
+  `apply_preset` (inside `precheck`: `SafetyRefused` + one `refused` event, nothing paused or sent). While
+  acquisition tracks beads, refused: a moved ROI origin (bead positions are ROI pixels and are NOT translated) and a
+  size that leaves a bead's tracking window (half-size `rint(0.6 * cross)`) outside the image. A smaller ROI with the
+  same origin that still holds every window is allowed (new segment as before). Not covered: an ROI moved while
+  acquisition is stopped (the `.cal` does not record its ROI; `start` checks the size only).
+- **Recording-on snapshot:** every `recording` event with action `on` carries `segment_info` (`Segment.as_dict()` of
+  the current segment, taken under the segment lock with the flag change) and `settings` (roi, rate_Hz, exposure_ms,
+  gain_dB read back from the camera at that moment). The key `segment` stays the segment number, as in every event
+  with a frame position (the review text said `segment=`; renamed so the number is not overwritten).
+  `start(record=True)` reuses the settings read it does before the camera starts (one read, nothing runs in between).
+  A setting changed while exploring (exposure, gain) is therefore in the recording although its event was not.
+- **Settings read failure (owner's choice in chat for the open item; to be re-checked in the re-review):** the read
+  comes first; if it fails, recording is refused - `NotReady` ("camera settings could not be read back ...") with the
+  device error as its cause, one `refused` event (request `{"recording": "on", "name": ...}`), the recording flag and
+  the services' `recording` flags stay off. Acquisition and the display keep running (U15: the frame rate and the
+  settings as read back are never missing from recorded data, 0006).
+- **Events stay off the worker path:** checked, unchanged. Events reach the sink queue from the thread that logs them
+  (`Pipeline._on_event`); the tracking worker only pops the ring, tracks, and queues frame results.
+- **Bench rerun** (`tools/bench_pipeline.py 5 300`, 150 Hz, 5 s after the first frame, 2026-10-24). Sources:
+  `memory` = 300 fixture frames preloaded (no file read in the camera thread), `disk` = SimCamera reading files it
+  read before (OS-cached), `disk-cold` = files read for the first time. TIFF read per frame: 7.10 ms median for
+  first-time files, 1.45 ms for cached ones (frame period 6.67 ms).
+
+  | source | beads | 1st frame / 1st result ms | received / tracked per s (wall clock) | sim producer /s | fps (sim clock) | track p50 / p99 ms | latency p50 / p99 ms | drops |
+  |---|---|---|---|---|---|---|---|---|
+  | memory | 5 | 0.40 / 1.13 | 149.1 / 149.3 | 149.2 | 149.99 | 0.34 / 0.46 | 0.69 / 1.21 | 0 |
+  | memory | 20 | 0.37 / 1.35 | 149.4 / 149.6 | 150.2 | 149.99 | 0.66 / 1.23 | 1.33 / 3.02 | 0 |
+  | memory | 80 | 0.50 / 4.32 | 149.7 / 149.9 | 149.9 | 149.99 | 2.11 / 4.04 | 4.21 / 11.36 | 0 |
+  | disk | 5 / 20 / 80 | 2.6 / 3.5, 2.1 / 3.1, 2.7 / 6.6 | 150.0, 149.4, 149.6 | 150.3, 149.5, 149.9 | 149.99 | 0.43 / 1.99, 1.11 / 1.38, 2.63 / 4.03 | 0.54 / 24.90, 1.15 / 1.51, 3.73 / 7.05 | 0 |
+  | disk-cold | 5 / 20 / 80 | 9.9 / 10.7, 7.6 / 8.9, 9.3 / 13.4 | 116.2, 113.8, 116.3 | 116.4, 114.1, 116.5 | **149.99** | 0.39 / 4.85, 0.91 / 1.96, 3.44 / 6.83 | 0.53 / 30.98, 1.04 / 2.12, 3.57 / 8.84 | 0 |
+
+  The pipeline keeps up at 150 Hz with 5, 20 and 80 beads (received = tracked = what the producer made, no drops);
+  the first frame arrives < 1 ms after the start with frames in memory. **The earlier 652 / 750 (5 beads, 5 s)** was
+  the sim camera, not the pipeline: when its producer thread reads a TIFF for the first time (7.1 ms > 6.67 ms) it
+  falls behind and makes only ~116 frames per second, while `fps_measured` still shows 149.99 because the sim clock
+  stamps each frame with its scheduled time. In that run frames 0-299 were cached by the replay tests just before
+  (2 s at 150 Hz = 300 frames) and frames 300-749 were first-time reads (3 s at ~116 Hz = ~350): 300 + 350 = ~650,
+  matching 652. Consequence: `fps_measured` from the sim clock cannot show a slow source; the wall-clock rates in
+  the bench can. (The real JAI's frame time will be PC receive time, decision 0005.)
+
+**Carried (agreed in l2s-wp3-r1):**
+- **WP4:** arrival order at the sink is not event order (frames come through the worker, events straight from the
+  logging thread): keep each event's time and identity and never infer order from arrival; aligning by PC time
+  (event `t`, frame `t_pc_s`) is for display and lookup only, not exposure-accurate (0005: the JAI has no hardware
+  timestamp; exact motor / frame alignment needs the 0005 camera reference); a `recording off` event is not a
+  file-close signal - only a completed stop means drained; splice recorded setting changes (`guarded_change`,
+  `act`, segment events) into the stored settings; how storage errors during recording are stored and shown.
+- **Real camera driver:** the display snapshot must copy the IMAQdx buffer (its lifetime ends when the driver reuses
+  it); the IMAQdx buffer-number reset rule (Start alone, or Configure needed?); the camera's `stop()` stays a no-op
+  on an emergency stop; read back the segment end loss (`end_loss`) if IMAQdx can report it.
+- **WP6:** a camera reconnect as a segment end; the `mtpy.api` <-> `mtpy.devices` circular import; long runs.
 
 ## 4. Example: the enzyme-cleavage experiment as a Python experiment script (level 3)
 ```python

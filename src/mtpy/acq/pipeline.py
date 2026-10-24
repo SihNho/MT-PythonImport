@@ -143,6 +143,7 @@ class Pipeline:
         self._latest = None
         self._cam_on, self._worker_on = threading.Event(), threading.Event()
         self._threads, self._unsubscribe = [], None
+        self.stop_state, self._out_closed = None, False   # None while running; "complete" / "incomplete: ..."
 
     # --- lifecycle ------------------------------------------------------------------------------------------------
     def start(self, subscribe=None):
@@ -158,15 +159,33 @@ class Pipeline:
             self._unsubscribe = subscribe(self._on_event)
 
     def stop(self, timeout_s=10.0):
-        """Stop the camera thread, let the worker finish the ring, flush and close the sink."""
+        """Stop the camera thread, let the worker finish the ring, flush and close the sink. Returns True when all
+        three threads ended (a completed stop = everything drained into the sink and the sink closed).
+
+        Review l2s-wp3-r1: each join is followed by an is_alive check. On a timeout the stop is **incomplete**
+        (`stop_state`, returns False): the sink's end marker is NOT queued while the worker may still produce results,
+        nothing is dropped, and the caller keeps the pipeline to inspect it or call stop() again, which resumes where
+        this one stopped (each step runs once)."""
+        cam, worker, sink = self._threads[2], self._threads[1], self._threads[0]
         self._cam_on.clear()
-        self._threads[2].join(timeout_s)
-        self._worker_on.clear()
-        self._threads[1].join(timeout_s)
+        for t, after in ((cam, self._worker_on.clear), (worker, self._close_out), (sink, None)):
+            t.join(timeout_s)
+            if t.is_alive():
+                self.stop_state = f"incomplete: {t.name} still running after {timeout_s:g} s"
+                return False
+            if after is not None:
+                after()
+        self.stop_state = "complete"
+        return True
+
+    def _close_out(self):
+        """After the worker ended: no more results can come, so the sink may get its end marker (queued once)."""
         if self._unsubscribe is not None:
             self._unsubscribe()
-        self._out.put(None)
-        self._threads[0].join(timeout_s)
+            self._unsubscribe = None
+        if not self._out_closed:
+            self._out_closed = True
+            self._out.put(None)
 
     # --- segments (called by the API around camera start / stop) ----------------------------------------------------
     def begin_segment(self, settings, reason="start"):
@@ -292,11 +311,13 @@ class Pipeline:
         return {} if seg is None else {"segment": seg.number, "buffer_number": seg.last_buffer}
 
     def set_recording(self, on):
-        """Set the recording flag between two frames; returns the last frame received before the change, so frames
-        after it (and only those) carry the new flag."""
+        """Set the recording flag between two frames. Returns (last, segment): the last frame received before the
+        change (frames after it, and only those, carry the new flag) and a copy of the current segment
+        (`Segment.as_dict()`, None before the first segment), both taken under the segment lock."""
         with self._seg_lock:
             self.recording = bool(on)
-            return self.last_record()
+            seg = self.segments[-1].as_dict() if self.segments else None
+            return self.last_record(), seg
 
     def forward(self, ev):
         """Hand one event to the sink regardless of the flag (the `recording off` event)."""
@@ -316,7 +337,8 @@ class Pipeline:
         if len(recent) >= 2 and recent[-1][1] > recent[0][1]:
             fps = (recent[-1][0] - recent[0][0]) / (recent[-1][1] - recent[0][1])
         segs = [s.as_dict() for s in self.segments]
-        return {"recording": self.recording, "segment": segs[-1]["number"] if segs else None,
+        return {"recording": self.recording, "stop": self.stop_state,
+                "segment": segs[-1]["number"] if segs else None,
                 "frames_received": self.frames_received, "frames_tracked": self.frames_tracked,
                 "fps_measured": fps, "fps_source": self.t_source,
                 "camera_gaps": sum(s["camera_gaps"] for s in segs),
