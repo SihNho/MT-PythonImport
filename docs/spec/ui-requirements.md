@@ -463,7 +463,15 @@ U34's computed dye height is used, if at all, only as a focus target.)
   not move): changes only the fluorescence focus, so the objective and bead tracking are untouched (no shock, no LUT
   shift); ms response. Costs: slight magnification change (JAI <-> EMCCD map per ETL setting or modelled), space with
   the image splitter, price (about USD 1,400-2,600 for EL-16-40 C-mount types).
-- **Open:** the defocus-vs-intensity measurement; EMCCD-side space and mount for an ETL.
+- **ETL dropped** (owner 2026-10-24): "형광 경로에 수 많은 부품들이 있고 다 기능이 있기 때문에 쉽지 않아보임. 다양한
+  notch filter, dichroic mirror, slit 등등이 형광 경로상에 위치하고 있고 그 중에 lens가 있는 것." (The slit sits at an
+  intermediate image plane; a focus-changing lens would move that plane too.)
+- **Default plan: fixed focus per sample.** Set the objective focus to the dye height once per sample, bring the beads
+  into a good image by moving the JAI camera (U31; the JAI branch is separate from the fluorescence path), calibrate,
+  and move nothing during the run. Fallback, only if the measurement below shows real loss at large force changes:
+  piezo steps between protocol segments with the mitigations above.
+- **Open:** the defocus-vs-intensity measurement (fluorescent beads or a dye sample; defocus 0, ±100, ±200, ±300,
+  ±400 nm; intensity vs ROI size) decides between the default and the fallback.
 
 **U11 - UI language.** Owner 2026-10-22: "글자는 무조건 영어." All UI text in English only.
 
