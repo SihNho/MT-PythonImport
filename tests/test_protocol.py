@@ -461,29 +461,46 @@ def test_estop_engaged_and_released_during_rotor_pre_read_sends_nothing(rig, mon
 
 
 class _SpyLock:
-    """Stands in for api.protocol._run_lock: records which thread arrived at the lock and which one holds it, around
-    `inner` (the real mutual exclusion; a no-op context in the negative control)."""
+    """Stands in for api.protocol._run_lock around `inner` (anything with acquire(blocking, timeout) / release: the
+    real lock, or in the negative control a lock without mutual exclusion). Review l2s-wp5-r3: `waiting` is set only
+    AFTER a non-blocking acquire was REFUSED - proof that another thread holds the lock, not mere arrival; the wait
+    that follows is bounded (acquire(timeout=5)) and a failure raises here, so the block never runs without the lock
+    and __exit__ never releases a lock it does not hold."""
 
     def __init__(self, inner):
         self.inner = inner
-        self.arrived = {"run-A": threading.Event(), "run-B": threading.Event()}
+        self.waiting = {"run-A": threading.Event(), "run-B": threading.Event()}
         self.holding = {"run-A": threading.Event(), "run-B": threading.Event()}
 
     def __enter__(self):
         me = threading.current_thread().name
-        self.arrived[me].set()
-        self.inner.__enter__()
+        if not self.inner.acquire(blocking=False):
+            self.waiting[me].set()
+            if not self.inner.acquire(timeout=5):
+                raise RuntimeError(f"{me}: run lock not acquired within 5 s")
         self.holding[me].set()
         return self
 
     def __exit__(self, *exc):
         self.holding[threading.current_thread().name].clear()
-        return self.inner.__exit__(*exc)
+        self.inner.release()
+        return False
+
+
+class _NoExclusion:
+    """The negative control's inner lock: acquire always succeeds at once (mutual exclusion removed)."""
+
+    def acquire(self, blocking=True, timeout=-1):
+        return True
+
+    def release(self):
+        pass
 
 
 def overlapping_runs(monkeypatch, inner):
-    """Run A enters its check while holding the run lock and is held there by a signal; run B is started and must be
-    waiting on the lock; then A is released. Signals only, every wait bounded. Returns what happened."""
+    """Run A enters its check while holding the run lock and is held there by a signal; run B is started and must
+    signal `waiting` (its non-blocking acquire refused); then A is released. Signals only, every wait bounded; A is
+    released and both threads joined on every path, also when an assertion fails. Returns what happened."""
     import mtpy.protocol.check as chk
     real = chk.check
     a_in_check, release_a = threading.Event(), threading.Event()
@@ -507,27 +524,29 @@ def overlapping_runs(monkeypatch, inner):
             results[name] = f"refused: {e}"
     a = threading.Thread(target=go, args=("A",), name="run-A", daemon=True)
     b = threading.Thread(target=go, args=("B",), name="run-B", daemon=True)
-    a.start()
-    assert a_in_check.wait(5) and spy.holding["run-A"].is_set()          # A is inside its check, holding the lock
-    b.start()
-    assert spy.arrived["run-B"].wait(5)
-    b_waiting = not spy.holding["run-B"].is_set() and b.is_alive()     # B arrived and does not hold the lock
-    release_a.set()
-    a.join(5)
-    b.join(5)
+    try:
+        a.start()
+        assert a_in_check.wait(5) and spy.holding["run-A"].is_set(), "A is not inside its check holding the lock"
+        b.start()
+        assert spy.waiting["run-B"].wait(5), "no waiting signal: B's non-blocking acquire was not refused"
+        assert not spy.holding["run-B"].is_set()
+    finally:
+        release_a.set()
+        a.join(5)
+        b.join(5)
     assert not a.is_alive() and not b.is_alive()
     new = events.events()[n:]
-    return {"b_waiting": b_waiting, "results": results, "running_name": api.protocol.status()["name"],
+    return {"results": results, "running_name": api.protocol.status()["name"],
             "started": [e.extra["name"] for e in new if e.kind == "protocol" and e.extra["action"] == "start"],
             "refused": [e.request["protocol"] for e in new if e.kind == "refused"]}
 
 
 def test_only_one_run_starts_and_the_running_one_is_never_overwritten(rig, monkeypatch):
-    """Fix 2 (re-review l2s-wp5-r2: signals, no sleep): A holds the run lock inside its check, B is shown waiting
-    on the lock, A is released: exactly one run starts (A), B is refused with NotReady and a `refused` event, and
-    the running engine is still A."""
+    """Fix 2 (re-reviews l2s-wp5-r2 / r3: signals, no sleep): A holds the run lock inside its check, B's
+    non-blocking acquire is refused (waiting signal), A is released: exactly one run starts (A), B is refused with
+    NotReady and a `refused` event, and the running engine is still A. Assumes A's engine (wait t=1) is still
+    running when B gets the lock (WP6 carry)."""
     got = overlapping_runs(monkeypatch, threading.Lock())
-    assert got["b_waiting"], got
     assert got["started"] == ["A"], got
     assert got["results"]["A"] == "started" and got["results"]["B"].startswith("refused: a protocol is already "
                                                                                 "running"), got

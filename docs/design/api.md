@@ -542,10 +542,14 @@ gain_dB]`; a late off with written rows beyond it: `test_late_off_reports_writte
    disabled the first one fails with one magnet send - checked once as a negative control, not kept as a test).
 2. **One run at a time:** `api.protocol.run` does the running() check, the check and the engine start under one lock;
    the engine is registered only after it started. Test: `test_only_one_run_starts_and_the_running_one_is_never_overwritten`
-   (re-review l2s-wp5-r2: signals, no sleep - a spy around `_run_lock` shows run A inside its check holding the
-   lock and run B waiting on it (`b_waiting`), then A is released; every wait bounded at 5 s). **Negative control**
-   (scratch, not committed): the same signals with the lock replaced by a no-op context -> the test fails with
-   `b_waiting False`, both runs started (B first, then A) and `_engine` overwritten by A (2026-10-25).
+   (re-reviews l2s-wp5-r2 / r3: signals, no sleep). A spy around `_run_lock` shows run A inside its check holding
+   the lock. It sets B's `waiting` signal only after B's `acquire(blocking=False)` was **refused** (proof that the
+   lock is held, not mere arrival); B's following wait is `acquire(timeout=5)` and a failure raises in `__enter__`
+   (never proceeds without the lock, never releases a lock it does not hold). A is released and both threads are
+   joined in `finally` on every path. Real lock: passed 3 times in a row (2026-10-25). **Negative control**
+   (scratch, not committed; the same observer with only the mutual exclusion removed - an inner lock whose
+   `acquire` always succeeds): fails with "no waiting signal: B's non-blocking acquire was not refused", which no
+   run order can avoid. (The r2 control - both runs started, `_engine` overwritten by A - is superseded.)
 3. **Focus reference:** the engine reads `focus_z0` in `start()` (before its thread), and `edit()` checks against
    it (`check(..., run_focus_z0=)`); a focus step without a run reference is refused. Tests:
    `test_mid_run_edit_focus_uses_the_run_start_reference`, `test_focus_step_without_run_reference_is_refused`.
@@ -569,6 +573,10 @@ gain_dB]`; a late off with written rows beyond it: `test_late_off_reports_writte
   the first hold); make it signal-driven.
 - **Phases 6-8:** screening `rule` lines are not part of the structure comparison (`structure_diff` compares the
   statements only), so a mid-run edit may change, add or remove rules; decide when rules are evaluated.
+
+**Carried (agreed in l2s-wp5-r3):**
+- **WP6:** the one-run test assumes A's engine (`wait t=1`) is still running when B gets the lock; make the run's
+  end a signal too.
 
 ## 4. Example: the enzyme-cleavage experiment as a Python experiment script (level 3)
 ```python
