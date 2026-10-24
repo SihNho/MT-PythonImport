@@ -55,6 +55,10 @@ Consequences (inference, to be confirmed by a pixel-size measurement):
   recalibrate z after changing them; check 850 nm transmission and the 850 nm vs visible focal offset (handled by the
   JAI camera position, U31). Pros of one lens: one rig preset and comparable data for MT and MT-TIRF, no lens swaps;
   likely better XY (more pixels per bead) and z sensitivity (higher NA).
+- **Decided (owner 2026-10-24): MT-TIRF uses the 60x/1.50.** "어쨌든 MT-TIRF 할 때는 저걸 확실히 사용할거임. 보정이야
+  Refractive index 보정 factor 있으니 나중에 적용하면 되는 부분이고." So raw z is stored uncorrected and the
+  refractive-index (focal-shift) factor is applied in analysis from the recorded preset value and its source (U13,
+  decision 0010's raw-first rule); measuring this lens's factor once remains worthwhile, since it scales extension.
 - The TIRF-angle stage (L3 + mirror) position should be recorded automatically per run (motor, or manual + digital
   readout), as for the JAI camera position (U31).
 
