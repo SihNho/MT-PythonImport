@@ -100,6 +100,11 @@ class SimMotor(Device):
         self._io()
         return self.axis.moving()
 
+    def speed(self):
+        """The speed the controller applies to the next move when none is given (PI `VEL?`), units/s."""
+        self._io()
+        return self.axis.speed
+
     def position(self):
         self._io()
         return float("nan") if self.fault == "nan" else self.axis.position()

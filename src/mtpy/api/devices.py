@@ -9,7 +9,7 @@ backends raise NotImplementedError until phases 6/7. Example:
 """
 from mtpy import devices as _devices
 
-from . import events
+from . import estop, events
 from ._act import acting, precheck
 from .errors import DeviceError, NotReady
 
@@ -90,12 +90,14 @@ def _move(name, quantity, value, read, send=None, origin=None, check=None, match
     send, wait for arrival, read back and compare through acting()."""
     svc = service(name)
     dev = svc.require()
-    precheck(quantity, value, dev.tol, origin, check)
+    gen = estop.generation()            # the request is made now: an emergency stop after this voids it for good
+    precheck(quantity, value, dev.tol, origin, check, gen)
     send = send or (lambda v: svc.call(dev.move_to, v, what=f"move to {v!r}"))
 
     def body(motion):
         def readback():
             motion.wait_arrival(dev.moving)
             return svc.call(read, what="position")
-        return acting(quantity, value, send, readback, dev.tol, origin, name, check, match)
+        return acting(quantity, value, send, readback, dev.tol, origin, name, check, match, gen=gen,
+                      cancel=motion.cancel_flag)
     return _devices.Motion(svc, body, what=f"{name} move to {value!r}")

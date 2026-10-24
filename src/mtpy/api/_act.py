@@ -13,16 +13,18 @@ def _device_error(request, device, command, hint, stage, cause=None, **extra):
     raise DeviceError(device, command, hint) from cause
 
 
-def precheck(quantity, value, tol=0.0, origin=None, check=None):
-    """Steps 5 and 1 of acting() alone: NotReady while the emergency stop is active, SafetyRefused (with a `refused`
-    event) for a bad tol or a value outside the profile / check(). Returns (request, verified). A Motion calls it on
-    the caller's thread so a refusal reaches the caller at once, not only at wait()."""
+def precheck(quantity, value, tol=0.0, origin=None, check=None, gen=None):
+    """Steps 5 and 1 of acting() alone: NotReady while the emergency stop is active (or, with `gen`, when it was
+    engaged since generation `gen`), SafetyRefused (with a `refused` event) for a bad tol or a value outside the
+    profile / check(). Returns (request, verified). A Motion calls it on the caller's thread so a refusal reaches the
+    caller at once, not only at wait()."""
     request = {"quantity": quantity, "value": value}
     if origin is not None:
         request["origin"] = origin
-    if estop.active():
-        events.log("refused", request=request, reason="emergency stop active")
-        raise NotReady(f"emergency stop is active; {quantity} {value!r} not sent")
+    if estop.active() or (gen is not None and gen != estop.generation()):
+        events.log("refused", request=request, reason="emergency stop active or engaged since the request was made")
+        raise NotReady(f"emergency stop is active or was engaged since the request was made; {quantity} {value!r} "
+                       "not sent")
     try:
         if not (safety._is_number(tol) and tol >= 0):
             raise SafetyRefused(f"tolerance {tol!r} for {quantity} must be a finite number >= 0; nothing sent")
@@ -33,7 +35,8 @@ def precheck(quantity, value, tol=0.0, origin=None, check=None):
     return request, verified
 
 
-def acting(quantity, value, do, readback, tol, origin=None, device=None, check=None, match=None):
+def acting(quantity, value, do, readback, tol, origin=None, device=None, check=None, match=None, gen=None,
+           cancel=None):
     """Request `value` for `quantity` and return what the device read back.
 
     do(value): sends the command. readback(): returns the device's value. tol: largest accepted |readback - value|
@@ -49,20 +52,31 @@ def acting(quantity, value, do, readback, tol, origin=None, device=None, check=N
     or it is more than tol away / does not match).
     Only a read-back that passed is logged as an 'act' event. A limit marked unverified (allowed by the profile)
     logs an 'unverified-limit' warning event before the command is sent.
+    Send window (review l2s-wp2-r1): gen is the emergency-stop generation when the request was made (default: now)
+    and cancel the Motion's cancel flag (threading.Event or None). do() runs inside `estop.guarded_send(gen,
+    cancel)`, so the device service checks both right before each send (void -> nothing sent) and right after it
+    (void -> the device thread stops the device again); either way do() raises NotReady, which ends the call with a
+    `cancelled` event and no `act` event. A request made before an emergency stop never runs after clear().
     """
-    request, verified = precheck(quantity, value, tol, origin, check)
+    gen = estop.generation() if gen is None else gen
+    request, verified = precheck(quantity, value, tol, origin, check, gen)
     if not verified:
         events.log("unverified-limit", request=request, level="warning",
                    reason=f"{quantity} relies on a limit marked unverified in the rig safety profile "
                           f"v{safety.profile()['version']} (allow_unverified true)")
     name, command = device or quantity.split("_")[0], f"set {quantity} {value!r}"
     try:
-        do(value)
+        with estop.guarded_send(gen, cancel):
+            do(value)
     except NotReady as e:
         events.log("cancelled", request=request, reason=str(e))
         raise
     except Exception as e:  # noqa: BLE001 - any device failure must become a DeviceError with an event
         _device_error(request, name, command, f"send failed: {type(e).__name__}: {e}", "send", e)
+    why = estop.invalid((gen, cancel))
+    if why:                       # voided after the service's own check: the stop that voided it halts the device
+        events.log("cancelled", request=request, reason=why)
+        raise NotReady(f"{quantity} {value!r}: {why}")
     try:
         got = readback()
     except NotReady as e:

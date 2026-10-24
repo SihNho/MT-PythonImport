@@ -13,20 +13,27 @@ from .errors import NotReady, SafetyRefused
 def move_to(position_mm, speed_mm_s=None):
     """Move the magnet to position_mm (0 = top, larger = closer to the sample) and return a Motion.
 
-    Safety: position_mm inside the profile's `magnet_position_mm`; a given speed_mm_s inside `magnet_speed_mm_s`
-    (None = the controller's current speed, not checked). Emergency stop -> NotReady. Read back within the
+    Safety: position_mm inside the profile's `magnet_position_mm`; the speed inside `magnet_speed_mm_s`, ALWAYS:
+    a given speed_mm_s is checked, and when it is omitted the speed the controller would apply is read back
+    (`VEL?`) and checked (review l2s-wp2-r1); the checked speed is then sent with the move, so the move runs at
+    exactly the speed that was checked. A profile without a speed limit (the shipped v1: `magnet_speed_mm_s` has
+    no max) refuses every magnet move until a rig-admin sets it. Emergency stop -> NotReady. Read back within the
     device's tolerance or DeviceError (from wait()). Example: `api.magnet.move_to(5.0).wait(10)`.
     """
     svc = service("magnet")
-    if speed_mm_s is not None:
-        try:
-            safety.check("magnet_speed_mm_s", speed_mm_s)
-        except SafetyRefused as e:
-            events.log("refused", request={"quantity": "magnet_speed_mm_s", "value": speed_mm_s}, reason=str(e))
-            raise
     dev = svc.require()
+    omitted = speed_mm_s is None
+    speed = svc.call(dev.speed, what="VEL? 1") if omitted else speed_mm_s
+    request = {"quantity": "magnet_speed_mm_s", "value": speed}
+    if omitted:
+        request["source"] = "controller speed read back (speed_mm_s omitted)"
+    try:
+        safety.check("magnet_speed_mm_s", speed)
+    except SafetyRefused as e:
+        events.log("refused", request=request, reason=str(e))
+        raise
     return _move("magnet", "magnet_position_mm", position_mm, dev.position,
-                 send=lambda v: svc.call(dev.move_to, v, speed_mm_s, what=f"MOV 1 {v!r}"))
+                 send=lambda v: svc.call(dev.move_to, v, speed, what=f"VEL 1 {speed!r}; MOV 1 {v!r}"))
 
 
 def position():

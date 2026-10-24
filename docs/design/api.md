@@ -188,15 +188,51 @@ function writes it (the write path lives in `mtpy.admin`, outside the public API
   `confirm=True` to change while recording (U17 "guarded"; a `guarded_change` event); `rotor.rotate(turns)` is
   RELATIVE (target = position read now + turns; the target is checked against the session-start window);
   `magnet.use_force_table(table)` is new (`set_force` raises `NotReady` without a table; no physics is invented);
-  `magnet.move_to(..., speed_mm_s=None)` uses the controller's current speed unchecked, a given speed is checked
-  against `magnet_speed_mm_s`. Positions, stage x/y and the rest read back through the service.
+  `magnet.move_to(..., speed_mm_s=None)` always checks the speed against `magnet_speed_mm_s` (see the review
+  l2s-wp2-r1 fixes below). Positions, stage x/y and the rest read back through the service.
 - `_act.acting` gained `check=` (a device-range check for settings that are not rig-safety-profile quantities, or
   that span two quantities like stage x/y) and `match=` (non-scalar read-back), and passes `NotReady` from the send /
   read-back through unchanged with a `cancelled` event; `_act.precheck` (e-stop + profile check alone) lets a Motion
   refuse on the caller's thread before its own thread starts. `estop.add_stopper(fn)`: `engage()` sets the flag,
-  then calls each device's `stop()` directly (not queued); a failing stopper is an `estop_error` event.
+  then calls each device's `stop()` directly (not queued); a failing stopper is an `estop_error` event (order
+  refined by the review fixes below).
 - Quantity names in events for the non-profile settings: `camera_exposure_ms`, `camera_gain_dB`, `camera_rate_Hz`,
   `camera_roi`, `camera_preset`, `stage_xy_mm`, `light_<laser>`, `sync_ratio`.
+
+**Review l2s-wp2-r1 fixes (simulators only; evidence, not proof - a real driver's direct stop path onto its port is
+checked separately in phases 6/7):**
+- **E-stop order:** `estop.engage()` raises the flag and a generation number (`estop.generation()`) first, then calls
+  every registered stopper, each wrapped so one failure does not skip the others, and only after every stop attempt
+  logs the `estop` event and one `estop_error` per failed stopper (a slow event subscriber never delays a stop).
+  `clear()` does not reset the generation.
+- **Send window:** an acting call records the generation when the request is made (a Motion: when `move_*` is
+  called) and its Motion's cancel flag. The device service checks both right before the device send (void ->
+  nothing is sent) and right after it (void -> the device thread calls `stop()` again). Either way the call ends with
+  `NotReady` and a `cancelled` event, and no `act` event. So a request queued before an emergency stop never runs
+  after `clear()`, and an engage -> clear (or a cancel) while the send is in progress still leaves the device stopped.
+- **Direct cancel:** `Motion.cancel()` sets the cancel flag and calls `device.stop()` directly, not through the
+  service queue (which may be busy).
+- **Magnet speed always checked:** when `speed_mm_s` is omitted the controller's current speed is read back
+  (`VEL?`) and checked against `magnet_speed_mm_s`; the checked speed is sent with the move. A profile without a speed
+  maximum refuses the move (`SafetyRefused`). **With the shipped profile v1 (`magnet_speed_mm_s` max unset) every
+  magnet move - `move_to` and `set_force` - is refused until a rig-admin sets that maximum (owner decision pending).**
+- **Divider reset rule (`SimArduino`):** the divider counts its own JAI pulses; the count starts at 0 on `open()`
+  (the port's auto-reset) and on every `set_ratio(n)`, and nothing else resets it (not a camera acquisition restart).
+  Pulse p triggers EMCCD frame m = p // N when p % N == 0, so frame m covers the divider's pulses [mN, (m+1)N); each
+  record keeps the JAI buffer number seen with the triggering pulse, for matching only.
+
+**Frame contract for WP3 (acquisition pipeline), agreed in review l2s-wp2-r1:**
+- Acquisition runs in **segments**: every acquisition start (including the restart after a "needs a short pause"
+  change, U17) begins a new segment with its own segment number, increasing through the run.
+- The **original buffer number** IMAQdx gives each frame is kept unchanged with its segment number; it is never
+  renumbered or joined into one running number.
+- The **frame rate (and the settings that set it) is recorded per segment**.
+- A loss at the end of a segment that cannot be confirmed (how many frames the camera produced after the last one
+  received is unknown) is recorded as **unknown, never as zero**. Exact segment lengths are promised only after the
+  real driver shows what IMAQdx reports at a stop (open question: whether the last buffer number is readable after
+  Stop Acquisition, and whether Start alone restarts buffer numbers at 0).
+- The **elapsed time between segments** is recorded separately (PC clock) and is never replaced by a buffer-number
+  offset.
 
 ## 4. Example: the enzyme-cleavage experiment as a Python experiment script (level 3)
 ```python

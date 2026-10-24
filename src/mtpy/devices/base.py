@@ -5,7 +5,10 @@
   logged there names the real caller. Nothing here runs on the frame acquisition path; frames come from the camera's
   own producer, never through a service queue.
 - The only call that bypasses the queue is `Device.stop()`: the emergency stop calls it directly from the engaging
-  thread (decision 0007: "never queued behind busy loops"), so every `stop()` must be thread-safe.
+  thread (decision 0007: "never queued behind busy loops") and `Motion.cancel()` from the cancelling thread, so
+  every `stop()` must be thread-safe.
+- A device send of an acting call is checked against the emergency-stop generation and the Motion's cancel flag
+  right before and right after it (`DeviceService._send`, review l2s-wp2-r1).
   Real-device seam: a real driver's stop() needs its own way onto the port (a second handle or a port lock that the
   service thread releases between commands); the simulators only set a flag.
 - The service keeps the session-start origin for relative windows (ASI x/y, rotor, focus), read once at the first
@@ -94,28 +97,49 @@ class DeviceService:
             item = self._q.get()
             if item is None:
                 return
-            ctx, fn, args, fut = item
+            ctx, fn, args, fut, guard = item
             if fut.set_running_or_notify_cancel():
                 try:
-                    fut.set_result(ctx.run(fn, *args))
+                    fut.set_result(ctx.run(fn, *args) if guard is None else self._send(ctx, fn, args, guard))
                 except BaseException as e:  # noqa: BLE001 - handed to the waiting caller
                     fut.set_exception(e)
+
+    def _send(self, ctx, fn, args, guard):
+        """A device send of an acting call (review l2s-wp2-r1): checked against the e-stop generation and the cancel
+        flag right before (void -> nothing sent) and right after (void -> this thread stops the device again)."""
+        why = estop.invalid(guard)
+        if why:
+            raise NotReady(f"{self.name}: {why}; not sent")
+        result = ctx.run(fn, *args)
+        why = estop.invalid(guard)
+        if why:
+            try:
+                self.device.stop()
+            except Exception as e:  # noqa: BLE001 - recorded; the NotReady below still ends the call
+                ctx.run(events.log, "estop_error", stopper=f"{self.name}.stop (after send)",
+                        error=f"{type(e).__name__}: {e}")
+            raise NotReady(f"{self.name}: {why} during the send; device stopped again")
+        return result
 
     def call(self, fn, *args, what=None, timeout_s=None):
         """Run fn(*args) on the service thread in a copy of the caller's context and return its result.
 
         A failure or no reply within timeout_s becomes DeviceError(device, what, hint) with a `device_fault` event
         and is shown in status(). Never call this from the service thread itself (it would wait for itself).
+        Inside an acting call's send (`estop.guarded_send`) the request is a guarded send (see `_send`); a void
+        send raises NotReady, passed through unchanged (not a device fault).
         """
         what = what or getattr(fn, "__name__", repr(fn))
         fut, t0 = Future(), time.monotonic()
-        self._q.put((contextvars.copy_context(), fn, args, fut))
+        self._q.put((contextvars.copy_context(), fn, args, fut, estop.send_guard()))
         wait = self.reply_timeout_s if timeout_s is None else timeout_s
         try:
             result = fut.result(wait)
         except FutureTimeout:
             fut.cancel()
             self._fail(what, f"no reply for {wait:g} s - {self.device.hint}")
+        except NotReady:
+            raise
         except Exception as e:  # noqa: BLE001 - any device failure becomes a DeviceError with a hint
             self._fail(what, f"{type(e).__name__}: {e} - {self.device.hint}", e)
         dt = time.monotonic() - t0
@@ -229,10 +253,16 @@ class Motion:
             raise Timeout(f"{self.what} not finished within {timeout_s:g} s (still running; cancel() stops it)") \
                 from None
 
+    @property
+    def cancel_flag(self):
+        """The threading.Event set by cancel(); acting() checks it around the device send."""
+        return self._cancel
+
     def cancel(self):
-        """Stop the move in place; wait() then raises NotReady."""
+        """Stop the move in place; wait() then raises NotReady. Sets the cancel flag first, then calls the device's
+        stop() directly on this thread, not through the service queue (which may be busy with a long command)."""
         self._cancel.set()
-        self._svc.call(self._svc.device.stop, what="stop")
+        self._svc.device.stop()
 
     def wait_arrival(self, moving):
         """Poll moving() through the service until the move ends; NotReady if cancelled or e-stopped."""

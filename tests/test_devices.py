@@ -89,6 +89,24 @@ def test_shipped_profile_refuses_rotor_and_focus(shipped_rig):
         api.focus.move_to(1.0)
     with pytest.raises(SafetyRefused, match="no limit set"):
         api.magnet.move_to(1.0, speed_mm_s=1.0)
+    n = len(events.events())
+    with pytest.raises(SafetyRefused, match="magnet_speed_mm_s has no limit set"):
+        api.magnet.move_to(1.0)                   # omitted speed: still checked, so v1 refuses every magnet move
+    ev = _since(n)[-1]
+    assert ev.kind == "refused" and ev.request["value"] == 10.0 and "omitted" in ev.request["source"]
+    assert api.magnet.position() == pytest.approx(0.0, abs=0.01)
+
+
+def test_omitted_speed_is_read_back_and_checked(rig):
+    """Review l2s-wp2-r1: an omitted speed is the controller's current speed, read back and checked, then sent."""
+    dev = rig["magnet"].device
+    dev.axis.speed = 50.0                         # outside the TEST limit [0, 10] mm/s
+    with pytest.raises(SafetyRefused, match=r"magnet_speed_mm_s 50 mm/s is outside.*\[0, 10\] mm/s"):
+        api.magnet.move_to(1.0)
+    assert not dev.moving()
+    dev.axis.speed = 8.0
+    assert api.magnet.move_to(1.0).wait(5) == pytest.approx(1.0, abs=0.01)
+    assert dev.axis.speed == 8.0                  # the checked speed is the one applied
 
 
 def test_controller_limit_stop_is_readback_mismatch(rig):
@@ -140,6 +158,159 @@ def test_motion_cancel_and_wait_timeout(rig):
     m.cancel()
     with pytest.raises(NotReady, match="cancelled"):
         m.wait(5)
+
+
+# --- review l2s-wp2-r1: stop order and the send window ---------------------------------------------------------------
+
+def test_estop_stops_everything_before_events_slow_subscriber_failing_stopper():
+    order = []
+
+    def bad_stop():
+        order.append("stop bad")
+        raise RuntimeError("port gone")
+
+    def good_stop():
+        order.append("stop good")
+
+    def slow_subscriber(ev):
+        order.append(f"event {ev.kind}")
+        time.sleep(0.2)                           # a slow subscriber must not delay any stop
+
+    removes = [estop.add_stopper(bad_stop), estop.add_stopper(good_stop)]
+    unsub = events.subscribe(slow_subscriber)
+    g = estop.generation()
+    try:
+        estop.engage("test")
+        assert estop.active() and estop.generation() == g + 1
+    finally:
+        unsub()
+        for r in removes:
+            r()
+        with events.as_caller("gui"):
+            estop.clear()
+    assert order[:2] == ["stop bad", "stop good"]
+    assert order[2:] == ["event estop", "event estop_error"]
+    err = [e for e in events.events() if e.kind == "estop_error"][-1]
+    assert "bad_stop" in err.extra["stopper"] and "port gone" in err.extra["error"]
+
+
+def _blocked_send(monkeypatch, dev):
+    """Make dev.move_to wait inside the send (on the service thread) until `release` is set."""
+    entered, release = threading.Event(), threading.Event()
+    real = dev.move_to
+
+    def slow(target, speed=None):
+        entered.set()
+        release.wait(5)
+        real(target, speed)
+    monkeypatch.setattr(dev, "move_to", slow)
+    return entered, release
+
+
+def _no_act(n, quantity):
+    kinds = [e.kind for e in _since(n) if isinstance(e.request, dict) and e.request.get("quantity") == quantity]
+    return "act" not in kinds and "cancelled" in kinds
+
+
+def test_engage_and_clear_while_send_waits_stops_again(rig, monkeypatch):
+    dev = rig["magnet"].device
+    dev.axis.speed = 1.0
+    entered, release = _blocked_send(monkeypatch, dev)
+    n = len(events.events())
+    m = api.magnet.move_to(5.0, speed_mm_s=1.0)
+    assert entered.wait(2)
+    estop.engage("test")
+    with events.as_caller("gui"):
+        estop.clear()                             # released before the send even returns
+    release.set()                                 # the move is applied now ... and must be stopped again
+    with pytest.raises(NotReady, match="emergency stop"):
+        m.wait(5)
+    assert not dev.moving() and api.magnet.position() < 0.1
+    assert _no_act(n, "magnet_position_mm")
+
+
+def test_cancel_while_send_waits_stops_again(rig, monkeypatch):
+    dev = rig["magnet"].device
+    entered, release = _blocked_send(monkeypatch, dev)
+    n = len(events.events())
+    m = api.magnet.move_to(5.0, speed_mm_s=1.0)
+    assert entered.wait(2)
+    t0 = time.monotonic()
+    m.cancel()                                    # the service thread is busy in the send: cancel must not queue
+    assert time.monotonic() - t0 < 0.2
+    release.set()
+    with pytest.raises(NotReady, match="cancelled"):
+        m.wait(5)
+    assert not dev.moving() and api.magnet.position() < 0.1
+    assert _no_act(n, "magnet_position_mm")
+
+
+def test_cancel_stops_at_once_while_the_queue_is_blocked(rig):
+    svc, dev = rig["magnet"], rig["magnet"].device
+    m = api.magnet.move_to(5.0, speed_mm_s=1.0)
+    time.sleep(0.2)
+    assert dev.axis.moving()
+    entered, release = threading.Event(), threading.Event()
+
+    def blocker():
+        entered.set()
+        release.wait(5)
+    t = threading.Thread(target=lambda: svc.call(blocker, what="long command", timeout_s=6))
+    t.start()
+    try:
+        assert entered.wait(2)
+        t0 = time.monotonic()
+        m.cancel()
+        assert time.monotonic() - t0 < 0.2 and not dev.axis.moving()     # stopped without the queue
+    finally:
+        release.set()
+        t.join(7)
+    with pytest.raises(NotReady, match="cancelled"):
+        m.wait(5)
+
+
+def test_requests_made_before_estop_never_run_after_clear(rig):
+    light, magnet = rig["light"], rig["magnet"]
+    entered, release = threading.Event(), threading.Event()
+
+    def blocker():
+        entered.set()
+        release.wait(5)
+    blockers = [threading.Thread(target=lambda s=s: s.call(blocker, what="long command", timeout_s=6))
+                for s in (light, magnet)]
+    errors = []
+
+    def set_light():
+        try:
+            api.light.set("532", True)
+        except Exception as e:  # noqa: BLE001 - checked below
+            errors.append(e)
+    n = len(events.events())
+    for b in blockers:
+        b.start()
+    try:
+        assert entered.wait(2)
+        lt = threading.Thread(target=set_light)
+        lt.start()
+        m = api.magnet.move_to(5.0, speed_mm_s=1.0)
+        t_end = time.monotonic() + 2
+        while light._q.qsize() < 1 and time.monotonic() < t_end:     # the light send is queued behind the blocker
+            time.sleep(0.005)
+        assert light._q.qsize() >= 1
+        estop.engage("test")
+        with events.as_caller("gui"):
+            estop.clear()
+    finally:
+        release.set()
+        for b in blockers:
+            b.join(7)
+    lt.join(7)
+    with pytest.raises(NotReady, match="emergency stop"):
+        m.wait(5)
+    assert len(errors) == 1 and isinstance(errors[0], NotReady)
+    assert light.device.outputs_dict()["532"] is False                      # never sent
+    assert magnet.device.position() == pytest.approx(0.0, abs=0.01)         # never moved
+    assert _no_act(n, "light_532") and _no_act(n, "magnet_position_mm")
 
 
 def test_caller_shown_from_worker_threads(rig):
@@ -277,6 +448,25 @@ def test_arduino_divider_records_gating_per_frame(rig):
         api.sync.set_ratio(0)
     with pytest.raises(SafetyRefused, match="laser"):
         api.light.set("488", True)
+
+
+def test_arduino_divider_count_reset_rule(rig):
+    """Review l2s-wp2-r1: the divider counts its own pulses; reset on open and on set_ratio only, so frame m covers
+    its pulses [mN, (m+1)N) whatever the camera's buffer numbers do."""
+    ard = rig["arduino"].device
+    api.sync.set_ratio(2)
+    for b in (0, 1, 2, 3, 4):
+        ard.on_jai_frame(b)
+    for b in (0, 1):                              # camera acquisition restarted: buffers restart, the count does not
+        ard.on_jai_frame(b)
+    assert ard.pulses == 7
+    assert [(m, b) for m, b, _ in ard.frames] == [(0, 0), (1, 2), (2, 4), (3, 1)]
+    api.sync.set_ratio(2)                         # configuring N starts a new count
+    assert ard.pulses == 0
+    ard.on_jai_frame(7)
+    assert list(ard.frames)[-1][:2] == (0, 7)
+    api.devices.reconnect("arduino")              # opening the port resets the board: count, ratio and records
+    assert ard.pulses == 0 and ard.ratio == 1 and not ard.frames
 
 
 def test_set_force_needs_a_table(rig):
