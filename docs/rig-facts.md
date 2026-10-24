@@ -35,7 +35,7 @@ when the setup changes, git keeps the old versions; update this table with it). 
 | Excitation lasers | **532 nm** and **637 nm**; polarisers, combined on a PBS (its 2nd output unused); two irises |
 | TIRF optics | L1 f = 35 mm + L2 f = 300 mm = ≈8.6× beam expander; L3 f = 500 mm focuses on the objective back focal plane; **L3 and the last mirror share a translation stage that sets the TIRF angle**; beam enters the IX73 back port |
 | Turret | DM1 = ZT532/640rpc-UF3 (excitation / emission); DM2 = "IR turret" (sends 850 nm to the JAI) |
-| Objective (as drawn) | **100×/oil, UPlanSApo** — differs from the 50x oil the owner uses now (open question) |
+| Objective (as drawn) | 100×/oil, UPlanSApo — **superseded**: owner 2026-10-24 (photo of the lens): "당분간 MT-TIRF 용도로는 위의 렌즈 사용할 것" = **Olympus UPlanApo 60x / 1.50 Oil HR**, ∞ / cover glass 0.13-0.19 mm (correction collar) / OFN 22, temperature collar 23-37 °C. Owner is considering using it for MT alone too: "그냥 50x low NAA 사용할 필요 없이 이거 그대로 지금 MT에 사용해도 될까 싶네" (open; see below) |
 | Tracking light | **850 nm LED** above the sample, through the gap of the magnet pair |
 | Magnets | antiparallel pair; z translation; rotation about z (±) |
 | Tracking camera | JAI SP-5000M-USB, "z tracking, 60–150 Hz" |
@@ -46,6 +46,15 @@ Consequences (inference, to be confirmed by a pixel-size measurement):
 - L4 → L5 adds ≈1.5× after the slit, so the EMCCD magnification ≈ objective × 1.5 (assuming the standard Olympus tube
   lens): 50x → ≈75x, ≈213 nm/px (iXon 897: 16 µm pixels, 512 × 512); 100x → ≈150x, ≈107 nm/px. This is why the
   fluorescence field is narrow; changing the L4/L5 ratio is the direct way to widen it (U27).
+- With the 60x/1.50: EMCCD ≈ 90x, ≈178 nm/px (16 µm / 90; estimate); JAI ≈ 167 nm/px at binning 2 and a field of
+  ≈213 × 171 µm, about 0.69× the 50x field (estimates, standard tube lens assumed).
+- **60x for MT alone too? (open, decide by one rig comparison, same sample and field, 50x vs 60x):** usable beads per
+  field (the 50x was chosen for field size), reference-bead noise and Allan deviation, z-calibration quality
+  (error-vs-height map), measured pixel size and **focal-shift factor** (high-NA oil into water can be well below 0.88).
+  Also: record the **correction-collar settings** (cover glass, temperature) in the rig preset and data, and
+  recalibrate z after changing them; check 850 nm transmission and the 850 nm vs visible focal offset (handled by the
+  JAI camera position, U31). Pros of one lens: one rig preset and comparable data for MT and MT-TIRF, no lens swaps;
+  likely better XY (more pixels per bead) and z sensitivity (higher NA).
 - The TIRF-angle stage (L3 + mirror) position should be recorded automatically per run (motor, or manual + digital
   readout), as for the JAI camera position (U31).
 
