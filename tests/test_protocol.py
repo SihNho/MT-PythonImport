@@ -47,7 +47,7 @@ def rig(tmp_path, monkeypatch):
 
 @pytest.fixture
 def shipped_rig(tmp_path, monkeypatch):
-    """Simulated rig on the shipped profile (v2, decision 0016: magnet speed max 15 mm/s, force max still unset)."""
+    """Simulated rig on the shipped profile (v3: magnet speed max 15 mm/s verified:false, force max still unset)."""
     yield from _rig(tmp_path, monkeypatch, False)
 
 
@@ -189,22 +189,25 @@ def test_check_out_of_profile_value_names_step_and_range(rig):
                                    "fe.mtprot"))
     errs = [str(d) for d in rep["errors"]]
     assert "fe.mtprot:5:18: 'to' is 25 pN; magnet_force_pN 25 pN is outside the allowed range [0, 20] pN of the " \
-           "rig safety profile v2" in errs                       # the TEST profile is built on the shipped v2
+           "rig safety profile v3" in errs                       # the TEST profile is built on the shipped v3
     assert any(e.startswith("fe.mtprot:7:9: 'mm' is 40 mm; magnet_position_mm 40 mm is outside the allowed range "
                             "[0, 39] mm") for e in errs)
     assert any(e.startswith("fe.mtprot:5:18: 'to' is 25 pN; the force table") for e in errs)   # rig state layer
 
 
-def test_shipped_profile_v2_runs_magnet_moves_but_not_forces(shipped_rig):
-    """Decision 0016: with v2 a position move passes the check and runs; a force step still fails the check because
-    magnet_force_pN has no maximum yet (and no force table is loaded)."""
-    rep = api.protocol.check(parse(HEAD + "hold f=1 t=1\n", "v2.mtprot"), devices=False)
-    errs = [str(d) for d in rep["errors"]]
-    assert not any("magnet_speed_mm_s" in e for e in errs) and any("magnet_force_pN has no limit set" in e
-                                                                    for e in errs)
-    api.protocol.run(parse(HEAD + "move mm=2\nzero t=0.1\n"))
-    assert api.protocol.wait(10)["state"] == "completed"
-    assert api.magnet.position() == pytest.approx(0.0, abs=0.01)
+def test_shipped_profile_v3_refuses_magnet_moves_before_anything_runs(shipped_rig):
+    """Review l2s-wp5-r4: under v3 (magnet speed 15 mm/s verified:false) a position move fails the check with the
+    step named, run() refuses it, and the magnet does not move; force steps also lack a force maximum."""
+    s = parse(HEAD + "move mm=2\nzero t=0.1\n", "v3.mtprot")
+    errs = [str(d) for d in api.protocol.check(s, devices=False)["errors"]]
+    assert any(e.startswith("v3.mtprot:3:1: 'move' moves the magnet") and "is not verified" in e for e in errs)
+    assert any(e.startswith("v3.mtprot:4:1: 'zero' moves the magnet") for e in errs)
+    hold = [str(d) for d in api.protocol.check(parse(HEAD + "hold f=1 t=1\n"), devices=False)["errors"]]
+    assert any("magnet_force_pN has no limit set" in e for e in hold)
+    p0 = api.magnet.position()
+    with pytest.raises(ScriptError, match="not verified"):
+        api.protocol.run(s)
+    assert not api.protocol.running() and abs(api.magnet.position() - p0) < 0.01
 
 
 def test_magnet_move_refused_by_profile_v1_before_anything_runs(v1_rig):

@@ -59,7 +59,7 @@ def rig(tmp_path, monkeypatch):
 
 @pytest.fixture
 def shipped_rig(tmp_path, monkeypatch):
-    """A simulated rig on the shipped profile (v2 since decision 0016: magnet speed max 15 mm/s)."""
+    """A simulated rig on the shipped profile (v3: magnet speed max 15 mm/s, verified:false until the rig check)."""
     yield from _rig(tmp_path, monkeypatch, test_limits=False)
 
 
@@ -94,21 +94,21 @@ def test_refusal_outside_profile_names_range_and_moves_nothing(rig):
 
 
 def test_shipped_profile_refuses_rotor_and_focus(shipped_rig):
-    """Shipped profile v2 (decision 0016): rotor and focus still refused; magnet moves allowed up to 15 mm/s."""
-    assert safety.profile()["version"] == 2
+    """Shipped profile v3 (review l2s-wp5-r4): rotor and focus refused; the magnet speed max 15 mm/s is verified:false
+    until the rig check, so every magnet move is refused too - also at 10 and 15 mm/s - and nothing moves."""
+    assert safety.profile()["version"] == 3
     with pytest.raises(SafetyRefused, match="not verified"):
         api.rotor.rotate(1.0)
     with pytest.raises(SafetyRefused, match="no limit set"):
         api.focus.move_to(1.0)
-    with pytest.raises(SafetyRefused, match=r"magnet_speed_mm_s 16 mm/s is outside the allowed range \[0, 15\]"):
-        api.magnet.move_to(1.0, speed_mm_s=16.0)
-    shipped_rig["magnet"].device.axis.speed = 15.5          # omitted speed: read back (VEL?) and checked
-    with pytest.raises(SafetyRefused, match=r"magnet_speed_mm_s 15.5 mm/s is outside"):
-        api.magnet.move_to(1.0)
-    assert api.magnet.position() == pytest.approx(0.0, abs=0.01)
-    shipped_rig["magnet"].device.axis.speed = 10.0
-    assert api.magnet.move_to(1.0).wait(5) == pytest.approx(1.0, abs=0.01)
-    assert api.magnet.move_to(2.0, speed_mm_s=15.0).wait(5) == pytest.approx(2.0, abs=0.01)
+    for speed in (10.0, 15.0, 16.0):
+        with pytest.raises(SafetyRefused, match=r"magnet_speed_mm_s limit \[0, 15\] mm/s is not verified"):
+            api.magnet.move_to(1.0, speed_mm_s=speed)
+    n = len(events.events())
+    with pytest.raises(SafetyRefused, match="not verified"):
+        api.magnet.move_to(1.0)                   # omitted speed: read back (VEL?) and checked, refused
+    assert "omitted" in _since(n)[-1].request["source"]
+    assert api.magnet.position() == pytest.approx(0.0, abs=0.01) and not shipped_rig["magnet"].device.moving()
 
 
 def test_profile_v1_still_refuses_every_magnet_move(v1_rig):

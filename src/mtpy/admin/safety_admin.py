@@ -103,7 +103,8 @@ def activate(session, pending, recommissioning_report):
     """Make a pending profile active after its re-commissioning.
 
     The candidate is re-validated and its diff against the ACTIVE profile is recomputed here; the report must show
-    every new or changed limit as checked. A candidate not based on the active version is refused, and so (for now)
+    every new or changed limit as checked, except a changed limit whose new value is verified:false while the new
+    profile has allow_unverified:false (it refuses every request; review l2s-wp5-r4). A candidate not based on the active version is refused, and so (for now)
     is one that switches allow_unverified from false to true; true -> false is allowed. The old version
     stays in the history folder; the new one is written there and becomes the active file.
     """
@@ -130,10 +131,15 @@ def activate(session, pending, recommissioning_report):
         raise SafetyRefused(f"the proposal was made against profile v{p.get('base_version')}, "
                             f"but v{cur['version']} is active now; propose again")
     changed = _changed(safety._thaw(cur["limits"]), p["limits"])
-    missing = [q for q in changed if r.checked.get(q) is not True]
+    # Review l2s-wp5-r4: a changed entry may go without `checked` ONLY when its new value is verified:false AND the
+    # new profile has allow_unverified:false - such an entry refuses every request, so there is nothing to check on
+    # the rig, and it must never be recorded as checked. Every other new or changed entry still needs checked.
+    unchecked_ok = [q for q in changed if p["limits"][q]["verified"] is False and p["allow_unverified"] is False]
+    missing = [q for q in changed if r.checked.get(q) is not True and q not in unchecked_ok]
     if missing:
         raise SafetyRefused(f"the re-commissioning report does not show these new limits as checked: {missing}")
-    p["recommissioning"] = {"by": r.by, "t": r.t, "checked": dict(r.checked), "notes": r.notes}
+    p["recommissioning"] = {"by": r.by, "t": r.t, "checked": dict(r.checked), "notes": r.notes,
+                            "not_checked_unverified": [q for q in unchecked_ok if r.checked.get(q) is not True]}
     hist_old, hist_new = safety._history(cur["version"]), safety._history(p["version"])
     hist_old.parent.mkdir(parents=True, exist_ok=True)
     if not hist_old.exists():                           # keep the outgoing version even if it was never archived

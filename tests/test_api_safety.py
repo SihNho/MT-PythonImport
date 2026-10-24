@@ -53,21 +53,63 @@ class Motor:
         return self.pos
 
 
-def test_shipped_config_is_v2_with_magnet_speed_max_15(monkeypatch):
-    """Decision 0016: the shipped active profile is v2, made through the admin path (base v1, re-commissioning record),
-    with magnet_speed_mm_s [0, 15] mm/s; every other limit is identical to v1, and v1 stays in the history."""
+def test_shipped_config_is_v3_magnet_speed_15_unverified(monkeypatch):
+    """Review l2s-wp5-r4: the shipped active profile is v3 (base v2, made through the admin path). magnet_speed_mm_s
+    is [0, 15] mm/s (owner decision 0016) but verified:false with allow_unverified false, so every magnet move is
+    refused until the rig check; nothing is recorded as checked. v1 and v2 stay in the history; every other limit
+    is identical to v1."""
     monkeypatch.setattr(safety, "CONFIG", REPO_CONFIG)
     p = safety.load_active()
-    v1 = json.loads((REPO_CONFIG / "safety_profiles" / "1.json").read_text(encoding="utf-8"))
-    v2 = json.loads((REPO_CONFIG / "safety_profiles" / "2.json").read_text(encoding="utf-8"))
-    assert p["version"] == 2 and p["base_version"] == 1 and safety.versions() == [1, 2]
-    assert safety._thaw(p) == v2 and v2["recommissioning"]["checked"] == {"magnet_speed_mm_s": True}
-    assert v2["limits"]["magnet_speed_mm_s"]["max"] == 15.0 and v2["limits"]["magnet_speed_mm_s"]["verified"] is True
-    assert [q for q in v1["limits"] if v1["limits"][q] != v2["limits"][q]] == ["magnet_speed_mm_s"]
-    assert set(v1["limits"]) == set(v2["limits"]) and v2["allow_unverified"] is False
-    safety.check("magnet_speed_mm_s", 15.0)
-    with pytest.raises(SafetyRefused, match=r"magnet_speed_mm_s 15.1 mm/s is outside the allowed range \[0, 15\]"):
-        safety.check("magnet_speed_mm_s", 15.1)
+    hist = {v: json.loads((REPO_CONFIG / "safety_profiles" / f"{v}.json").read_text(encoding="utf-8"))
+            for v in (1, 2, 3)}
+    assert p["version"] == 3 and p["base_version"] == 2 and safety.versions() == [1, 2, 3]
+    v3 = hist[3]
+    assert safety._thaw(p) == v3 and v3["allow_unverified"] is False and "magnet_speed_mm_s" in v3["unverified"]
+    assert v3["recommissioning"]["checked"] == {}
+    assert v3["recommissioning"]["not_checked_unverified"] == ["magnet_speed_mm_s"]
+    speed = v3["limits"]["magnet_speed_mm_s"]
+    assert speed["max"] == 15.0 and speed["verified"] is False and "NOT yet checked on the rig" in speed["source"]
+    for v in (1, 2):
+        assert [q for q in hist[v]["limits"] if hist[v]["limits"][q] != v3["limits"][q]] == ["magnet_speed_mm_s"]
+    assert "not a rig move-and-read-back" in v3["reason"]
+    with pytest.raises(SafetyRefused, match="not verified"):
+        safety.check("magnet_speed_mm_s", 10.0)
+
+
+def _speed_limits(verified, max_=15.0):
+    limits = safety._thaw(safety.profile()["limits"])
+    limits["magnet_speed_mm_s"].update(max=max_, verified=verified, source="TEST")
+    return limits
+
+
+def test_unverified_change_activates_without_checked_and_refuses(session):
+    """Review l2s-wp5-r4: a changed entry whose new value is verified:false, with allow_unverified false, activates
+    with an empty `checked` (never recorded as checked) and refuses every request."""
+    with events.as_caller("gui"):
+        pending = admin.propose_change(session, _speed_limits(False), by="admin", reason="owner value, not rig-checked")
+        p = admin.activate(session, pending, admin.RecommissioningReport(by="admin", checked={}))
+    assert p["version"] == 2 and p["recommissioning"]["checked"] == {}
+    assert list(p["recommissioning"]["not_checked_unverified"]) == ["magnet_speed_mm_s"]
+    with pytest.raises(SafetyRefused, match="not verified"):
+        safety.check("magnet_speed_mm_s", 5.0)
+
+
+def test_verified_change_without_checked_is_refused(session):
+    with events.as_caller("gui"):
+        pending = admin.propose_change(session, _speed_limits(True), by="admin", reason="r")
+        with pytest.raises(SafetyRefused, match=r"does not show these new limits as checked: \['magnet_speed_mm_s'\]"):
+            admin.activate(session, pending, admin.RecommissioningReport(by="admin", checked={}))
+    assert safety.profile()["version"] == 1
+
+
+def test_no_unchecked_exception_when_unverified_limits_are_allowed(config, session):
+    """With allow_unverified true an unverified limit is USED, so it is not exempt from `checked`."""
+    _allow_unverified_on_disk(config)
+    with events.as_caller("gui"):
+        pending = admin.propose_change(session, _speed_limits(False), by="admin", reason="r")
+        with pytest.raises(SafetyRefused, match="does not show these new limits as checked"):
+            admin.activate(session, pending, admin.RecommissioningReport(by="admin", checked={}))
+    assert safety.profile()["version"] == 1
 
 
 def test_version_and_shipped_profile_is_valid():

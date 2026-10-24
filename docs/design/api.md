@@ -585,11 +585,10 @@ gain_dB]`; a late off with written rows beyond it: `test_late_off_reports_writte
    (stage x/y +-2 mm, magnet travel 0-39 mm, rotor / focus / force still unverified or unset); v1 stays in
    `config/safety_profiles/1.json`. **Its re-commissioning record says the value comes from the owner's decision
    and that NO move-and-read-back at 15 mm/s was done** (no hardware here): the rig check is a WP6 carry. Effect:
-   magnet moves (`move_to`, `zero`, `move mm=`) are allowed up to 15 mm/s; force steps (`set_force`, `hold`, `ramp`,
-   `rotate`) still fail because `magnet_force_pN` has no maximum. Tests: `test_shipped_config_is_v2_with_magnet_speed_max_15`,
-   `test_shipped_profile_refuses_rotor_and_focus` (16 mm/s and a read-back 15.5 mm/s refused; 10 and 15 mm/s move),
-   `test_profile_v1_still_refuses_every_magnet_move`, `test_shipped_profile_v2_runs_magnet_moves_but_not_forces`.
-   The WP1 profile / admin tests now start from a v1-only config (their fixture), unchanged otherwise.
+   magnet moves (`move_to`, `zero`, `move mm=`) were allowed up to 15 mm/s; force steps still failed (no
+   `magnet_force_pN` maximum). **Superseded by v3 (review l2s-wp5-r4, below): v2's `verified: true` / `checked: true`
+   recorded the owner's value as a rig check, which it was not.** v2 stays in the history as written.
+   The WP1 profile / admin tests start from a v1-only config (their fixture), unchanged otherwise.
 2. **`zero`** = magnet to 0 mm, owner-confirmed; the U12 tracking zero stays open (grammar.md 12.7).
 3. **`end protocol`** (grammar.md 12.18): last statement at the top level; logs `protocol` `end_statement`, then
    `api.acq.set_recording(False)` (acquisition keeps running), run `completed`. Without it recording continues after
@@ -605,6 +604,32 @@ gain_dB]`; a late off with written rows beyond it: `test_late_off_reports_writte
 - **WP6:** run `matlab/read_mtpy_h5.m` in MATLAB 2026 (release letter not given; not installed on the development
   PC), including its new frame rule; check magnet moves at 15 mm/s on the rig (move and read back) and record it in a
   re-commissioning report; `magnet_force_pN` maximum still to be set by the owner.
+
+**Review l2s-wp5-r4 fixes (simulators and files only):**
+1. **Admin path:** `safety_admin.activate` lets a changed entry go without `checked` ONLY when its new value is
+   `verified: false` AND the new profile has `allow_unverified: false` (it refuses every request, so nothing is
+   claimed as checked); such entries are listed in the record as `recommissioning.not_checked_unverified`. Any other
+   new or changed entry - a `verified: true` change, or any change while `allow_unverified` is true - still needs
+   `checked`.
+2. **Profile v3** through the admin path (`rig-admin`, open -> propose -> activate, `checked: {}`; no hand edit of
+   `config/`): `magnet_speed_mm_s` [0, 15] mm/s `verified: false`, `allow_unverified: false`; reason: v2's check was
+   the owner's value, not a rig move-and-read-back. v1 and v2 stay in the history; every other limit is identical to
+   v1. Result: **every magnet move is refused again** (also `zero`, `move mm=`) until a rig move-and-read-back at
+   15 mm/s activates a verified entry with `checked`.
+3. Tests: `test_shipped_config_is_v3_magnet_speed_15_unverified`, `test_unverified_change_activates_without_checked_and_refuses`,
+   `test_verified_change_without_checked_is_refused`, `test_no_unchecked_exception_when_unverified_limits_are_allowed`,
+   `test_shipped_profile_refuses_rotor_and_focus` (10, 15, 16 mm/s and the omitted speed refused, nothing moves),
+   `test_shipped_profile_v3_refuses_magnet_moves_before_anything_runs`, `test_profile_v1_still_refuses_every_magnet_move`.
+
+**Carried (agreed in l2s-wp5-r4):**
+- **WP6 / rig session:** the 15 mm/s rig check (move and read back; then a new profile version with
+  `verified: true` and `checked`); run `matlab/read_mtpy_h5.m` in MATLAB 2026.
+- **WP6 (one-run test):** the negative control is a scratch file, not committed (make it a committed, opt-in test);
+  joining a B thread that never started (an assertion before `b.start()`) must not hide the first failure; the
+  assumption that A's engine is still alive at `wait t=1`.
+- **Policy:** a future `allow_unverified` false -> true switch must cover the entries that were never rig-checked
+  (e.g. those in `not_checked_unverified`): switching it on must not turn an owner's value into a usable limit
+  without a rig check.
 
 ## 4. Example: the enzyme-cleavage experiment as a Python experiment script (level 3)
 ```python
