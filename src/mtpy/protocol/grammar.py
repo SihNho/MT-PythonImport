@@ -485,8 +485,19 @@ class _Parser:
             raise _LineError(t.col, f"a statement starts with a keyword, not {t.text!r}")
         kw = t.text
         st = Stmt(kw, cur.line, t.col, text.strip())
+        end_st = self.script.meta.get("_end")
+        if end_st is not None and kw != "rule":            # screening rules may follow (they are not actions)
+            raise _LineError(t.col, f"nothing may follow 'end protocol' (line {end_st.line}); it is the last statement")
         if kw == "end":
             cur.next()
+            if self.script.kind == "protocol" and cur.is_word("protocol"):     # decision 0016 item 3
+                cur.next()
+                cur.done("'end protocol'")
+                if self.stack:
+                    raise _LineError(t.col, "'end protocol' belongs at the top level, as the last statement (close "
+                                            "the open blocks with 'end' first)")
+                self.script.meta["_end"] = Stmt("end_protocol", cur.line, t.col, text.strip())
+                return
             cur.done("'end'")
             if not self.stack:
                 raise _LineError(t.col, "'end' without an open block")
@@ -605,7 +616,7 @@ class _Parser:
                 raise _LineError(st.expr.col, "a rule is a comparison: metric op threshold, e.g. rule angle_deg <= 20")
         else:
             known = ("zero ramp hold move rotate focus record light mark wait loop if else on stop end repeat rule "
-                     "kind")
+                     "kind; 'end protocol' last")
             raise _LineError(st.col, f"unknown statement '{kw}' (protocol statements: {known})")
 
     def _sequence(self, cur, st):
@@ -708,6 +719,7 @@ class _Parser:
     def finish(self):
         s = self.script
         tail = s.meta.pop("_tail", None)
+        end = s.meta.pop("_end", None)
         if s.kind == "protocol":
             if s.meta["type"] is None:
                 s.meta["type"] = "experiment"
@@ -718,6 +730,8 @@ class _Parser:
                 self.err(s.rules[0].line, s.rules[0].col, "rules need kind screening")
             if not s.body:
                 self.err(1, 1, "the protocol has no action")
+            if end is not None:                     # after the `repeat n` wrap: runs once, as the last statement
+                s.body.append(end)
         elif s.kind == "sequence":
             if "lights" not in s.meta:
                 self.err(1, 1, "the sequence needs a 'lights' line")

@@ -20,8 +20,8 @@ REPO = Path(__file__).resolve().parents[1]
 HEAD = 'grammar 0.1\nprotocol "t"\n'
 
 
-def _rig(tmp_path, monkeypatch, test_limits):
-    _config(tmp_path, monkeypatch, test_limits)
+def _rig(tmp_path, monkeypatch, test_limits, profile_version=None):
+    _config(tmp_path, monkeypatch, test_limits, profile_version)
     monkeypatch.setattr(api.protocol, "_engine", None)
     with events.as_caller("gui"):
         estop.clear()
@@ -47,8 +47,14 @@ def rig(tmp_path, monkeypatch):
 
 @pytest.fixture
 def shipped_rig(tmp_path, monkeypatch):
-    """Simulated rig on the shipped profile v1 (no magnet speed maximum)."""
+    """Simulated rig on the shipped profile (v2, decision 0016: magnet speed max 15 mm/s, force max still unset)."""
     yield from _rig(tmp_path, monkeypatch, False)
+
+
+@pytest.fixture
+def v1_rig(tmp_path, monkeypatch):
+    """Simulated rig on profile v1 from the history (no magnet speed maximum)."""
+    yield from _rig(tmp_path, monkeypatch, False, profile_version=1)
 
 
 @pytest.fixture
@@ -101,7 +107,7 @@ def test_parse_errors_have_line_and_column():
         ("p.mtprot:3:8: 'f' is written with a unit ('7pN'); units are fixed per key and never written in the value: "
          "write f=7 (pN)"),
         ("p.mtprot:4:1: unknown statement 'jump' (protocol statements: zero ramp hold move rotate focus record light "
-         "mark wait loop if else on stop end repeat rule kind)"),
+         "mark wait loop if else on stop end repeat rule kind; 'end protocol' last)"),
         "p.mtprot:6:16: 'f' is given twice",
         "p.mtprot:8:1: 'end' without an open block",
         "p.mtprot:9:20: 't' is 0.01 (s); the grammar allows 0.1-36000 (s)",
@@ -172,7 +178,7 @@ def test_check_refuses_statements_the_api_cannot_run(rig):
     rep = api.protocol.check(s)
     errs = [str(d) for d in rep["errors"]]
     assert not rep["ok"] and len(errs) == 3
-    assert errs[0].startswith("c.mtprot:3:1: 'light seq' needs api.light.load_sequence, which api 0.5.0 does not "
+    assert errs[0].startswith(f"c.mtprot:3:1: 'light seq' needs api.light.load_sequence, which api {api.VERSION} does not "
                               "have yet")
     assert errs[1].startswith("c.mtprot:4:1: 'if' needs api.events.rule")
     assert errs[2].startswith("c.mtprot:7:1: 'wait until' needs api.events.rule")
@@ -183,13 +189,25 @@ def test_check_out_of_profile_value_names_step_and_range(rig):
                                    "fe.mtprot"))
     errs = [str(d) for d in rep["errors"]]
     assert "fe.mtprot:5:18: 'to' is 25 pN; magnet_force_pN 25 pN is outside the allowed range [0, 20] pN of the " \
-           "rig safety profile v1" in errs
+           "rig safety profile v2" in errs                       # the TEST profile is built on the shipped v2
     assert any(e.startswith("fe.mtprot:7:9: 'mm' is 40 mm; magnet_position_mm 40 mm is outside the allowed range "
                             "[0, 39] mm") for e in errs)
     assert any(e.startswith("fe.mtprot:5:18: 'to' is 25 pN; the force table") for e in errs)   # rig state layer
 
 
-def test_magnet_move_refused_by_profile_v1_before_anything_runs(shipped_rig):
+def test_shipped_profile_v2_runs_magnet_moves_but_not_forces(shipped_rig):
+    """Decision 0016: with v2 a position move passes the check and runs; a force step still fails the check because
+    magnet_force_pN has no maximum yet (and no force table is loaded)."""
+    rep = api.protocol.check(parse(HEAD + "hold f=1 t=1\n", "v2.mtprot"), devices=False)
+    errs = [str(d) for d in rep["errors"]]
+    assert not any("magnet_speed_mm_s" in e for e in errs) and any("magnet_force_pN has no limit set" in e
+                                                                    for e in errs)
+    api.protocol.run(parse(HEAD + "move mm=2\nzero t=0.1\n"))
+    assert api.protocol.wait(10)["state"] == "completed"
+    assert api.magnet.position() == pytest.approx(0.0, abs=0.01)
+
+
+def test_magnet_move_refused_by_profile_v1_before_anything_runs(v1_rig):
     s = parse(HEAD + "hold f=1 t=1\n", "v1.mtprot")
     rep = api.protocol.check(s, devices=False)
     errs = [str(d) for d in rep["errors"]]
@@ -582,6 +600,61 @@ def test_end_to_end_recording_has_protocol_events(cam, tmp_path):
     assert "in protocol" in [d["text"] for d in ev["mark"]["data"]]
     assert run["attrs"]["closed_cleanly"] == 1
 
+
+# --- decision 0016 item 3: `end protocol` -------------------------------------------------------------------------------
+def test_end_protocol_parse_rules():
+    s = parse(HEAD + "hold f=1 t=1\nrepeat 2\nend protocol\n")
+    assert [x.kind for x in s.body] == ["loop", "end_protocol"] and s.body[1].line == 5
+    assert "p.mtprot:4:3: 'end protocol' belongs at the top level, as the last statement (close the open blocks " \
+           "with 'end' first)" in _errors(HEAD + "loop n=2\n  end protocol\nend\n")
+    assert "p.mtprot:4:1: nothing may follow 'end protocol' (line 3); it is the last statement" in \
+        _errors(HEAD + "end protocol\nhold f=1 t=1\n")
+    s = parse('grammar 0.1\nprotocol "s"\nkind screening\nhold f=1 t=1\nend protocol\nrule angle_deg <= 20\n')
+    assert s.body[-1].kind == "end_protocol" and len(s.rules) == 1          # rules may follow (not actions)
+
+
+def test_end_protocol_switches_recording_off_and_closes_the_interval(cam, tmp_path):
+    """With `end protocol`: recording off through the API, acquisition keeps running, the HDF5 recording interval is
+    closed at the off event, and the end is an event."""
+    api.magnet.use_force_table(SYNTHETIC_TABLE)
+    api.acq.start(record=True, name="ended", folder=tmp_path)
+    api.acq.wait_frames(5, 5)
+    n = len(events.events())
+    api.protocol.run(parse(HEAD + 'hold f=1 t=0.2\nend protocol\n', "end.mtprot"))
+    st = api.protocol.wait(30)
+    assert st["state"] == "completed" and "recording switched off" in st["reason"]
+    acq = api.acq.status()
+    assert acq["running"] and not acq["recording"]
+    received = acq["frames_received"]
+    api.acq.wait_frames(10, 5)                                              # acquisition goes on
+    assert api.acq.status()["frames_received"] > received
+    ends = [e for e in events.events()[n:] if e.kind == "protocol" and e.extra["action"] == "end_statement"]
+    assert len(ends) == 1 and ends[0].extra["recording_switched_off"] is True and ends[0].extra["line"] == 4
+    assert _steps(n)[-1] == (4, "completed", -1)
+    off = [e for e in events.events()[n:] if e.kind == "recording" and e.extra["action"] == "off"]
+    assert len(off) == 1 and off[0].caller == parse(HEAD + 'hold f=1 t=0.2\nend protocol\n', "end.mtprot").caller
+    api.acq.stop()
+    run = read_run(tmp_path / "ended.h5")
+    rec = run["recordings"]
+    assert rec["name"].tolist() == ["ended"] and int(rec["off_buffer"][0]) == off[0].extra["buffer_number"]
+    assert int(run["mt"]["buffer_number"].max()) == off[0].extra["buffer_number"]   # nothing after the off recorded
+    assert run["attrs"]["frames_not_written"] == 0 and run["attrs"]["frames_outside_recordings"] == 0
+    assert [d["action"] for d in run["events"]["protocol"]["data"]] == ["start", "end_statement"]
+
+
+def test_without_end_protocol_recording_keeps_going(cam, tmp_path):
+    """No `end protocol`: the run completes and recording simply continues; a user stop does not switch it off
+    either (0007, 0016)."""
+    api.magnet.use_force_table(SYNTHETIC_TABLE)
+    api.acq.start(record=True, name="open", folder=tmp_path)
+    api.protocol.run(parse(HEAD + 'hold f=1 t=0.2\n'))
+    assert api.protocol.wait(30)["state"] == "completed"
+    assert api.acq.status()["recording"]
+    api.protocol.run(parse(HEAD + 'wait t=30\nend protocol\n'))
+    _until(lambda: (api.protocol.status()["current"] or {}).get("line") == 3)
+    api.protocol.stop()
+    assert api.protocol.wait(5)["state"] == "stopped" and api.acq.status()["recording"]
+    api.acq.stop()
 
 # --- WP5 carry: the HDF5 writer's max_pending overflow is visible in api.acq.status() --------------------------------------
 class _NoRecordingOn:

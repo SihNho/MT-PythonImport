@@ -20,8 +20,16 @@ REPO_CONFIG = Path(__file__).resolve().parents[1] / "config"
 
 @pytest.fixture(autouse=True)
 def config(tmp_path, monkeypatch):
-    """A copy of the shipped profile in a temporary config folder, loaded fresh for each test."""
+    """A temporary config folder holding profile v1 only (active and history), loaded fresh for each test: the WP1
+    tests of the profile mechanism and the admin write path start from v1. The shipped config (v2 since decision
+    0016) is checked by test_shipped_config_is_v2_with_magnet_speed_max_15."""
     shutil.copytree(REPO_CONFIG, tmp_path / "config")
+    hist = tmp_path / "config" / "safety_profiles"
+    (tmp_path / "config" / "safety_profile.json").write_text((hist / "1.json").read_text(encoding="utf-8"),
+                                                              encoding="utf-8")
+    for f in hist.glob("*.json"):
+        if f.stem != "1":
+            f.unlink()
     monkeypatch.setattr(safety, "CONFIG", tmp_path / "config")
     safety.load_active()
     with events.as_caller("gui"):
@@ -45,8 +53,25 @@ class Motor:
         return self.pos
 
 
+def test_shipped_config_is_v2_with_magnet_speed_max_15(monkeypatch):
+    """Decision 0016: the shipped active profile is v2, made through the admin path (base v1, re-commissioning record),
+    with magnet_speed_mm_s [0, 15] mm/s; every other limit is identical to v1, and v1 stays in the history."""
+    monkeypatch.setattr(safety, "CONFIG", REPO_CONFIG)
+    p = safety.load_active()
+    v1 = json.loads((REPO_CONFIG / "safety_profiles" / "1.json").read_text(encoding="utf-8"))
+    v2 = json.loads((REPO_CONFIG / "safety_profiles" / "2.json").read_text(encoding="utf-8"))
+    assert p["version"] == 2 and p["base_version"] == 1 and safety.versions() == [1, 2]
+    assert safety._thaw(p) == v2 and v2["recommissioning"]["checked"] == {"magnet_speed_mm_s": True}
+    assert v2["limits"]["magnet_speed_mm_s"]["max"] == 15.0 and v2["limits"]["magnet_speed_mm_s"]["verified"] is True
+    assert [q for q in v1["limits"] if v1["limits"][q] != v2["limits"][q]] == ["magnet_speed_mm_s"]
+    assert set(v1["limits"]) == set(v2["limits"]) and v2["allow_unverified"] is False
+    safety.check("magnet_speed_mm_s", 15.0)
+    with pytest.raises(SafetyRefused, match=r"magnet_speed_mm_s 15.1 mm/s is outside the allowed range \[0, 15\]"):
+        safety.check("magnet_speed_mm_s", 15.1)
+
+
 def test_version_and_shipped_profile_is_valid():
-    assert api.VERSION == "0.5.0"
+    assert api.VERSION == "0.6.0"
     p = safety.profile()
     assert p["version"] == 1 and safety.versions() == [1]
     assert p["limits"]["magnet_position_mm"]["max"] == 39.0

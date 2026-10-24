@@ -22,9 +22,14 @@ SYNTHETIC_TABLE = {"name": "synthetic test table", "version": "test", "position_
                    "force_pN": [0.1, 1.0, 10.0]}
 
 
-def _config(tmp_path, monkeypatch, test_limits):
+def _config(tmp_path, monkeypatch, test_limits, profile_version=None):
+    """A copy of the shipped config in tmp_path. profile_version: make that history version the active profile
+    (e.g. 1, to check that v1 still refuses every magnet move after v2 was shipped, decision 0016)."""
     shutil.copytree(REPO_CONFIG, tmp_path / "config")
     monkeypatch.setattr(safety, "CONFIG", tmp_path / "config")
+    if profile_version is not None:
+        src = tmp_path / "config" / "safety_profiles" / f"{profile_version}.json"
+        (tmp_path / "config" / "safety_profile.json").write_text(src.read_text(encoding="utf-8"), encoding="utf-8")
     if test_limits:
         path = tmp_path / "config" / "safety_profile.json"
         p = json.loads(path.read_text(encoding="utf-8"))
@@ -35,8 +40,8 @@ def _config(tmp_path, monkeypatch, test_limits):
     safety.load_active()
 
 
-def _rig(tmp_path, monkeypatch, test_limits):
-    _config(tmp_path, monkeypatch, test_limits)
+def _rig(tmp_path, monkeypatch, test_limits, profile_version=None):
+    _config(tmp_path, monkeypatch, test_limits, profile_version)
     with events.as_caller("gui"):
         estop.clear()
         api.devices.connect({"backend": "sim"})
@@ -54,8 +59,14 @@ def rig(tmp_path, monkeypatch):
 
 @pytest.fixture
 def shipped_rig(tmp_path, monkeypatch):
-    """A simulated rig on the shipped profile v1."""
+    """A simulated rig on the shipped profile (v2 since decision 0016: magnet speed max 15 mm/s)."""
     yield from _rig(tmp_path, monkeypatch, test_limits=False)
+
+
+@pytest.fixture
+def v1_rig(tmp_path, monkeypatch):
+    """A simulated rig on profile v1 (no magnet speed maximum), taken from the history."""
+    yield from _rig(tmp_path, monkeypatch, test_limits=False, profile_version=1)
 
 
 def _since(n):
@@ -83,10 +94,25 @@ def test_refusal_outside_profile_names_range_and_moves_nothing(rig):
 
 
 def test_shipped_profile_refuses_rotor_and_focus(shipped_rig):
+    """Shipped profile v2 (decision 0016): rotor and focus still refused; magnet moves allowed up to 15 mm/s."""
+    assert safety.profile()["version"] == 2
     with pytest.raises(SafetyRefused, match="not verified"):
         api.rotor.rotate(1.0)
     with pytest.raises(SafetyRefused, match="no limit set"):
         api.focus.move_to(1.0)
+    with pytest.raises(SafetyRefused, match=r"magnet_speed_mm_s 16 mm/s is outside the allowed range \[0, 15\]"):
+        api.magnet.move_to(1.0, speed_mm_s=16.0)
+    shipped_rig["magnet"].device.axis.speed = 15.5          # omitted speed: read back (VEL?) and checked
+    with pytest.raises(SafetyRefused, match=r"magnet_speed_mm_s 15.5 mm/s is outside"):
+        api.magnet.move_to(1.0)
+    assert api.magnet.position() == pytest.approx(0.0, abs=0.01)
+    shipped_rig["magnet"].device.axis.speed = 10.0
+    assert api.magnet.move_to(1.0).wait(5) == pytest.approx(1.0, abs=0.01)
+    assert api.magnet.move_to(2.0, speed_mm_s=15.0).wait(5) == pytest.approx(2.0, abs=0.01)
+
+
+def test_profile_v1_still_refuses_every_magnet_move(v1_rig):
+    assert safety.profile()["version"] == 1
     with pytest.raises(SafetyRefused, match="no limit set"):
         api.magnet.move_to(1.0, speed_mm_s=1.0)
     n = len(events.events())

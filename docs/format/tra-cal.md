@@ -76,3 +76,6 @@ the z step as 0.1.
 - **Mixed byte order** between the two files.
 - The header text is **CP949**, not UTF-8.
 - Use absolute buffer numbers (see decision 0005) when aligning with other data. The `.tra` frame column is relative to the first saved buffer.
+- **mtpy export (owner, decision 0016 item 4, 2026-10-25):** the frame column counts from the first RECORDED frame = 0
+  (per segment: `buffer_number - smallest recorded buffer number of the segment`), also when recording started
+  after acquisition; gaps (lost or untracked frames) still show. Same rule in `matlab/read_mtpy_h5.m`.

@@ -578,6 +578,34 @@ gain_dB]`; a late off with written rows beyond it: `test_late_off_reports_writte
 - **WP6:** the one-run test assumes A's engine (`wait t=1`) is still running when B gets the lock; make the run's
   end a signal too.
 
+**Owner decisions 0016, implemented (2026-10-25, `api.VERSION = "0.6.0"`, simulators and files only):**
+1. **Rig safety profile v2** (magnet speed max 15 mm/s), made ONLY through the admin write path
+   (`mtpy.admin.safety_admin`: caller `rig-admin`, `open_admin_session` -> `propose_change` -> `activate`; no hand
+   edit of `config/`). v2 = v1 + `magnet_speed_mm_s` [0, 15] mm/s, `verified: true`; every other limit is identical
+   (stage x/y +-2 mm, magnet travel 0-39 mm, rotor / focus / force still unverified or unset); v1 stays in
+   `config/safety_profiles/1.json`. **Its re-commissioning record says the value comes from the owner's decision
+   and that NO move-and-read-back at 15 mm/s was done** (no hardware here): the rig check is a WP6 carry. Effect:
+   magnet moves (`move_to`, `zero`, `move mm=`) are allowed up to 15 mm/s; force steps (`set_force`, `hold`, `ramp`,
+   `rotate`) still fail because `magnet_force_pN` has no maximum. Tests: `test_shipped_config_is_v2_with_magnet_speed_max_15`,
+   `test_shipped_profile_refuses_rotor_and_focus` (16 mm/s and a read-back 15.5 mm/s refused; 10 and 15 mm/s move),
+   `test_profile_v1_still_refuses_every_magnet_move`, `test_shipped_profile_v2_runs_magnet_moves_but_not_forces`.
+   The WP1 profile / admin tests now start from a v1-only config (their fixture), unchanged otherwise.
+2. **`zero`** = magnet to 0 mm, owner-confirmed; the U12 tracking zero stays open (grammar.md 12.7).
+3. **`end protocol`** (grammar.md 12.18): last statement at the top level; logs `protocol` `end_statement`, then
+   `api.acq.set_recording(False)` (acquisition keeps running), run `completed`. Without it recording continues after
+   the protocol; stop / e-stop never switch it off. Tests: `test_end_protocol_parse_rules`,
+   `test_end_protocol_switches_recording_off_and_closes_the_interval` (HDF5 `/recordings` off_buffer = the off event,
+   no row after it), `test_without_end_protocol_recording_keeps_going`.
+4. **`.tra` frame column from the first RECORDED frame** of each segment (`legacy_matrix`, `export_tra`, and the
+   MATLAB reader): `buffer - smallest recorded buffer of the segment`. Test:
+   `test_tra_frame_column_counts_from_first_recorded_frame` (recording started 20+ frames after acquisition).
+5. **MATLAB 2026** is the target of `matlab/read_mtpy_h5.m` (header note).
+
+**Carried (decision 0016):**
+- **WP6:** run `matlab/read_mtpy_h5.m` in MATLAB 2026 (release letter not given; not installed on the development
+  PC), including its new frame rule; check magnet moves at 15 mm/s on the rig (move and read back) and record it in a
+  re-commissioning report; `magnet_force_pN` maximum still to be set by the owner.
+
 ## 4. Example: the enzyme-cleavage experiment as a Python experiment script (level 3)
 ```python
 from mtpy import api   # api.VERSION >= 0.1

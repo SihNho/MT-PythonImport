@@ -354,6 +354,18 @@ class Engine:
             raise _End("failed", f"line {st.line}: 'wait until' cannot run yet (no api.events.rule)")
         self._sleep(self._a(st, "t"))
 
+    def _do_end_protocol(self, st):
+        """`end protocol` (decision 0016 item 3): switch recording off through the API (acquisition and the live
+        display keep running) and end the run. Without it, recording simply continues after the protocol."""
+        was = bool(api.acq.running() and api.acq.status().get("recording"))
+        # logged BEFORE the switch, so while recording it reaches the run file ahead of the recording-off event
+        api.events.log("protocol", action="end_statement", line=st.line, name=self.script.name,
+                       recording_switched_off=was, note=None if was else "recording was not on; nothing switched off")
+        if was:
+            api.acq.set_recording(False)
+        raise _End("completed", f"'end protocol' at line {st.line}"
+                                + ("; recording switched off" if was else "; recording was not on"))
+
     def _do_stop(self, st):
         raise _End("completed", f"'stop' at line {st.line}")
 

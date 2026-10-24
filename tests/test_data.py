@@ -369,7 +369,8 @@ def test_matlab_reader_reads_existing_datasets(tmp_path):
     _write(tmp_path / "x.h5", "events first")
     src = (REPO / "matlab" / "read_mtpy_h5.m").read_text(encoding="utf-8")
     used = set(re.findall(r"run\.(mt|segments|beads)\.(\w+)", src))
-    assert {("mt", "x_px"), ("segments", "first_buffer")} <= used
+    assert {("mt", "x_px"), ("mt", "buffer_number"), ("mt", "segment")} <= used
+    assert ("segments", "first_buffer") not in used          # decision 0016: frame from the first RECORDED buffer
     with h5py.File(tmp_path / "x.h5", "r") as f:
         for g, name in used:
             assert f"{g}/{name}" in f, (g, name)
@@ -398,6 +399,25 @@ def test_api_record_rate_change_two_segments(cam, tmp_path):
     assert run["attrs"]["closed_cleanly"] == 1 and "guarded_change" in run["events"]
     assert run["recordings"]["name"].tolist() == ["run1"]
     assert run["metadata"]["devices"]["jai"]["identity"]
+
+
+def test_tra_frame_column_counts_from_first_recorded_frame(cam, tmp_path):
+    """Decision 0016 item 4: recording starts after acquisition, so the first recorded buffer number is > 0; the
+    .tra frame column still starts at 0 (buffer - first recorded buffer of the segment) and keeps the gaps."""
+    api.acq.start(record=False, name="later", folder=tmp_path)
+    api.acq.wait_frames(20, 5)
+    api.acq.set_recording(True, name="later")
+    api.acq.wait_frames(20, 5)
+    st = api.acq.stop()
+    assert st["sink_failures"] == 0, st["sink_error"]
+    run = read_run(tmp_path / "later.h5")
+    buf = run["mt"]["buffer_number"].astype(np.int64)
+    first = int(buf.min())
+    assert first >= 20 and run["segments"]["first_buffer"][0] == 0      # acquisition started at 0, recording later
+    rows = legacy_matrix(tmp_path / "later.h5")[1]
+    assert rows[0, 0] == 0 and rows[:, 0].tolist() == sorted((buf - first).astype(float).tolist())
+    _hdr, tra = read_tra(export_tra(tmp_path / "later.h5")[0])
+    assert tra[0, 0] == 0 and tra[:, 0].tolist() == rows[:, 0].tolist()
 
 
 def test_api_recording_started_later_keeps_rate_and_settings(cam, tmp_path):

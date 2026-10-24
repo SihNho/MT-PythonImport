@@ -45,6 +45,7 @@ API_MAP = {
     "on": [("events.rule", {}), ("events.on", {})],
     "loop": [],
     "stop": [],
+    "end_protocol": [("acq.running", {}), ("acq.set_recording", {})],      # decision 0016 item 3
     "rule": [("screen.run", {})],
 }
 UNIT_IN_NAME = {"pN": "_pN", "mm": "_mm", "um": "_um", "turns": "turns", "s": "_s"}

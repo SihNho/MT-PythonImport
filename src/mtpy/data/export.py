@@ -3,8 +3,11 @@
 
 `.tra` rows are the tracked frames only (pipeline drops and frames whose tracking raised have no positions and are
 left out, so they show as gaps in the frame column, as lost frames do in LabVIEW's files). Column 0 is
-`buffer_number - first buffer number of its segment`; buffer numbers restart in every segment, so a run with more
-than one segment gives one `.tra` series per segment (`<base>-s<segment>-000`, ...); a one-segment run gives
+`buffer_number - first RECORDED buffer number of its segment` (decision 0016 item 4: the frame column counts from
+the first recorded frame, 0, also when recording started after acquisition; the first recorded frame is the
+segment's first `/mt` row, a dropped or untracked one included, so its gaps still show). Buffer numbers restart in
+every segment, so a run with more than one segment gives one `.tra` series per segment (`<base>-s<segment>-000`,
+...), each counted from its own first recorded frame; a one-segment run gives
 `<base>-000`, ... as LabVIEW. A series is split every `nominal` rows (LabVIEW: 2,000,000), `file k of a series`.
 Column 1 is the magnet position (mm) and column 2 the rotor (deg) last read before the frame (NaN before the first
 reading: the writer has no motor polling yet).
@@ -22,14 +25,10 @@ from mtpy.lvfiles import tra_header, write_tra
 NOMINAL = 2_000_000
 
 
-def _segment_first(f):
-    seg = f["segments"]
-    return dict(zip(seg["number"][()].tolist(), seg["first_buffer"][()].tolist()))
-
-
 def legacy_matrix(path, segment=None):
-    """{segment: rows} with the `.tra` columns: frame, magnet (mm), rotor (deg), then x, y, z per bead (the
-    /beads order); only tracked frames. segment: one segment number, or None for every segment with rows."""
+    """{segment: rows} with the `.tra` columns: frame (from the segment's first recorded frame = 0), magnet (mm),
+    rotor (deg), then x, y, z per bead (the /beads order); only tracked frames. segment: one segment number, or None
+    for every segment with rows."""
     with h5py.File(path, "r") as f:
         if "mt" not in f:
             return {}
@@ -39,15 +38,12 @@ def legacy_matrix(path, segment=None):
         n_beads = int(mt.attrs["n_beads"])
         xyz = [mt[k][()] for k in ("x_px", "y_px", "z_um")] if n_beads else []
         mag, rot = mt["magnet_mm"][()], mt["rotor_deg"][()]
-        firsts = _segment_first(f)
     out = {}
     for s in sorted(set(seg.tolist()) if segment is None else {segment}):
         sel = ok & (seg == s)
         if not sel.any():
             continue
-        first = firsts.get(s, -1)
-        if first < 0:                               # segment end never received: the smallest recorded buffer
-            first = int(buf[seg == s].min())
+        first = int(buf[seg == s].min())             # the first RECORDED frame of the segment (decision 0016)
         cols = [buf[sel] - first, mag[sel], rot[sel]]
         for i in range(n_beads):
             cols += [xyz[0][sel, i], xyz[1][sel, i], xyz[2][sel, i]]

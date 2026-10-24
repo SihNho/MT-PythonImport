@@ -67,7 +67,8 @@ wait until <expr> timeout=120   # wait for a condition; on timeout: continue (de
 on <expr> do               # event handler, active until the protocol ends
   mark "cleaved"
 end
-stop                       # end the protocol here
+stop                       # end the protocol here (recording left as it is)
+end protocol               # last statement: switch recording off, end the protocol (0016; see 12.18)
 ```
 `repeat n` at the end of a file (as in the mock-up) is shorthand for wrapping the whole list in `loop n=`.
 
@@ -216,9 +217,9 @@ Where the draft left a point open, WP5 chose the simplest safe option. Each is m
    yet; they become runnable when the API has them (no change to the checker's rule).
 6. **Screening rules** are parsed but **not evaluated** (no `api.screen`, no metric library yet): a check warning,
    and the run's `protocol` start event says `rules_evaluated: false`. Metric names are not checked yet.
-7. **`zero t=`** moves the magnet to 0 mm (top, the lowest force) and holds t; it does **not** set the tracking zero
-   (`api.tracking.zero` does not exist yet) - the step's end event says so. Owner to confirm what "zero force" means
-   (0 mm, or the force table's lowest force).
+7. **`zero t=`** moves the magnet to 0 mm (top, the lowest force) and holds t - **owner-confirmed (decision 0016
+   item 2)**. It does **not** set the tracking zero (`api.tracking.zero` does not exist yet) - the step's end event
+   says so; when the tracking zero is set (U12) stays open, and `zero` is not counted as meeting U12.
 8. **`ramp`** is a staircase through `api.magnet.set_force`: first `from`, then ceil(t / ramp step) increments
    (ramp step 0.5 s by default, `api.protocol.run(ramp_step_s=)`), each after its interval and each waited for until
    it arrives; the real duration is t plus the move times.
@@ -229,11 +230,14 @@ Where the draft left a point open, WP5 chose the simplest safe option. Each is m
     |to - from| / t, which is always passed explicitly so `rotor_speed_turns_s` is always checked.
 11. **`focus um=`** is relative to the focus position read when the protocol starts.
 12. **`record`** needs acquisition already running (`api.acq.start`); the protocol never starts or stops
-    acquisition. The recording name is the protocol name; `record t=` is on, t, off.
+    acquisition. The recording name is the protocol name; `record t=` is on, t, off. Without `end protocol` (item 18)
+    recording keeps going after the protocol ends; a user stop or an emergency stop never switches it off (0007,
+    0016 item 3).
 13. **`mark`** uses `api.acq.mark` (with the frame position) while acquisition runs, else a `mark` event.
 14. **Check before the run, in three layers:** the API (functions and the unit in each parameter's name), the rig
-    safety profile (every value; every magnet move also needs a usable `magnet_speed_mm_s` maximum, so with profile v1
-    every magnet statement fails the check), and at `run()` the rig state (devices connected, a force table loaded that
+    safety profile (every value; every magnet move also needs a usable `magnet_speed_mm_s` maximum: profile v1 had
+    none, so every magnet statement failed the check; the shipped v2 has 15 mm/s (0016 item 1), while force steps
+    still fail until `magnet_force_pN` has a maximum), and at `run()` the rig state (devices connected, a force table loaded that
     covers every force and maps it inside the magnet travel, the focus target from the current position, acquisition
     running for `record`). Values that depend on the run are checked again by the API at each step.
 15. **Run behaviour:** one protocol at a time, on its own thread, only through `mtpy.api`, caller
@@ -259,6 +263,14 @@ Where the draft left a point open, WP5 chose the simplest safe option. Each is m
     `protocol_step` (phase start / end / refused / failed / stopped / aborted / completed, with step number, line,
     statement, loop pass, protocol version and target) and `protocol_edit` (applied / refused). While recording they
     reach the HDF5 `/events` like every other event.
+18. **`end protocol` (owner decision 0016 item 3, api 0.6.0).** The protocol end statement reuses the reserved
+    keyword `end` with the word `protocol` (a bare `end` still closes a block, so an unbalanced `end` can never turn
+    into a protocol end). Rule: at most one, at the top level, as the **last** statement - after `repeat n` if both
+    are used (it runs once, after the repeats); only screening `rule` lines may follow it. Executing it logs a
+    `protocol` event `end_statement` (before the switch, so it is in the run file), switches recording off through
+    `api.acq.set_recording(False)` - acquisition and the live display keep running - and ends the run as
+    `completed`. If recording was not on, nothing is switched and the event says so. Unlike `stop` (ends the
+    protocol, recording left as it is).
 
 ## 13. Open
 - Exact metric names and the event-rule functions (grows with use).
@@ -266,8 +278,9 @@ Where the draft left a point open, WP5 chose the simplest safe option. Each is m
 - Block-editor representation of `if` / `on` (visual design, phase 8).
 - How a protocol references an illumination sequence and a recipe inside a bundle (paths vs names).
 - smCamera's FRET formula for `fret()`.
-- (WP5) What `zero` means as a magnet target (0 mm or the table's lowest force), and when the tracking zero is set.
-- (WP5) Whether `stop` / the end of a protocol should switch recording off (today: left as it is, 0007).
+- (WP5) When the tracking zero is set (U12); `zero` = magnet to 0 mm is owner-confirmed (0016) but sets no
+  tracking zero, so it is not counted as meeting U12.
+- (resolved, 0016 item 3) Recording at the end of a protocol: off only through `end protocol` (12.18).
 - (WP5) Structural mid-run edits (insert / delete / move a step, also adding steps after the running one) are
   refused today, so U18 is only partly met (values only); owner to confirm that this is enough until phase 8.
-- (WP5) `zero` is not accepted as meeting U12 (it sets no tracking zero); owner to confirm its meaning.
+- (0016) The AI's reading that `end protocol` does not stop acquisition is to be confirmed by the owner.

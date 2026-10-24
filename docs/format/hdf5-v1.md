@@ -138,7 +138,7 @@ only devices present in the run.
 |---|---|---|---|---|
 | `buffer_number` | uint64 | 1 | original camera buffer number (decision 0005); it restarts at 0 in every acquisition segment (WP3 frame contract), so it is unique only together with `segment` | camera driver |
 | `segment` | int32 | 1 | acquisition segment (row of `/segments`) — *added in WP4* | pipeline |
-| `frame` | — | 1 | **not stored (WP4)**: `buffer_number − /segments/first_buffer` of its segment = `.tra` column 0 (readers and the `.tra` export compute it) | computed |
+| `frame` | — | 1 | **not stored (WP4)**: `buffer_number −` the smallest RECORDED `buffer_number` of its segment in `/mt` = `.tra` column 0 (decision 0016 item 4: counts from the first recorded frame; readers and the `.tra` export compute it) | computed |
 | `lost_before` | uint32 | 1 | camera-side frames lost between this row and the previous received one (0 = none) | buffer numbers |
 | `dropped` | uint8 | 1 | 1 = pipeline drop (received, dropped from the full ring, never tracked; positions NaN) — *added in WP4* | pipeline |
 | `track_error` | uint8 | 1 | 1 = tracking raised on this frame (positions NaN) — *added in WP4* | pipeline |
