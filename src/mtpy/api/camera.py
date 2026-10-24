@@ -10,7 +10,7 @@ stopped (U15: a mismatch is shown and acquisition does not start).
 """
 from mtpy.devices import NEEDS_PAUSE
 
-from . import events
+from . import acq, events
 from ._act import acting, precheck
 from .devices import service
 from .errors import SafetyRefused
@@ -34,8 +34,10 @@ def _run(svc, dev, names, act):
             and svc.call(dev.acquiring, what="acquiring?")):
         return act()
     svc.call(dev.stop_acquisition, what="stop acquisition")
+    acq._camera_paused()                            # WP3: close the segment (frames still buffered are taken first)
     events.log("acquisition", device="camera", action="pause", settings=list(names))
     got = act()                                     # raises -> acquisition stays stopped
+    acq._camera_restarting(svc.call(dev.settings, what="read settings"))   # next segment, settings read back
     svc.call(dev.start_acquisition, what="start acquisition")
     events.log("acquisition", device="camera", action="restart")
     return got

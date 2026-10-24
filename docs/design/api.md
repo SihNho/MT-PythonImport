@@ -250,6 +250,48 @@ checked separately in phases 6/7):**
 - The **elapsed time between segments** is recorded separately (PC clock) and is never replaced by a buffer-number
   offset.
 
+**Implemented in WP3 (2026-10-24, `api.VERSION = "0.3.0"`, simulators only):**
+- `mtpy.acq` (internal): `Pipeline` = camera thread -> `FrameRing` -> tracking worker -> sink thread, plus
+  `DisplayTap`. The camera thread takes frames from the camera's frame path (`next_frame`, never a device-service
+  queue or a serial call), stamps a `FrameRecord` (segment, original buffer number, `t_camera_s` with its
+  `t_source` - "sim camera clock" now, the real JAI driver will name PC receive time -, PC receive time, segment rate
+  and ROI, `gap_before`, recording flag) and never waits: a full ring (default 64 frames) drops its oldest frame,
+  counted as a **pipeline drop** per segment and passed on as a `FrameResult` with `dropped=True`. **Camera gaps**
+  are counted from the buffer numbers (also a first buffer > 0 in a segment). The worker runs `BeadTracker`
+  (track.Tracker's frame-to-frame rule on the numba `FastKernel`: start from the previous output rounded half to
+  even, -1 on the frame after a bad flag, all beads back to their calibration positions after any -1).
+  `FrameResult` = record + x, y (px), z (um), good per bead + tracking ms. `Segment` keeps rate / ROI / exposure read
+  back, first / last buffer, counters, `pc_gap_s` (PC time since the previous segment ended) and `end_loss = None`
+  (unknown, never 0). A buffer number that goes backwards without an API restart opens a new segment ("unannounced
+  restart", settings not read back).
+- `ResultSink` (`write_frame(result)`, `write_event(event)`, `close()`) and `MemorySink`. All sink calls come from
+  one sink thread fed by a lossless queue; it receives recorded frames (drops included) and every `api.events` event
+  logged while recording (subscribed through `events.subscribe`). The WP4 writer implements `ResultSink`.
+- Control between loops by latest value only: the recording flag (read by the camera thread per frame, changed
+  between two frames under the segment lock), `latest()`, and the display snapshot (at most ~30 Hz, offered by the
+  worker; reading it never slows acquisition). Queues carry data only.
+- API: `acq.start(record=False, name=None, sink=None, ring_capacity=64)`, `stop()`, `set_recording(on, name=None)`,
+  `wait_frames(n, timeout_s)` (frames produced = received + camera gaps), `mark(text)`, `status()` (fps measured
+  from the camera timestamps with its source, camera gaps, pipeline drops, unknown-loss segments, tracking ms and
+  receive -> result latency p50 / p99, ring fill, errors, segments), `sink()`, `display()`, `running()`;
+  `tracking.latest(bead)` (x_px, y_px, z_um, good, segment, buffer number, camera time; `uncertainty: None` with
+  `"not yet computed"`); `beads.select(ids, cal_path=None)` (1-based ids of a `.cal`; None = the first `cal*` in the
+  sim camera's fixture folder; refused while acquiring), `beads.selected()`.
+- `api.camera.set_rate` / `set_roi` during acquisition now close the segment after the stop (frames still in the
+  camera buffer are taken first) and open the next one with the settings read back before the restart. While
+  recording, every device service's `recording` flag is set, so the "guarded while recording" settings need
+  `confirm=True`.
+- **Changes against section 2.3:** `start` defaults to `record=False` (exploration first, U17) and takes `sink=` (a
+  seam until WP4 builds the HDF5 sink from `name`) and `ring_capacity=`; `set_recording`, `sink`, `display`,
+  `running` are new; `beads.select` takes `cal_path=` until `api.calib` exists. `SimCamera.timestamp_source` is new.
+- **Emergency stop:** 0007 stops motion only, so acquisition and recording continue through an e-stop and `start`
+  is allowed while it is engaged (the camera's `stop()` is a no-op; a real camera driver's `stop()` must stay one).
+- **Speed through the pipeline** (`tools/bench_pipeline.py`, 150 Hz sim replay, 5 s, beads repeated): tracking
+  p50 / p99 0.39 / 1.07 ms (5 beads), 0.87 / 1.51 ms (20), 2.88 / 4.11 ms (80); no drops, no gaps.
+- **Not done here:** a camera reconnect during acquisition ends the frames without a segment end (stop and start
+  acquisition again); bead positions are image (ROI) pixels, so an ROI change that moves beads out of the image
+  turns tracking off with a per-frame error until beads are selected again; per-frame uncertainty (U34).
+
 ## 4. Example: the enzyme-cleavage experiment as a Python experiment script (level 3)
 ```python
 from mtpy import api   # api.VERSION >= 0.1

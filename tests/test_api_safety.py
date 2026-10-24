@@ -46,7 +46,7 @@ class Motor:
 
 
 def test_version_and_shipped_profile_is_valid():
-    assert api.VERSION == "0.2.0"
+    assert api.VERSION == "0.3.0"
     p = safety.profile()
     assert p["version"] == 1 and safety.versions() == [1]
     assert p["limits"]["magnet_position_mm"]["max"] == 39.0

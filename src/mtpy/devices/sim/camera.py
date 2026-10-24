@@ -53,6 +53,8 @@ def _rings(h=SENSOR_H, w=SENSOR_W):
 class SimCamera(Device):
     name, model = "camera", "JAI SP-5000M-USB (IMAQdx cam1)"
     hint = "check the USB 3 cable and that no other program (LabVIEW, NI MAX) holds the camera"
+    # what Frame.t_camera_s is; the real JAI driver will say "PC receive time" (no hardware timestamp, 0005)
+    timestamp_source = "sim camera clock (s since acquisition start)"
     settings_kinds: ClassVar[dict] = {"exposure_ms": (IMMEDIATE, False), "gain_dB": (IMMEDIATE, False),
                       "rate_Hz": (NEEDS_PAUSE, True), "roi": (NEEDS_PAUSE, True)}
 
