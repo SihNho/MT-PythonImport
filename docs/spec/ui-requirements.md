@@ -349,6 +349,12 @@ extension on one time axis (two y-axes), live in the application and as a functi
 combinations through the graph axis choice (U3), with FRET, donor / acceptor intensity and stoichiometry added as
 variables.
 
+**U30 - numeric entry for every setting; sliders only as a shortcut.** Owner 2026-10-24 (on the Explore screen):
+"Magnet position, Camera settings 등이 숫자로 입력 가능하도록. 스크롤 하는건 보조역할이면 괜찮은데 유일하면 곤란함".
+Every adjustable value (magnet position, rotor, focus, exposure, gain, thresholds, ...) has a number box with its unit
+and step buttons; a slider may sit beside it as a shortcut but is never the only way. Values are clamped to the
+allowed range, and the range / limit is shown next to the box. Applied on Enter or when the box loses focus.
+
 **U11 - UI language.** Owner 2026-10-22: "글자는 무조건 영어." All UI text in English only.
 
 **Note - local AI model.** Owner 2026-10-22: "Laya 내장하는거는 염두에 두고 있음. 로컬로 트레이닝한다면 내 계정이
