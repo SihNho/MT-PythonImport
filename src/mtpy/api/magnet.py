@@ -5,7 +5,7 @@
 """
 import numpy as np
 
-from . import events, safety
+from . import estop, events, safety
 from .devices import _move, service
 from .errors import NotReady, SafetyRefused
 
@@ -19,7 +19,10 @@ def move_to(position_mm, speed_mm_s=None):
     exactly the speed that was checked. A profile without a speed limit (the shipped v1: `magnet_speed_mm_s` has
     no max) refuses every magnet move until a rig-admin sets it. Emergency stop -> NotReady. Read back within the
     device's tolerance or DeviceError (from wait()). Example: `api.magnet.move_to(5.0).wait(10)`.
+    The request is made at the first line: an emergency stop engaged from here on (even while the speed is read
+    back, and even if released again) voids it (re-review l2s-wp2-r2).
     """
+    gen = estop.generation()
     svc = service("magnet")
     dev = svc.require()
     omitted = speed_mm_s is None
@@ -32,7 +35,7 @@ def move_to(position_mm, speed_mm_s=None):
     except SafetyRefused as e:
         events.log("refused", request=request, reason=str(e))
         raise
-    return _move("magnet", "magnet_position_mm", position_mm, dev.position,
+    return _move("magnet", "magnet_position_mm", position_mm, dev.position, gen=gen,
                  send=lambda v: svc.call(dev.move_to, v, speed, what=f"VEL 1 {speed!r}; MOV 1 {v!r}"))
 
 

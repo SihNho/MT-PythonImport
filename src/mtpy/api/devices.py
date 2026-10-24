@@ -85,12 +85,17 @@ def self_check():
     return {name: svc.self_check() for name, svc in _services.items()}
 
 
-def _move(name, quantity, value, read, send=None, origin=None, check=None, match=None):
+def _move(name, quantity, value, read, send=None, origin=None, check=None, match=None, gen=None):
     """Start a Motion: refuse at once (caller's thread) if e-stopped or outside the profile, then on the motion thread
-    send, wait for arrival, read back and compare through acting()."""
+    send, wait for arrival, read back and compare through acting().
+
+    gen: the emergency-stop generation recorded on the FIRST line of the public move function, before any device
+    pre-read (magnet speed, rotor position; re-review l2s-wp2-r2), so an engage -> clear during a pre-read voids the
+    move. None = now (a move function without pre-reads)."""
     svc = service(name)
     dev = svc.require()
-    gen = estop.generation()            # the request is made now: an emergency stop after this voids it for good
+    if gen is None:
+        gen = estop.generation()        # the request is made now: an emergency stop after this voids it for good
     precheck(quantity, value, dev.tol, origin, check, gen)
     send = send or (lambda v: svc.call(dev.move_to, v, what=f"move to {v!r}"))
 

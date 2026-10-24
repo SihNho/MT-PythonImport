@@ -221,6 +221,22 @@ checked separately in phases 6/7):**
   Pulse p triggers EMCCD frame m = p // N when p % N == 0, so frame m covers the divider's pulses [mN, (m+1)N); each
   record keeps the JAI buffer number seen with the triggering pulse, for matching only.
 
+**Re-review l2s-wp2-r2 fixes (simulators only; same evidence level as above):**
+- **Generation before the pre-reads:** `magnet.move_to` and `rotor.rotate` record the e-stop generation on their
+  first line, before reading the magnet speed (`VEL?`) or the rotor position, and pass it to `_move(gen=...)`; an
+  engage -> clear during either pre-read voids the move (`NotReady`, nothing sent). Moves without a device pre-read
+  (focus, stage) record it in `_move`.
+- **Void check after any end of the send:** the device service checks for voiding (generation changed or the cancel
+  flag set) after the send whether it returned or raised (a send may apply the move and then raise). A voided send
+  is stopped again on the device thread and ends in `NotReady` + `cancelled`, never `act`; when it had raised, the
+  original exception is the `NotReady`'s cause and is recorded as a `device_fault` event (field `voided`; the U8
+  status is not marked as error); `estop_error` only if the re-stop itself fails. A send that raised and is not void
+  keeps the usual `DeviceError` handling.
+- **Deferred (agreed in l2s-wp2-r2):** (1) the rotor's omitted speed is not yet read back and checked like the
+  magnet's (`rotor_speed_turns_s`) - deferred to the package that opens rotor ranges (the shipped profile v1 refuses
+  every rotor move until then); (2) `Motion.wait_arrival` checks the stop flag and cancel flag but not the generation
+  - deferred to later.
+
 **Frame contract for WP3 (acquisition pipeline), agreed in review l2s-wp2-r1:**
 - Acquisition runs in **segments**: every acquisition start (including the restart after a "needs a short pause"
   change, U17) begins a new segment with its own segment number, increasing through the run.

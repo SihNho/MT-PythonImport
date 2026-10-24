@@ -271,12 +271,13 @@ def test_cancel_stops_at_once_while_the_queue_is_blocked(rig):
 
 def test_requests_made_before_estop_never_run_after_clear(rig):
     light, magnet = rig["light"], rig["magnet"]
-    entered, release = threading.Event(), threading.Event()
+    entered = {s.name: threading.Event() for s in (light, magnet)}     # per device (re-review l2s-wp2-r2)
+    release = threading.Event()
 
-    def blocker():
-        entered.set()
+    def blocker(name):
+        entered[name].set()
         release.wait(5)
-    blockers = [threading.Thread(target=lambda s=s: s.call(blocker, what="long command", timeout_s=6))
+    blockers = [threading.Thread(target=lambda s=s: s.call(blocker, s.name, what="long command", timeout_s=6))
                 for s in (light, magnet)]
     errors = []
 
@@ -289,7 +290,7 @@ def test_requests_made_before_estop_never_run_after_clear(rig):
     for b in blockers:
         b.start()
     try:
-        assert entered.wait(2)
+        assert all(e.wait(2) for e in entered.values())             # BOTH service threads are blocked
         lt = threading.Thread(target=set_light)
         lt.start()
         m = api.magnet.move_to(5.0, speed_mm_s=1.0)
@@ -311,6 +312,115 @@ def test_requests_made_before_estop_never_run_after_clear(rig):
     assert light.device.outputs_dict()["532"] is False                      # never sent
     assert magnet.device.position() == pytest.approx(0.0, abs=0.01)         # never moved
     assert _no_act(n, "light_532") and _no_act(n, "magnet_position_mm")
+
+
+# --- re-review l2s-wp2-r2: generation recorded before the pre-reads; void check after a send that raised -------------
+
+def _blocked_once(monkeypatch, dev, attr):
+    """Make the FIRST dev.<attr>() call wait (on the service thread) until `release` is set; later calls are real."""
+    entered, release = threading.Event(), threading.Event()
+    real = getattr(dev, attr)
+
+    def slow(*a):
+        if not entered.is_set():
+            entered.set()
+            release.wait(5)
+        return real(*a)
+    monkeypatch.setattr(dev, attr, slow)
+    return entered, release
+
+
+def _engage_clear_during_preread(monkeypatch, dev, attr, start):
+    """Run start() (a public move call) in a thread; engage and clear the stop while its pre-read dev.<attr>() waits.
+    Returns what start() returned or raised."""
+    entered, release = _blocked_once(monkeypatch, dev, attr)
+    out = []
+
+    def run():
+        try:
+            out.append(start())
+        except Exception as e:  # noqa: BLE001 - checked by the caller
+            out.append(e)
+    t = threading.Thread(target=run)
+    t.start()
+    try:
+        assert entered.wait(2)
+        estop.engage("test")
+        with events.as_caller("gui"):
+            estop.clear()                         # released again before the pre-read returns
+    finally:
+        release.set()
+        t.join(5)
+    assert len(out) == 1
+    return out[0]
+
+
+def test_engage_clear_during_magnet_speed_preread_voids_the_move(rig, monkeypatch):
+    dev = rig["magnet"].device
+    n = len(events.events())
+    got = _engage_clear_during_preread(monkeypatch, dev, "speed", lambda: api.magnet.move_to(5.0))
+    assert isinstance(got, NotReady) and "emergency stop" in str(got)
+    assert not dev.moving() and dev.position() == pytest.approx(0.0, abs=0.01)
+    assert "act" not in [e.kind for e in _since(n)]
+
+
+def test_engage_clear_during_rotor_position_preread_voids_the_move(rig, monkeypatch):
+    dev = rig["rotor"].device
+    p0 = dev.position()
+    n = len(events.events())
+    got = _engage_clear_during_preread(monkeypatch, dev, "position", lambda: api.rotor.rotate(1.0))
+    assert isinstance(got, NotReady) and "emergency stop" in str(got)
+    assert not dev.moving() and dev.position() == pytest.approx(p0, abs=0.002)
+    assert "act" not in [e.kind for e in _since(n)]
+
+
+def _send_applies_then_raises(monkeypatch, dev):
+    """dev.move_to waits until `release`, then APPLIES the move and raises (a reply lost after the command went out)."""
+    entered, release = threading.Event(), threading.Event()
+    real = dev.move_to
+
+    def applies_then_raises(target, speed=None):
+        entered.set()
+        release.wait(5)
+        real(target, speed)
+        raise RuntimeError("reply lost after the move was applied")
+    monkeypatch.setattr(dev, "move_to", applies_then_raises)
+    return entered, release
+
+
+@pytest.mark.parametrize("void_by", ["engage_clear", "cancel"])
+def test_voided_send_that_raised_is_stopped_again_and_cancelled(rig, monkeypatch, void_by):
+    svc, dev = rig["magnet"], rig["magnet"].device
+    entered, release = _send_applies_then_raises(monkeypatch, dev)
+    n = len(events.events())
+    m = api.magnet.move_to(5.0, speed_mm_s=1.0)
+    assert entered.wait(2)
+    if void_by == "cancel":
+        m.cancel()
+    else:
+        estop.engage("test")
+        with events.as_caller("gui"):
+            estop.clear()
+    release.set()                                 # the move is applied now, then the send raises
+    with pytest.raises(NotReady, match="emergency stop" if void_by == "engage_clear" else "cancelled") as ei:
+        m.wait(5)
+    assert isinstance(ei.value.__cause__, RuntimeError)                # the original send exception is the cause
+    assert not dev.moving() and dev.position() < 0.1                  # stopped again on the device thread
+    assert _no_act(n, "magnet_position_mm")
+    kinds = [e.kind for e in _since(n)]
+    assert "device_error" not in kinds and "estop_error" not in kinds
+    fault = [e for e in _since(n) if e.kind == "device_fault"]
+    assert len(fault) == 1 and "reply lost" in fault[0].extra["hint"] and fault[0].extra["voided"]
+    assert svc.status()["state"] != "error"
+
+
+def test_send_that_raised_and_is_not_void_is_a_device_error(rig, monkeypatch):
+    dev = rig["magnet"].device
+    _entered, release = _send_applies_then_raises(monkeypatch, dev)
+    release.set()
+    with pytest.raises(DeviceError, match="reply lost"):
+        api.magnet.move_to(5.0, speed_mm_s=1.0).wait(5)
+    dev.stop()
 
 
 def test_caller_shown_from_worker_threads(rig):

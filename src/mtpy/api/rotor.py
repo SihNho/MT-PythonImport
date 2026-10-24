@@ -2,7 +2,7 @@
 
     api.rotor.rotate(2.0).wait(timeout_s=10)     # two turns from where it is now; -> position read back (turns)
 """
-from . import events, safety
+from . import estop, events, safety
 from ._act import precheck
 from .devices import _move, service
 from .errors import SafetyRefused
@@ -15,7 +15,10 @@ def rotate(turns, speed_turns_s=None):
     session-start position (kept by the device layer, never supplied by the caller); a given speed_turns_s inside
     `rotor_speed_turns_s` (None = the controller's current speed). The shipped profile v1 refuses every rotor move
     until a rig-admin verifies the window. Example: `api.rotor.rotate(-1.5).wait(10)`.
+    The request is made at the first line: an emergency stop engaged from here on (even while the position is read,
+    and even if released again) voids it (re-review l2s-wp2-r2).
     """
+    gen = estop.generation()
     svc = service("rotor")
     dev = svc.require()
     if speed_turns_s is not None:
@@ -27,7 +30,7 @@ def rotate(turns, speed_turns_s=None):
     if not safety._is_number(turns):
         precheck("rotor_turns", turns, origin=svc.origin)              # refuses with a `refused` event
     target = svc.call(dev.position, what="POS") + turns
-    return _move("rotor", "rotor_turns", target, dev.position, origin=svc.origin,
+    return _move("rotor", "rotor_turns", target, dev.position, origin=svc.origin, gen=gen,
                  send=lambda v: svc.call(dev.move_to, v, speed_turns_s, what=f"PAB {v!r} turns"))
 
 

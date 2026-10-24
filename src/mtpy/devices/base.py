@@ -97,29 +97,49 @@ class DeviceService:
             item = self._q.get()
             if item is None:
                 return
-            ctx, fn, args, fut, guard = item
+            ctx, fn, args, fut, guard, what = item
             if fut.set_running_or_notify_cancel():
                 try:
-                    fut.set_result(ctx.run(fn, *args) if guard is None else self._send(ctx, fn, args, guard))
+                    fut.set_result(ctx.run(fn, *args) if guard is None else self._send(ctx, fn, args, guard, what))
                 except BaseException as e:  # noqa: BLE001 - handed to the waiting caller
                     fut.set_exception(e)
 
-    def _send(self, ctx, fn, args, guard):
+    def _send(self, ctx, fn, args, guard, what=None):
         """A device send of an acting call (review l2s-wp2-r1): checked against the e-stop generation and the cancel
-        flag right before (void -> nothing sent) and right after (void -> this thread stops the device again)."""
+        flag right before (void -> nothing sent) and right after (void -> this thread stops the device again).
+
+        Re-review l2s-wp2-r2: the after-check runs whether the send returned or raised (a send may apply the move and
+        then raise). A voided send always ends in NotReady (the caller logs `cancelled`, never `act`); when it had
+        raised, that exception is kept as the NotReady's cause and recorded as a `device_fault` event (with `voided`;
+        status() is not marked failed, the request was void anyway); `estop_error` only when the re-stop itself
+        fails. A send that raised and is not void re-raises unchanged, so call() makes it the usual DeviceError."""
         why = estop.invalid(guard)
         if why:
             raise NotReady(f"{self.name}: {why}; not sent")
-        result = ctx.run(fn, *args)
+        try:
+            result = ctx.run(fn, *args)
+        except Exception as e:  # checked for voiding first, else re-raised unchanged
+            why = estop.invalid(guard)
+            if not why:
+                raise
+            self._stop_again(ctx)
+            ctx.run(events.log, "device_fault", device=self.name, command=what or getattr(fn, "__name__", repr(fn)),
+                    hint=f"{type(e).__name__}: {e} - {self.device.hint}", voided=why)
+            raise NotReady(f"{self.name}: {why} during the send (the send also raised {type(e).__name__}: {e}); "
+                           "device stopped again") from e
         why = estop.invalid(guard)
         if why:
-            try:
-                self.device.stop()
-            except Exception as e:  # noqa: BLE001 - recorded; the NotReady below still ends the call
-                ctx.run(events.log, "estop_error", stopper=f"{self.name}.stop (after send)",
-                        error=f"{type(e).__name__}: {e}")
+            self._stop_again(ctx)
             raise NotReady(f"{self.name}: {why} during the send; device stopped again")
         return result
+
+    def _stop_again(self, ctx):
+        """Stop the device on this (service) thread after a voided send; a failure is an `estop_error` event."""
+        try:
+            self.device.stop()
+        except Exception as e:  # noqa: BLE001 - recorded; the caller's NotReady still ends the call
+            ctx.run(events.log, "estop_error", stopper=f"{self.name}.stop (after send)",
+                    error=f"{type(e).__name__}: {e}")
 
     def call(self, fn, *args, what=None, timeout_s=None):
         """Run fn(*args) on the service thread in a copy of the caller's context and return its result.
@@ -131,7 +151,7 @@ class DeviceService:
         """
         what = what or getattr(fn, "__name__", repr(fn))
         fut, t0 = Future(), time.monotonic()
-        self._q.put((contextvars.copy_context(), fn, args, fut, estop.send_guard()))
+        self._q.put((contextvars.copy_context(), fn, args, fut, estop.send_guard(), what))
         wait = self.reply_timeout_s if timeout_s is None else timeout_s
         try:
             result = fut.result(wait)

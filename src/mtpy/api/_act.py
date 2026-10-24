@@ -57,6 +57,9 @@ def acting(quantity, value, do, readback, tol, origin=None, device=None, check=N
     cancel)`, so the device service checks both right before each send (void -> nothing sent) and right after it
     (void -> the device thread stops the device again); either way do() raises NotReady, which ends the call with a
     `cancelled` event and no `act` event. A request made before an emergency stop never runs after clear().
+    Re-review l2s-wp2-r2: the same holds when the send raised (it may have applied the move first): a voided send
+    ends in NotReady + `cancelled` with the send's exception as the cause; only a send that raised and is NOT void
+    is a DeviceError.
     """
     gen = estop.generation() if gen is None else gen
     request, verified = precheck(quantity, value, tol, origin, check, gen)
@@ -71,7 +74,11 @@ def acting(quantity, value, do, readback, tol, origin=None, device=None, check=N
     except NotReady as e:
         events.log("cancelled", request=request, reason=str(e))
         raise
-    except Exception as e:  # noqa: BLE001 - any device failure must become a DeviceError with an event
+    except Exception as e:      # any device failure must become a DeviceError (or, if void, NotReady) with an event
+        why = estop.invalid((gen, cancel))
+        if why:                   # voided after the service's own check: still cancelled, never act; cause kept
+            events.log("cancelled", request=request, reason=f"{why} (the send also raised {type(e).__name__})")
+            raise NotReady(f"{quantity} {value!r}: {why}") from e
         _device_error(request, name, command, f"send failed: {type(e).__name__}: {e}", "send", e)
     why = estop.invalid((gen, cancel))
     if why:                       # voided after the service's own check: the stop that voided it halts the device
