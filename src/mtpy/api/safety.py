@@ -11,24 +11,26 @@ A null bound means "not set yet": every request for that quantity is refused unt
 `relative_to: "session_start"` window is checked against the position read at session start (`origin`).
 Laser powers are one entry per laser: `laser_power_mW.<laser>`.
 
-Anyone may read the profile. Only the 'rig-admin' caller may propose or activate a change, and activation needs a
-re-commissioning report that names every new or changed limit as checked on the rig. Scripts, plug-ins and the AI
-gateway get SafetyRefused on any write.
+Unverified limits: an entry with `"verified": false` is treated like an unset limit (every request refused) unless the
+profile has `"allow_unverified": true`. The profile also lists those entries in `"unverified"` (checked against the
+flags on load, so the list cannot drift). When unverified limits are allowed, `check()` returns False for them and
+every acting call logs an `unverified-limit` warning event.
+
+This module is the READ side and is part of the public API: `profile()`, `check()`, `versions()`, `load_active()`.
+Nothing here writes the profile. The write path (propose / activate with re-commissioning) is
+`mtpy.admin.safety_admin`, which `mtpy.api` never imports.
 """
 import json
 import math
+import numbers
 import os
-import time
-from dataclasses import dataclass, field
 from pathlib import Path
 from types import MappingProxyType
 
-from . import events
 from .errors import NotReady, SafetyRefused
 
 # Repository layout (src/mtpy/api/safety.py -> <repo>/config); MTPY_CONFIG overrides it for an installed copy.
 CONFIG = Path(os.environ.get("MTPY_CONFIG", Path(__file__).resolve().parents[3] / "config"))
-ADMIN = "rig-admin"
 _ENTRY_KEYS = {"min", "max", "unit", "relative_to", "verified", "source"}
 
 _active = None
@@ -43,7 +45,13 @@ def _history(version):
 
 
 def _is_number(v):
-    return isinstance(v, (int, float)) and not isinstance(v, bool) and math.isfinite(v)
+    """A finite real number (numpy scalars included), not a bool."""
+    return isinstance(v, numbers.Real) and not isinstance(v, bool) and math.isfinite(float(v))
+
+
+def unverified_of(limits):
+    """The sorted names of the limits marked `"verified": false`."""
+    return sorted(q for q, e in limits.items() if not e["verified"])
 
 
 def _validate(p):
@@ -65,6 +73,13 @@ def _validate(p):
             raise ValueError(f"limit {q!r} has min > max")
         if e["relative_to"] not in (None, "session_start") or not isinstance(e["verified"], bool):
             raise ValueError(f"limit {q!r}: relative_to must be null or 'session_start', verified a boolean")
+    if not isinstance(p.get("allow_unverified"), bool):
+        raise TypeError("profile 'allow_unverified' must be true or false")
+    if p.get("unverified") != unverified_of(p["limits"]):
+        raise ValueError(f"profile 'unverified' must list exactly the limits with verified=false: "
+                         f"{unverified_of(p['limits'])}")
+    if "base_version" in p and not (isinstance(p["base_version"], int) and p["base_version"] == p["version"] - 1):
+        raise ValueError("profile 'base_version' must be the integer version - 1")
 
 
 def _freeze(o):
@@ -110,6 +125,8 @@ def check(quantity, value, origin=None):
     """Refuse `value` for `quantity` unless the active profile allows it. Never clamps.
 
     origin: the position read at session start, required for a `relative_to: "session_start"` window.
+    Returns True when the limit used is verified on the rig, False when it is unverified and the profile allows
+    unverified limits (the caller logs the `unverified-limit` warning). Raises SafetyRefused otherwise.
     Example: `check("magnet_position_mm", 12.0)`; `check("stage_x_mm", 10.3, origin=10.0)`.
     """
     p = profile()
@@ -123,6 +140,10 @@ def check(quantity, value, origin=None):
     if e["min"] is None or e["max"] is None:
         raise SafetyRefused(f"{quantity} has no limit set in the rig safety profile v{v} "
                             f"(min {e['min']}, max {e['max']}); a rig-admin must set it first")
+    if not e["verified"] and not p["allow_unverified"]:
+        raise SafetyRefused(f"{quantity} limit [{e['min']:g}, {e['max']:g}] {unit} is not verified on the rig "
+                            f"(rig safety profile v{v}, allow_unverified false); it is treated as unset and every "
+                            "request is refused until a rig-admin verifies it or allows unverified limits")
     lo, hi, where = e["min"], e["max"], ""
     if e["relative_to"]:
         if not _is_number(origin):
@@ -132,73 +153,4 @@ def check(quantity, value, origin=None):
     if not lo <= value <= hi:
         raise SafetyRefused(f"{quantity} {value:g} {unit} is outside the allowed range [{lo:g}, {hi:g}] {unit}"
                             f"{where} of the rig safety profile v{v}")
-
-
-def _require_admin(action):
-    who = events.caller()
-    if who != ADMIN:
-        events.log("refused", request={"safety_profile": action})
-        raise SafetyRefused(f"only the rig-admin settings screen may {action} the rig safety profile, not {who!r}")
-
-
-@dataclass(frozen=True)
-class Pending:
-    """A proposed profile, not yet active. `changed`: the new or changed limits the re-commissioning must check."""
-    profile: object
-    base_version: int
-    changed: tuple
-
-
-@dataclass(frozen=True)
-class RecommissioningReport:
-    """What the guided re-commissioning found: `checked[quantity] is True` for each limit moved to and read back."""
-    by: str
-    checked: dict
-    notes: str = ""
-    t: float = field(default_factory=time.time)
-
-
-def propose_change(new_limits, by, reason):
-    """Propose a new set of limits (the whole `limits` object). Returns a Pending; nothing changes until activate()."""
-    _require_admin("change")
-    cur = profile()
-    p = {"version": cur["version"] + 1, "created": time.strftime("%Y-%m-%dT%H:%M:%S"), "by": by, "reason": reason,
-         "limits": json.loads(json.dumps(new_limits))}
-    _validate(p)
-    old = _thaw(cur["limits"])
-    changed = tuple(sorted(q for q, e in p["limits"].items() if old.get(q) != e))
-    events.log("safety_profile", request={"action": "propose", "version": p["version"], "changed": list(changed)})
-    return Pending(_freeze(p), cur["version"], changed)
-
-
-def activate(pending, recommissioning_report):
-    """Make a pending profile active after its re-commissioning. Every changed limit must be checked in the report.
-    The old version stays in the history folder; the new one is written there and becomes the active file."""
-    global _active
-    _require_admin("activate")
-    cur = profile()
-    if pending.base_version != cur["version"]:
-        raise SafetyRefused(f"the proposal was made against profile v{pending.base_version}, "
-                            f"but v{cur['version']} is active now; propose again")
-    r = recommissioning_report
-    if not isinstance(r, RecommissioningReport):
-        raise SafetyRefused("activation needs a RecommissioningReport")
-    missing = [q for q in pending.changed if r.checked.get(q) is not True]
-    if missing:
-        raise SafetyRefused(f"the re-commissioning report does not show these new limits as checked: {missing}")
-    p = _thaw(pending.profile)
-    p["recommissioning"] = {"by": r.by, "t": r.t, "checked": dict(r.checked), "notes": r.notes}
-    _history(cur["version"]).parent.mkdir(parents=True, exist_ok=True)
-    if not _history(cur["version"]).exists():          # keep the outgoing version even if it was never archived
-        _history(cur["version"]).write_text(json.dumps(_thaw(cur), indent=2), encoding="utf-8")
-    if _history(p["version"]).exists():
-        raise SafetyRefused(f"profile v{p['version']} already exists in the history; versions are never overwritten")
-    text = json.dumps(p, indent=2)
-    _history(p["version"]).write_text(text, encoding="utf-8")
-    tmp = _path().with_suffix(".tmp")
-    tmp.write_text(text, encoding="utf-8")
-    tmp.replace(_path())
-    _active = _freeze(p)
-    events.log("safety_profile", request={"action": "activate", "version": p["version"]},
-               extra={"changed": list(pending.changed)})
-    return _active
+    return e["verified"]

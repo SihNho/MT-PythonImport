@@ -3,6 +3,9 @@
   "created": "2026-10-24T00:00:00",
   "by": "WP1 default (AI code session; values copied from the MT_LabVIEW motion gate)",
   "reason": "First profile for the current rig (50x, assembled). Entries with verified=false or a null bound are placeholders: a null bound refuses every request until a rig-admin sets it with a re-commissioning check.",
+  "allow_unverified": false,
+  "unverified": ["focus_z_um", "magnet_force_pN", "magnet_speed_mm_s", "rotor_speed_turns_s", "rotor_turns"],
+  "unverified_note": "allow_unverified=false: every limit listed in 'unverified' is treated like an unset limit and refuses every request. That includes rotor_turns (-5 .. +5 turns from the session-start position, the development-gate envelope, not verified for the application), so rotor moves are refused until a rig-admin verifies that window or enables allow_unverified through the admin path.",
   "limits": {
     "magnet_position_mm": {"min": 0.0, "max": 39.0, "unit": "mm", "relative_to": null, "verified": true,
       "source": "PI C-863.11 TMN 0 / TMX 39 written by MT_LabVIEW tools/motor_gate.py (tools/bench/motor_limits.json pi lo_mm/hi_mm, 2026-09-18, owner at the rig)"},

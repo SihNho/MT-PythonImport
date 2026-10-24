@@ -104,7 +104,7 @@ proposals; phase 5 may refine them, and every change after the first release fol
 4. Log an event (caller, request, read-back, time); the event goes into the run's metadata.
 5. The emergency stop pre-empts everything; an active stop makes every acting call raise `NotReady`.
 The safety profile itself is changed only from the rig-admin settings screen with a re-commissioning check; no API
-function writes it.
+function writes it (the write path lives in `mtpy.admin`, outside the public API; see below).
 
 **Implemented in WP1 (2026-10-24, `api.VERSION = "0.1.0"`):**
 - `mtpy.api.errors`: `MtpyError` (base) and the four errors above; `DeviceError(device, command, hint)`.
@@ -112,14 +112,31 @@ function writes it.
   the caller is a context variable set with `as_caller(name)`, one of `gui`, `rig-admin`, `script:<name>@<version>`,
   `plugin:<name>`, `ai:<read|propose|run_approved|autonomous>`; code that sets none is logged as `unknown`.
 - `mtpy.api.estop`: `engage(reason)`, `clear()`, `active()`.
-- `mtpy.api.safety`: active profile `config/safety_profile.json`, every version kept as
-  `config/safety_profiles/<version>.json`; `load_active()`, `profile()` (read-only), `check(quantity, value, origin)`
-  (`origin` = session-start position for relative windows such as the ASI stage), `versions()`;
-  `propose_change(limits, by, reason)` -> `Pending` and `activate(pending, RecommissioningReport)`, both only for the
-  `rig-admin` caller. Quantity names: `magnet_position_mm`, `magnet_force_pN`, `magnet_speed_mm_s`, `rotor_turns`,
-  `rotor_speed_turns_s`, `focus_z_um`, `stage_x_mm`, `stage_y_mm`, `laser_power_mW.<laser>`.
+- `mtpy.api.safety` (read only): active profile `config/safety_profile.json`, every version kept as
+  `config/safety_profiles/<version>.json`; `load_active()`, `profile()` (read-only view), `versions()`,
+  `check(quantity, value, origin)` (`origin` = session-start position for relative windows such as the ASI stage;
+  returns True for a verified limit, False for an unverified one that the profile allows). Quantity names:
+  `magnet_position_mm`, `magnet_force_pN`, `magnet_speed_mm_s`, `rotor_turns`, `rotor_speed_turns_s`, `focus_z_um`,
+  `stage_x_mm`, `stage_y_mm`, `laser_power_mW.<laser>`.
+- **Unverified limits:** a limit with `"verified": false` is treated like an unset limit (every request refused)
+  unless the profile has `"allow_unverified": true`; then every acting call that relies on it logs an
+  `unverified-limit` warning event. The profile lists those limits in `"unverified"` (checked against the flags on
+  load). The shipped v1 has `allow_unverified: false`, so `rotor_turns` (-5 .. +5 turns from session start, not
+  verified for the application) and the placeholders refuse every request.
+- **Write path, not in the public API:** `mtpy.admin.safety_admin` (never imported by `mtpy.api`).
+  `open_admin_session(reason)` -> `AdminSession` (refused for `script:`, `plugin:`, `ai:` and `unknown` callers);
+  `propose_change(session, limits, by, reason, allow_unverified=None)` -> an internal pending proposal;
+  `activate(session, pending, RecommissioningReport)` re-validates the candidate, recomputes its diff against the
+  active profile, requires the report to show every new or changed limit as checked, and refuses a candidate whose
+  `base_version` is not the active version. Each step is a `safety_profile` event (who, when, why).
+  **This is a guard against mistakes, not protection:** any code in the process can set its own caller name. Real
+  protection - `open_admin_session` bound to a GUI login with the rig-admin role, and file permissions on
+  `config/` - is phase 8 work.
 - `mtpy.api._act.acting(quantity, value, do, readback, tol, origin)`: steps 1, 3, 4 and 5 above for every device
-  function (step 2, the device-service thread, comes with the device layer).
+  function (step 2, the device-service thread, comes with the device layer). `tol` must be a finite number >= 0
+  (else `SafetyRefused`, nothing sent); an exception from the send or the read-back, or a read-back that is not a
+  finite number, becomes `DeviceError(device, command, hint)` with a `device_error` event; only a read-back that
+  passed is logged as `act`.
 
 ## 4. Example: the enzyme-cleavage experiment as a Python experiment script (level 3)
 ```python

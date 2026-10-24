@@ -1,11 +1,16 @@
 """WP1: the rig safety profile, the acting-call safety behaviour, the event log and the emergency stop (no hardware)."""
 import json
 import shutil
+import subprocess
+import sys
+from contextlib import nullcontext
 from pathlib import Path
 
+import numpy as np
 import pytest
 
 from mtpy import api
+from mtpy.admin import safety_admin as admin
 from mtpy.api import estop, events, safety
 from mtpy.api._act import acting
 from mtpy.api.errors import DeviceError, NotReady, SafetyRefused
@@ -107,41 +112,178 @@ def test_estop_blocks_acting_calls():
     assert acting("magnet_position_mm", 5.0, m.do, m.readback, tol=0.01) == 5.0
 
 
+# --- item 1: tolerance, read-back and device exceptions ------------------------------------------------------------
+
+@pytest.mark.parametrize("tol", [float("nan"), float("inf"), -0.1, "0.1", None, True])
+def test_bad_tolerance_refused_before_sending(tol):
+    m = Motor()
+    with pytest.raises(SafetyRefused, match="tolerance"):
+        acting("magnet_position_mm", 5.0, m.do, m.readback, tol=tol)
+    assert m.sent == [] and events.events()[-1].kind == "refused"
+
+
+@pytest.mark.parametrize("got", [float("nan"), float("inf"), "5.0", None, [5.0]])
+def test_non_numeric_readback_is_device_error(got):
+    m = Motor()
+    n = len(events.events())
+    with pytest.raises(DeviceError, match="not a finite number"):
+        acting("magnet_position_mm", 5.0, m.do, lambda: got, tol=0.01)
+    assert [e.kind for e in events.events()[n:]] == ["device_error"]      # never logged as success
+
+
+def test_numpy_readback_accepted():
+    m = Motor()
+    assert acting("magnet_position_mm", 5.0, m.do, lambda: np.float32(5.0), tol=0.01) == 5.0
+
+
+def _boom(*_):
+    raise OSError("port COM3 closed")
+
+
+@pytest.mark.parametrize("stage", ["send", "readback"])
+def test_device_exception_becomes_device_error(stage):
+    m = Motor()
+    do, rb = (_boom, m.readback) if stage == "send" else (m.do, _boom)
+    n = len(events.events())
+    with pytest.raises(DeviceError) as e:
+        acting("magnet_position_mm", 5.0, do, rb, tol=0.01)
+    assert e.value.device == "magnet" and e.value.command == "set magnet_position_mm 5.0"
+    assert "OSError" in e.value.hint and "COM3" in e.value.hint and isinstance(e.value.__cause__, OSError)
+    new = events.events()[n:]
+    assert [x.kind for x in new] == ["device_error"] and new[0].extra["stage"] == stage
+
+
+# --- item 2: the write path is not in the public API ---------------------------------------------------------------
+
+def test_public_api_has_no_write_path():
+    for name in ("propose_change", "activate", "Pending", "RecommissioningReport", "ADMIN"):
+        assert not hasattr(safety, name) and not hasattr(api, name)
+    code = "import sys, mtpy.api; print('mtpy.admin' in sys.modules)"
+    out = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, timeout=60, check=True)
+    assert out.stdout.strip() == "False"
+
+
+@pytest.fixture
+def session():
+    with events.as_caller("gui"):
+        return admin.open_admin_session("new magnet mount")
+
+
+@pytest.mark.parametrize("who", ["script:x@1", "plugin:det", "ai:autonomous", "ai:run_approved", "unknown"])
+def test_admin_session_refused_for_untrusted_callers(who, session):
+    with events.as_caller(who) if who != "unknown" else nullcontext():
+        with pytest.raises(SafetyRefused, match="rig-admin settings screen"):
+            admin.open_admin_session("x")
+        with pytest.raises(SafetyRefused, match="rig-admin settings screen"):     # a leaked session does not help
+            admin.propose_change(session, _wider_magnet(), by="x", reason="y")
+    assert events.events()[-1].kind == "refused"
+    assert safety.profile()["version"] == 1
+
+
+def test_admin_session_needs_reason_and_factory(session):
+    with events.as_caller("gui"):
+        with pytest.raises(SafetyRefused, match="reason"):
+            admin.open_admin_session("  ")
+        with pytest.raises(SafetyRefused, match="open_admin_session"):
+            admin.AdminSession(object(), "gui", "forged")
+        with pytest.raises(SafetyRefused, match="AdminSession"):
+            admin.propose_change(None, _wider_magnet(), by="x", reason="y")
+        with pytest.raises(SafetyRefused, match="propose_change"):
+            admin._Pending(object(), safety.profile())
+    assert session.who == "gui" and session.reason == "new magnet mount"
+    opened = [e for e in events.events() if e.request == {"action": "open_admin_session"}][-1]
+    assert opened.caller == "gui" and opened.extra["reason"] == "new magnet mount"
+
+
+# --- item 3: activate() recomputes and re-validates ----------------------------------------------------------------
+
 def _wider_magnet():
     limits = json.loads(json.dumps(safety._thaw(safety.profile()["limits"])))
     limits["magnet_position_mm"]["max"] = 45.0
     return limits
 
 
-@pytest.mark.parametrize("who", ["script:x@1", "plugin:det", "ai:autonomous", "gui", "unknown"])
-def test_profile_write_refused_for_non_admin(who):
-    if who == "unknown":
-        with pytest.raises(SafetyRefused):
-            safety.propose_change(_wider_magnet(), by="x", reason="y")
-        return
-    with events.as_caller("rig-admin"):
-        pending = safety.propose_change(_wider_magnet(), by="admin", reason="new magnet mount")
-    report = safety.RecommissioningReport(by="admin", checked={"magnet_position_mm": True})
-    with events.as_caller(who):
-        with pytest.raises(SafetyRefused, match="rig-admin"):
-            safety.propose_change(_wider_magnet(), by="x", reason="y")
-        with pytest.raises(SafetyRefused, match="rig-admin"):
-            safety.activate(pending, report)
-    assert safety.profile()["version"] == 1
+def _report(*checked):
+    return admin.RecommissioningReport(by="admin", checked={q: True for q in checked})
 
 
-def test_activate_needs_report_and_keeps_history(config):
-    with events.as_caller("rig-admin"):
-        pending = safety.propose_change(_wider_magnet(), by="admin", reason="new magnet mount")
-        assert pending.changed == ("magnet_position_mm",)
+def test_activate_needs_report_and_keeps_history(config, session):
+    with events.as_caller("gui"):
+        pending = admin.propose_change(session, _wider_magnet(), by="admin", reason="new magnet mount")
         with pytest.raises(SafetyRefused, match="magnet_position_mm"):
-            safety.activate(pending, safety.RecommissioningReport(by="admin", checked={}))
+            admin.activate(session, pending, _report())
         with pytest.raises(SafetyRefused, match="RecommissioningReport"):
-            safety.activate(pending, {"magnet_position_mm": True})
-        p = safety.activate(pending, safety.RecommissioningReport(by="admin", checked={"magnet_position_mm": True}))
+            admin.activate(session, pending, {"magnet_position_mm": True})
+        p = admin.activate(session, pending, _report("magnet_position_mm"))
         with pytest.raises(SafetyRefused, match="propose again"):       # stale proposal
-            safety.activate(pending, safety.RecommissioningReport(by="admin", checked={"magnet_position_mm": True}))
-    assert p["version"] == 2 and safety.versions() == [1, 2]
+            admin.activate(session, pending, _report("magnet_position_mm"))
+    assert p["version"] == 2 and p["base_version"] == 1 and safety.versions() == [1, 2]
     assert json.loads((config / "safety_profiles" / "1.json").read_text())["limits"]["magnet_position_mm"]["max"] == 39
     assert safety.load_active()["limits"]["magnet_position_mm"]["max"] == 45.0      # survives a reload from disk
     safety.check("magnet_position_mm", 44.0)
+
+
+def _tampered(pending, edit):
+    p = safety._thaw(pending.profile)
+    edit(p)
+    pending.profile = safety._freeze(p)
+    return pending
+
+
+def test_activate_recomputes_the_diff(session):
+    with events.as_caller("gui"):
+        pending = admin.propose_change(session, _wider_magnet(), by="admin", reason="new magnet mount")
+        _tampered(pending, lambda p: p["limits"]["stage_x_mm"].update(max=20.0))   # sneaked in after the proposal
+        with pytest.raises(SafetyRefused, match="stage_x_mm"):
+            admin.activate(session, pending, _report("magnet_position_mm"))
+    assert safety.profile()["version"] == 1
+
+
+@pytest.mark.parametrize("edit, match", [
+    (lambda p: p["limits"]["magnet_position_mm"].update(min=50.0), "not valid"),          # min > max
+    (lambda p: p.update(unverified=[]), "not valid"),                                     # list drifts from flags
+    (lambda p: p.update(version=3, base_version=2), "propose again"),                     # not based on active v1
+])
+def test_activate_revalidates_the_candidate(session, edit, match):
+    with events.as_caller("gui"):
+        pending = _tampered(admin.propose_change(session, _wider_magnet(), by="a", reason="r"), edit)
+        with pytest.raises(SafetyRefused, match=match):
+            admin.activate(session, pending, _report("magnet_position_mm"))
+    assert safety.profile()["version"] == 1
+
+
+# --- item 4: unverified limits -------------------------------------------------------------------------------------
+
+def test_shipped_profile_refuses_unverified_limits():
+    p = safety.profile()
+    assert p["allow_unverified"] is False and "rotor_turns" in p["unverified"]
+    m = Motor()
+    with pytest.raises(SafetyRefused, match="not verified"):
+        acting("rotor_turns", 1.0, m.do, m.readback, tol=0.01, origin=0.0)
+    assert m.sent == []
+
+
+def test_allowed_unverified_limit_logs_warning(session):
+    with events.as_caller("gui"):
+        pending = admin.propose_change(session, safety._thaw(safety.profile()["limits"]), by="admin",
+                                       reason="rotor tests on the bench", allow_unverified=True)
+        assert admin.activate(session, pending, _report())["allow_unverified"] is True
+    m = Motor()
+    n = len(events.events())
+    assert acting("rotor_turns", 1.0, m.do, m.readback, tol=0.01, origin=0.0) == 1.0
+    assert acting("magnet_position_mm", 5.0, m.do, m.readback, tol=0.01) == 5.0
+    new = events.events()[n:]
+    assert [e.kind for e in new] == ["unverified-limit", "act", "act"]
+    assert new[0].extra["level"] == "warning" and new[0].request["quantity"] == "rotor_turns"
+    with pytest.raises(SafetyRefused, match="outside"):
+        safety.check("rotor_turns", 5.5, origin=0.0)                  # the window itself still holds
+
+
+@pytest.mark.parametrize("edit", [lambda p: p.pop("allow_unverified"), lambda p: p.update(unverified=["rotor_turns"])])
+def test_load_rejects_profile_without_unverified_policy(config, edit):
+    path = config / "safety_profile.json"
+    p = json.loads(path.read_text(encoding="utf-8"))
+    edit(p)
+    path.write_text(json.dumps(p), encoding="utf-8")
+    with pytest.raises((TypeError, ValueError), match="allow_unverified|unverified"):
+        safety.load_active()
