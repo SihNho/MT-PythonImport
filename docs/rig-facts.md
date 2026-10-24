@@ -59,6 +59,11 @@ Consequences (inference, to be confirmed by a pixel-size measurement):
   Refractive index 보정 factor 있으니 나중에 적용하면 되는 부분이고." So raw z is stored uncorrected and the
   refractive-index (focal-shift) factor is applied in analysis from the recorded preset value and its source (U13,
   decision 0010's raw-first rule); measuring this lens's factor once remains worthwhile, since it scales extension.
+- **Decided (owner 2026-10-24): the running MT (nucleosome) project keeps the 50x** for data continuity: "현재 MT
+  프로젝트 (nucleosome) 실험에서는 렌즈 갑자기 바꿔버리면 안되니까 우선은 50X 계속 써야겠네. 데이터 연속성을 위해서".
+  So for now two rig presets: "MT, 50x oil" (current nucleosome project) and "MT-TIRF, 60x/1.50". The program proposes
+  the matching preset per experiment type and records the objective in every data file. The 50x vs 60x comparison is
+  not urgent; it informs the lens choice for future projects.
 - The TIRF-angle stage (L3 + mirror) position should be recorded automatically per run (motor, or manual + digital
   readout), as for the JAI camera position (U31).
 
