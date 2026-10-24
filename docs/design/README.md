@@ -23,6 +23,7 @@ or MT-TIRF work. Written 2026-10-24; keep it current when a document is added or
 ## 3. How it is built
 - [design/api.md](api.md) — the public function layer (draft v0): conventions, function groups, safety behaviour,
   example experiment script.
+- [format/grammar.md](../format/grammar.md) — protocol / illumination / recipe script grammar (living draft v0).
 - [format/mapping.md](../format/mapping.md) — map file format (proposal), detection per target.
 - [format/](../format/) — `.tra` / `.cal` layouts.
 - [plan.md](../plan.md) — phases 0-11.
