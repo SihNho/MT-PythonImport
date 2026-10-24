@@ -43,8 +43,13 @@ Facts that span the experiment steps. Form and evidence levels: [README.md](READ
 - **Timing and errors:** once. Error handling `unknown — needs VI read`.
 - **Evidence:** wiring — `V6:docs/camera-acquisition-facts.md:479-616` (uid 9775 reads the geometry; D87 is the
   configuration frame), `:418-459` (open resets ROI and exposure, measured through the driver).
-- **Owner's intent:** ask (Q0.02: frame rate and exposure are set in NI MAX, not in the program — is that how it
-  should stay?).
+- **Owner's intent:** answered (Q0.02, owner 2026-10-22): the program sets the camera from device-settings presets and
+  saves them with the data, rather than relying on NI MAX — "경우에 따라 장비 셋팅을 바꿔야하는 일이 종종 있음. 가장
+  대표적으로는 카메라 셋업. Frame rate은 어떻게 할 것이며, signal magnification은 무엇이며, acquisition mode는 무엇이며,
+  등등... 이 정보도 프리셋 적용하고, 데이터와 함께 저장하면 좋겠는데". Presets are applied after every open (the open
+  resets ROI and exposure), read back and verified before acquisition; the file stores the preset, the read-back values
+  and the measured frame rate ([ui-requirements.md](ui-requirements.md) U15; fields in
+  [hdf5-v1.md](../format/hdf5-v1.md)).
 - **Port:** port — the port opens the camera through its own layer (`docs/manuals/`), with the same geometry.
 
 ### F0.03 — Magnet motor (PI) connection and travel limits

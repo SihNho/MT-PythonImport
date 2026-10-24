@@ -52,14 +52,23 @@ matlab/          MATLAB readers for .tra / .cal
 third_party/     pinned copies of reused code (MANIFEST lists hashes and sources)
 docs/            documents for people (permanent)
   plan.md          the phase plan (order, completion criteria, rig needs)
+  design/          design documents; start at design/README.md (a map of all design documents)
   decisions/       design decisions and why they were made
-  spec/            behavior specification of the LabVIEW program
+  spec/            behavior specification of the LabVIEW program, and the owner's UI requirements
   manuals/         one manual per device
   format/          data file formats
-  results/         verification results
+  methods/         plain explanations of methods (e.g. the tracking benchmarks)
+  mockups/         UI mock-ups
+  hardware/        rig drawings (editable, e.g. the MT-TIRF optical layout)
+  literature/      literature surveys and reports
+  rig-facts.md     facts about the rig and samples from the owner, with sources and dates
+  results/         verification and measurement results
 CLAUDE.md        working rules for AI assistants during development (AGENTS.md is the same text)
 CONTRIBUTING.md  how to collaborate
 ```
+
+Entry point for the design documents: [docs/design/README.md](docs/design/README.md). Rig facts:
+[docs/rig-facts.md](docs/rig-facts.md).
 
 Development setup (Windows, Python 3.10): `py -3.10 -m venv .venv`, then `.venv\Scripts\python -m pip install -e ".[dev]"`, then `.venv\Scripts\python -m pytest`. Planned addition: `docs/install/`.
 

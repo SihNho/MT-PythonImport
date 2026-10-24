@@ -188,8 +188,12 @@ case frames.
 - **Moves hardware?** no.
 - **Timing and errors:** front-panel drawing in the UI thread.
 - **Evidence:** wiring — node census D75, D76; panel rows 20, 21.
-- **Owner's intent:** ask (Q4.09: what `Correction Factor` corrects — the oil/water index note in the `.tra`
-  header?).
+- **Owner's intent:** answered in part (Q4.09, owner 2026-10-22): the factor is the focal-shift (refractive-index)
+  correction, 0.88 in use — "diffraction 보정 (지금은 0.88 사용하는 걸로 아는데, oil immersion이 cover slip과 만나고 채널
+  안의 물과 만나서면서 빛이 꺾이는 정도를 보정하는 것으로 알고 있음)". In the port it is a rig-preset value with its source
+  (assumed 1.33/1.515 or measured); z is stored uncorrected and the factor is applied in display and analysis
+  ([ui-requirements.md](ui-requirements.md) U13, [rig-facts.md](../rig-facts.md)). Still open: whether the VI's
+  `Correction Factor` is exactly this factor (Q4.09).
 - **Port:** change — plotted by the GUI at display rate.
 
 ### F4.10 — Force–extension analysis (WLC)
@@ -206,8 +210,15 @@ case frames.
 - **Timing and errors:** display analysis; not written to the `.tra`.
 - **Evidence:** wiring — `V6:docs/frame-loop-anatomy.md` (uid 1114 pane: `Lp`, `Lc`, `Baseline`, `F-x in/out`);
   node census D42, D50, D53–D55, D74.
-- **Owner's intent:** ask (Q4.10: which magnet calibration `Magnet2Force v3_for M270` applies to; is this display
-  needed in the port?).
+- **Owner's intent:** answered in part (Q4.10, owner 2026-10-22): the display is used, but the WLC line is not
+  extensible and the zero is set at about 7 pN — "현재 LabVIEW에서 expected WLC line을 그려주고, 파라미터를 조정할 수
+  있기는 한데 ... extensible WLC 모델이 아니어서 high force 영역에서 fitting이 벗겨간다는 점. 약 7 pN에서 extension 기준을
+  0 nm로 잡기 때문에, force를 내려주면 마이너스로 감." The port replaces it with an eWLC fit on a selected range (the van
+  Noort group's Eq. 1) and a zero measured at zero force — "zero-force로 내려서 영점을 잡고, 그 보정을 기준으로 실시간
+  길이를 보는게 맞는듯." — stored separately from the raw z ([ui-requirements.md](ui-requirements.md) U12). Force comes
+  from a precomputed table whose id is stored with the data; the raw record is the magnet position
+  ([decision 0010](../decisions/0010-magnet-position-is-raw-force-is-derived.md)); the bead is M-270 amine
+  ([rig-facts.md](../rig-facts.md)). Still open: `Value 2` / `Value 3` (Q4.10).
 - **Port:** change — moves to the application's basic analysis (decision 0006 item 4), off the frame path.
 
 ### F4.11 — Trace recording and file names

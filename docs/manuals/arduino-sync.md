@@ -51,6 +51,33 @@ Required, not implemented: set N and k; report the firmware version (the board's
 count and the number of EMCCD triggers issued; reset the count to 0 when JAI pulses stop (timeout); the watchdog. The
 PC sends these only at setup and at the end of a run.
 
+## Planned outputs (light gating)
+
+Not designed or built yet; this section records what the decisions require of the board.
+[Decision 0005](../decisions/0005-camera-sync.md) already foresees the OBIS modulation input on the trigger line;
+[decision 0013](../decisions/0013-mt-tirf-extensible-illumination.md) and
+[ui-requirements.md](../spec/ui-requirements.md) U24 extend the board to gate the excitation light per EMCCD frame.
+
+- **Per-frame gating from the illumination sequence.** The sequence has one column per laser or shutter and one row
+  per EMCCD frame, in three parts: a header (once), a body (repeated) and a footer (once). The PC loads it into the
+  firmware at setup, with N and k; during the run the board steps through it on each EMCCD trigger and sets one TTL
+  output per light. Example: 532 nm on every frame (smFRET), or 637 nm on 1 frame in 10 as a FRET correction / Cy5
+  presence probe (U28, U36).
+- **Nothing is timed by the PC.** The outputs change only on the JAI-derived count, like the D9 trigger; the PC does
+  not talk to the board during a run (0005). The sequence **actually executed** (with the firmware's count of
+  triggers) is read back at the end and stored in the data file's metadata ([hdf5-v1.md](../format/hdf5-v1.md)).
+- **Back-ends (one interface, three options, owner 2026-10-23, choice open):** mechanical shutter, AOM, or laser
+  modulation (e.g. OBIS digital modulation; whether each OBIS unit accepts it is still to be checked in
+  [coherent-obis.md](coherent-obis.md)). The TTL sequence is the same; the device settings differ (shutter open /
+  close delay; AOM TTL polarity and analog power level; laser modulation mode and power).
+- **Switching-time check before a run.** The program compares the chosen back-end's switching time (mechanical:
+  ms; AOM: µs; laser modulation: µs to tens of µs — typical figures, to be measured on the actual hardware) with the
+  gap between EMCCD frames, and warns or refuses, e.g. fast per-frame alternation with a mechanical shutter.
+- Outside recording all lights are closed by default (photobleaching, U24); manual open / close for alignment goes
+  through the same outputs.
+- **Open:** pin assignment for the light outputs (which pins, how many lights, whether they can share Timer1 timing
+  with D9 or are set in the trigger interrupt), output levels for each back-end's input, and the back-end choice.
+
 ## Units, signs and offsets
 
 - N and k are in **JAI frames** (buffer numbers), not in time. EMCCD frame m belongs to absolute JAI buffer numbers
