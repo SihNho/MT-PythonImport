@@ -18,5 +18,6 @@ Each file records one decision: what was decided, why, and what follows from it.
 | [0012](0012-automation-partial-first.md) | Protocol-driven partial automation now; full automation later, with conditional steps foreseen | 2026-10-22 |
 | [0013](0013-mt-tirf-extensible-illumination.md) | MT-TIRF: basics plus extensibility; per-frame illumination sequences (smFRET, ALEX); analysis as plug-ins | 2026-10-22 |
 | [0014](0014-ai-gateway.md) | One restricted AI gateway with permission tiers; AI never changes code or touches devices directly | 2026-10-22 |
+| [0015](0015-extension-architecture.md) | Fixed core + extension levels + one public function layer; safety parameters in a protected, versioned rig safety profile | 2026-10-24 |
 
 The behavior specification of the LabVIEW program (`docs/spec/`) and the device manuals (`docs/manuals/`) will follow.
