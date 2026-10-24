@@ -494,6 +494,22 @@ U34's computed dye height is used, if at all, only as a focus target.)
 - **Open:** how that experiment was analysed (manual picking? scripts?), and whether it used magnetic force or TIRF
   only (a "fluorescence only" mode may be needed).
 
+**U37 - handling experiment structures nobody foresaw (proposal, not yet a decision).** Owner 2026-10-24: "결국 어느
+시점에는 지금은 생각하지 못한 방식으로 실험 구조 수정이 필요할 수 있겠는데, 이를 어떻게 대처할지가 의문"
+- **A hard core that does not change:** complete raw data + metadata (MT, EMCCD, events, settings); the time base
+  (frame / buffer numbers, Arduino sync, 0005); device interfaces; the safety layer. Many "new" needs are analysis and
+  can be met afterwards from the raw data.
+- **Extension levels, lowest first:** 0 settings / presets; 1 scripts in the defined grammar (protocols, illumination
+  sequences, analysis recipes); 2 Python plug-ins at defined extension points (detectors, observables / event rules,
+  protocol step types, **new devices**); 3 **Python experiment scripts** against the program's public API (move magnet,
+  set illumination, wait for an event, read signals) for whole new procedures; 4 core changes through the normal
+  development process (rare).
+- The level-3 API is the same gateway as for AI (0014): same safety layer, always stoppable from the UI.
+- Reproducibility: the content and version of every script / plug-in / recipe used is stored with the data; good ones
+  go to the lab library with examples.
+- After the project (0001, no AI): documented plug-in and scripting APIs with examples, so lab members who know Python
+  can extend it; rule of thumb: solve a new need at the lowest level that works.
+
 **U11 - UI language.** Owner 2026-10-22: "글자는 무조건 영어." All UI text in English only.
 
 **Note - local AI model.** Owner 2026-10-22: "Laya 내장하는거는 염두에 두고 있음. 로컬로 트레이닝한다면 내 계정이
