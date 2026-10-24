@@ -24,3 +24,13 @@ class NotReady(MtpyError):
 
 class Timeout(MtpyError):
     """A wait ran past its timeout_s."""
+
+
+class ScriptError(MtpyError):
+    """A protocol, illumination sequence or analysis recipe has errors (WP5): it cannot run. `diagnostics` lists
+    each error as `<file>:<line>:<column>: <message>` (docs/format/grammar.md section 8); `warnings` the warnings."""
+
+    def __init__(self, diagnostics, warnings=()):
+        self.diagnostics, self.warnings = list(diagnostics), list(warnings)
+        n = len(self.diagnostics)
+        super().__init__(f"{n} error{'s' if n != 1 else ''}:\n" + "\n".join(str(d) for d in self.diagnostics))

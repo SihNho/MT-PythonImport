@@ -348,4 +348,8 @@ class Pipeline:
                 "latency_ms_p50": _pct(lat, 50), "latency_ms_p99": _pct(lat, 99),
                 "ring_fill": len(self.ring), "tracking_errors": self.tracking_errors,
                 "last_tracking_error": self.last_tracking_error, "sink_failures": self.sink_failures,
-                "sink_error": self.sink_error, "display_updates": self.display.updates, "segments": segs}
+                "sink_error": self.sink_error,
+                # WP5 carry: frames the sink refused to hold (HDF5Writer max_pending overflow); None for a sink
+                # without that count
+                "frames_not_written": getattr(self.sink, "unwritten_frames", None),
+                "display_updates": self.display.updates, "segments": segs}

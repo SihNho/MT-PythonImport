@@ -488,6 +488,49 @@ gain_dB]`; a late off with written rows beyond it: `test_late_off_reports_writte
   (`legacy_matrix`, frame = buffer - `/segments/first_buffer`, the segment's first **received** buffer) differs when
   recording starts after acquisition; owner to confirm before Python export and MATLAB reader change together.
 
+**Implemented in WP5 (2026-10-24, `api.VERSION = "0.5.0"`, simulators and files only):**
+- `mtpy.protocol` (internal): `grammar.parse(text, file)` -> `Script` for the three kinds of
+  [grammar.md](../format/grammar.md) (protocol, sequence, recipe; draft v0, grammar 0.1); `check.check(script,
+  devices)` validates against the public API and the rig safety profile; `engine.Engine` runs a protocol on its own
+  thread. The WP5 decisions on open grammar points are in grammar.md section 12.
+- `api.protocol`: `load(script_or_path, file=None)` (parse only; nothing runs, no event), `check(script,
+  devices=None)` -> `{"ok", "errors", "warnings", "min_duration_s"}` (errors as `file:line:col: message`),
+  `run(script, motion_timeout_s=120, ramp_step_s=0.5)` (checks again with the rig state; a failed check logs one
+  `refused` event and raises `ScriptError`; refused while the emergency stop is engaged or another protocol runs),
+  `pause()`, `resume()` (refused once the run ended, in particular after an emergency stop), `stop()`,
+  `wait(timeout_s)`, `status()`, `running()`, `edit(draft)` (full check, kept as the draft) and `apply_edits()`
+  (applied at the next step boundary).
+- **The engine calls only `mtpy.api`** (a test checks that `mtpy.protocol` never imports `mtpy.devices` or reaches a
+  device service), so each step passes the profile, the emergency stop and the read-back checks like a manual action.
+  Run states: running, paused, completed, stopped, refused (the API refused a step), failed (device error, time-out,
+  other API error), aborted (emergency stop). Events `protocol`, `protocol_step`, `protocol_edit` (grammar.md 12.17)
+  go through `api.events.log`, so they reach the HDF5 `/events` while recording (test).
+- **Checker:** every statement is mapped to API functions by name (`check.API_MAP`); a missing function fails the
+  check (`light`, `if`, `wait until`, `on` today), and each key's unit must match the unit in the API parameter's
+  name. Every value is checked with `api.safety.check`; every magnet statement also needs a usable
+  `magnet_speed_mm_s` maximum, so **with the shipped profile v1 every magnet statement fails the check** (test).
+  With the rig state: devices connected, force table loaded and covering every force (position inside the magnet
+  travel), focus target from the current position, acquisition running for `record`.
+- **New / changed functions:** `api.magnet.force_table()` (read-only copy of the loaded table, for the checker);
+  `api.ScriptError` (`diagnostics`, `warnings`); against section 2.6, `run` takes the script, and `resume`, `wait`,
+  `status`, `running` are new; `check` returns a report instead of raising.
+- **WP5 carry (max_pending):** `api.acq.status()` gains `frames_not_written` (the sink's `unwritten_frames`, None
+  for a sink without it); test `test_max_pending_overflow_visible_in_status`: with no accepted recording-on and
+  `max_pending=5`, `frames_not_written` and `sink_failures` grow, `sink_error` names the overflow, acquisition goes
+  on per frame, and the close reports it; no file is written.
+- Tests: `tests/test_protocol.py` (parser positions, header / sequence / recipe errors, the grammar.md examples, load
+  without execution, check refusals: missing API function, out-of-profile value, profile v1 magnet speed; full run
+  event sequence, rotate / focus through the API, pause / resume, stop, emergency stop mid-step (aborted, magnet
+  stopped in place, nothing moves after the release, no resume), refusal mid-run, mid-run edit applied / refused,
+  end-to-end HDF5 events, the max_pending carry).
+- **Not done (WP5):** `if` / `wait until` / `on` / `light` execution (needs `api.events.rule`, `api.light` sequences);
+  screening rule evaluation (metric library); running `.mtseq` / `.mtrec` (parsed and checked only); the tracking zero
+  in `zero`; the run-time / frame / light-time / data-size estimate of grammar.md section 8 (only `min_duration_s`);
+  storing the protocol files with the run beyond the `protocol` start event (text + sha256 in `/events/protocol`);
+  the per-frame `protocol_step` / `protocol_loop` / `protocol_version` columns of hdf5-v1 `/mt`.
+- **Still open from earlier (unchanged):** the rotor's omitted-speed check (the engine always passes a speed);
+  `Motion.wait_arrival` generation check (the engine itself ends the run when the generation changes).
+
 ## 4. Example: the enzyme-cleavage experiment as a Python experiment script (level 3)
 ```python
 from mtpy import api   # api.VERSION >= 0.1

@@ -195,9 +195,70 @@ rule circularity >= 0.8
 rule multi_tether == 0
 ```
 
-## 12. Open
+## 12. WP5 decisions (implemented 2026-10-24, grammar 0.1, `mtpy.protocol`; open to change with the draft)
+Where the draft left a point open, WP5 chose the simplest safe option. Each is marked so it can be revisited.
+1. **Header.** The first non-comment line is `grammar 0.1`; the second names the script (`protocol` / `sequence` /
+   `recipe` + a word or a quoted string). A file with an `.mt*` extension must match its kind (`.mtprot`, `.mtseq`,
+   `.mtrec`). `kind` is optional (default `experiment`), at most once, before the first action.
+2. **Ranges the draft did not give** (grammar check; the rig safety profile is checked on top): `hold`, `wait`,
+   `move` t 0-36000 s; `record t=` and `rotate t=` 0.1-36000 s; every force >= 0 pN; `loop n=` / `repeat n` whole
+   numbers 1-10000; `wait until ... timeout=` more than 0 and at most 86400 s; `ratio n=` 1-65536 (as
+   `api.sync.set_ratio`); `body repeat=` and `count=` 1-10^7. `rotate` needs `from` != `to`.
+3. **Expressions:** `and` binds tighter than `or`; `not` applies to one term; `within` is a comparison only in
+   `rule`. A call argument may be `key=value` or `event <name>`.
+4. **Errors:** every error of the file is reported (not only the first), sorted by line and column; the column of a
+   bad value is the value's. A block opener with an error still opens its block, so its `end` matches. A frame must
+   set every listed light (`'frame' needs 637=`).
+5. **What runs:** `zero`, `ramp`, `hold`, `move`, `rotate`, `focus`, `record`, `mark`, `wait t=`, `loop`,
+   `repeat`, `stop`. The checker maps each statement to public API functions by name; `light seq=` / `light off`
+   (`api.light.load_sequence` / `start_sequence` / `stop_sequence`), `if`, `wait until`, `on`
+   (`api.events.rule` / `wait_for` / `on`) are parsed but **fail the check** because those functions do not exist
+   yet; they become runnable when the API has them (no change to the checker's rule).
+6. **Screening rules** are parsed but **not evaluated** (no `api.screen`, no metric library yet): a check warning,
+   and the run's `protocol` start event says `rules_evaluated: false`. Metric names are not checked yet.
+7. **`zero t=`** moves the magnet to 0 mm (top, the lowest force) and holds t; it does **not** set the tracking zero
+   (`api.tracking.zero` does not exist yet) - the step's end event says so. Owner to confirm what "zero force" means
+   (0 mm, or the force table's lowest force).
+8. **`ramp`** is a staircase through `api.magnet.set_force`: first `from`, then ceil(t / ramp step) increments
+   (ramp step 0.5 s by default, `api.protocol.run(ramp_step_s=)`), each after its interval and each waited for until
+   it arrives; the real duration is t plus the move times.
+9. **`hold f= t=`**: t counts from the arrival at f. **`move mm= t=`**: t is the hold after arrival (not the move
+   duration); the speed is the controller's, checked by `api.magnet.move_to`.
+10. **`rotate from= to= f= t=`**: from / to are turns relative to the session-start position (the frame of the
+    profile's `rotor_turns` window). The engine sets the force, goes to `from`, then to `to`, both at speed
+    |to - from| / t, which is always passed explicitly so `rotor_speed_turns_s` is always checked.
+11. **`focus um=`** is relative to the focus position read when the protocol starts.
+12. **`record`** needs acquisition already running (`api.acq.start`); the protocol never starts or stops
+    acquisition. The recording name is the protocol name; `record t=` is on, t, off.
+13. **`mark`** uses `api.acq.mark` (with the frame position) while acquisition runs, else a `mark` event.
+14. **Check before the run, in three layers:** the API (functions and the unit in each parameter's name), the rig
+    safety profile (every value; every magnet move also needs a usable `magnet_speed_mm_s` maximum, so with profile v1
+    every magnet statement fails the check), and at `run()` the rig state (devices connected, a force table loaded that
+    covers every force and maps it inside the magnet travel, the focus target from the current position, acquisition
+    running for `record`). Values that depend on the run are checked again by the API at each step.
+15. **Run behaviour:** one protocol at a time, on its own thread, only through `mtpy.api`, caller
+    `script:<name>@<first 12 hex of the sha256>`. A refused step ends the run (`refused`); a device error, time-out
+    or other API error ends it (`failed`); nothing is skipped. Each move is waited for up to 120 s
+    (`motion_timeout_s`). **Pause** stops the protocol clock in holds, waits and ramp intervals (within ~20 ms); a
+    move already sent finishes. **Stop** cancels the running move in place and changes nothing else (0007). The
+    **emergency stop** ends the run as `aborted`; it is never resumed, also not after the release.
+16. **Mid-run edits (section 3.5, minimal):** `api.protocol.edit(draft)` checks the new version fully (with the rig
+    state); `apply_edits()` hands it to the engine, which applies it at the next step or loop-pass boundary: steps not
+    started take it now, steps done in this loop pass from the next pass, the running step is locked (each statement
+    is read from the version in force when it starts). An edit that changes the kind of a statement already started
+    on the running path (or the loops around it) is refused at the boundary and the run continues unchanged. Both
+    texts are in the `protocol_edit` event; the version number counts applied edits.
+17. **Events:** `protocol` (start with the text and sha256, pause, resume, stop_requested, end with the state),
+    `protocol_step` (phase start / end / refused / failed / stopped / aborted / completed, with step number, line,
+    statement, loop pass, protocol version and target) and `protocol_edit` (applied / refused). While recording they
+    reach the HDF5 `/events` like every other event.
+
+## 13. Open
 - Exact metric names and the event-rule functions (grows with use).
 - Whether `on ... do` may move hardware (today: yes, through the safety layer) or only mark / stop.
 - Block-editor representation of `if` / `on` (visual design, phase 8).
 - How a protocol references an illumination sequence and a recipe inside a bundle (paths vs names).
 - smCamera's FRET formula for `fret()`.
+- (WP5) What `zero` means as a magnet target (0 mm or the table's lowest force), and when the tracking zero is set.
+- (WP5) Whether `stop` / the end of a protocol should switch recording off (today: left as it is, 0007).
+- (WP5) Whether a mid-run edit may insert or remove statements before the running one (today: refused).

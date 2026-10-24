@@ -69,6 +69,16 @@ def use_force_table(table):
     events.log("calibration", device="magnet", force_table=table["name"], version=table["version"])
 
 
+def force_table():
+    """The position-to-force table loaded with use_force_table() (a copy: name, version, position_mm, force_pN), or
+    None. Read only; the protocol checker (WP5) uses it to refuse a force outside the table before a run starts."""
+    t = getattr(service("magnet"), "force_table", None)
+    if t is None:
+        return None
+    return {"name": t["name"], "version": t["version"], "position_mm": [float(x) for x in t["position_mm"]],
+            "force_pN": [float(x) for x in t["force_pN"]]}
+
+
 def set_force(force_pN, table=None):
     """Move the magnet to the position that gives force_pN by the position-to-force table (0010); returns a Motion.
 
