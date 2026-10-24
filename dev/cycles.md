@@ -19,3 +19,4 @@ WP5 grammar parser + protocol engine · WP6 walking skeleton end to end.
 | Cycle | WP | Commit | Discussion | Result |
 |---|---|---|---|---|
 | 1 | WP1 | 30c42cf | l2s-wp1-r1 ([Google doc](https://docs.google.com/document/d/1IhyVLq0rUGJypYqIRZ7QzHd_LGl6p3IDxJFTYSDSplk/edit)) | not converged (Claude side auth failed; GPT: change x3 + unverified policy) -> fixes in b72b428 |
+| 1 (r2) | WP1 | b72b428 | l2s-wp1-r2 ([Google doc](https://docs.google.com/document/d/1PNIoqJtAW975szARW7uHbmLuz1ySAmtFOypshjsCf1E/edit)) | converged in 3 rounds: change (a)-(e) then continue -> fixes in 1137dd0 (57 tests pass, ruff clean on changed files); owner decisions pending: allow_unverified report policy, unset limits, rotor ±5 turns |
