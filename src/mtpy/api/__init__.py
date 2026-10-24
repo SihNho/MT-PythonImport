@@ -1,12 +1,15 @@
 """The public function layer (docs/design/api.md): the GUI, scripts, plug-ins and the AI gateway call only this.
 
-Usage: `from mtpy import api`. WP1 provides the skeleton: errors, the event log with the caller context, the
-emergency-stop flag and the rig safety profile. Device groups follow in later work packages.
+Usage: `from mtpy import api`. WP1: errors, the event log with the caller context, the emergency-stop flag and the
+rig safety profile. WP2: device connection and status, camera settings, magnet, rotor, stage, focus, lasers and the
+sync divider, each against the simulators selected by the rig preset `{"backend": "sim"}`.
 """
-from . import errors, estop, events, safety
+from . import errors, estop, events, safety  # noqa: I001 - must load before the device groups (they import them)
+from . import camera, devices, focus, light, magnet, rotor, stage, sync
 from .errors import DeviceError, MtpyError, NotReady, SafetyRefused, Timeout
 
-VERSION = "0.1.0"
+VERSION = "0.2.0"
 
 __all__ = ["VERSION", "DeviceError", "MtpyError", "NotReady", "SafetyRefused", "Timeout",
-           "errors", "estop", "events", "safety"]
+           "camera", "devices", "errors", "estop", "events", "focus", "light", "magnet", "rotor", "safety", "stage",
+           "sync"]

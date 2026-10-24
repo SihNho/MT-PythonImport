@@ -157,6 +157,47 @@ function writes it (the write path lives in `mtpy.admin`, outside the public API
   device-service thread carry the real caller, never `unknown` or another request's caller.
 - WP2 is simulators only; it is not approval to connect real devices.
 
+**Implemented in WP2 (2026-10-24, `api.VERSION = "0.2.0"`, simulators only):**
+- `mtpy.devices`: `Device` (open / close / identity / settings / limits / calibration / probe / session_origin /
+  stop, plus `tol`, `quantities`, `settings_kinds`, a plain-language `hint`), `DeviceService` (one thread and request
+  queue per device; every request runs in `contextvars.copy_context()` of the caller; a failure or no reply becomes
+  `DeviceError` with the hint and a `device_fault` event; status connected / disconnected / error / slow (> 0.5 s),
+  last reply time and ms, last error; `info()`, `reconnect()`, `self_check()` open -> reply -> read, stopping at the
+  first failed step), `Motion` (own thread in the caller's context; `wait(timeout_s)` -> read-back or `Timeout`,
+  `done`, `cancel()`; cancelled or e-stopped -> `NotReady` and a `cancelled` event). `make(rig_preset)`: only
+  `{"backend": "sim", "fixture": <folder>|None}`; any other backend raises `NotImplementedError`.
+- The session-start origin of relative windows (stage x/y, rotor, focus) is read at the first open of a session and
+  kept across reconnects; it is dropped at `devices.disconnect()`.
+- Simulators (`mtpy.devices.sim`): `SimCamera` (fixture replay or synthetic rings; absolute buffer numbers that
+  restart at 0 on each acquisition start as in IMAQdx; `t_camera_s` from the sim's clock - the real JAI has no
+  hardware timestamp, so the real driver will carry PC receive time; open resets ROI / exposure / rate; rate and ROI
+  locked while acquiring; frame period and exposure in 1 us steps; `drop_every`, `stall(s)`, `fault`),
+  `SimMagnet` (TMN/TMX 0..39 reject with ERR 7, hard travel 0..40.94), `SimRotor` (500 pulses/turn), `SimStage`
+  (SL/SU stop the motor without an error, so only the read-back shows it), `SimFocus`, `SimArduino` (ratio N, records
+  `(m, first JAI buffer, lights on)` per EMCCD frame from the camera's exposure line), `SimLight` (532 / 637 on/off).
+  Fault injection `fault = "no_reply" | "nan"`.
+- Functions added: `devices.connect(rig_preset)` / `disconnect()` / `status()` / `info(name)` / `reconnect(name)` /
+  `self_check()`; `camera.apply_preset(preset)` / `set_exposure` / `set_gain` / `set_rate(rate_Hz, confirm=False)` /
+  `set_roi(x, y, w, h, confirm=False)`; `magnet.move_to` / `position()` / `use_force_table(table)` /
+  `set_force(force_pN, table=None)`; `rotor.rotate(turns, speed_turns_s=None)` / `position()`;
+  `stage.move_to(x_mm, y_mm)` / `position()`; `focus.move_to(z_um)` / `position()`; `light.set(laser, on)`;
+  `sync.set_ratio(n)`.
+- **Changes against section 2.2:** `devices.connect` / `disconnect` are new (until `presets.load("rig")` exists);
+  `camera.apply_preset` takes the preset content `{"name", "roi", "rate_Hz", "exposure_ms", "gain_dB"}`, not a name,
+  until `api.presets` exists, and remembers it to re-apply after a reconnect; `set_rate` / `set_roi` take
+  `confirm=True` to change while recording (U17 "guarded"; a `guarded_change` event); `rotor.rotate(turns)` is
+  RELATIVE (target = position read now + turns; the target is checked against the session-start window);
+  `magnet.use_force_table(table)` is new (`set_force` raises `NotReady` without a table; no physics is invented);
+  `magnet.move_to(..., speed_mm_s=None)` uses the controller's current speed unchecked, a given speed is checked
+  against `magnet_speed_mm_s`. Positions, stage x/y and the rest read back through the service.
+- `_act.acting` gained `check=` (a device-range check for settings that are not rig-safety-profile quantities, or
+  that span two quantities like stage x/y) and `match=` (non-scalar read-back), and passes `NotReady` from the send /
+  read-back through unchanged with a `cancelled` event; `_act.precheck` (e-stop + profile check alone) lets a Motion
+  refuse on the caller's thread before its own thread starts. `estop.add_stopper(fn)`: `engage()` sets the flag,
+  then calls each device's `stop()` directly (not queued); a failing stopper is an `estop_error` event.
+- Quantity names in events for the non-profile settings: `camera_exposure_ms`, `camera_gain_dB`, `camera_rate_Hz`,
+  `camera_roi`, `camera_preset`, `stage_xy_mm`, `light_<laser>`, `sync_ratio`.
+
 ## 4. Example: the enzyme-cleavage experiment as a Python experiment script (level 3)
 ```python
 from mtpy import api   # api.VERSION >= 0.1
