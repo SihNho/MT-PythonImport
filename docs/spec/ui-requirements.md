@@ -355,6 +355,25 @@ Every adjustable value (magnet position, rotor, focus, exposure, gain, threshold
 and step buttons; a slider may sit beside it as a shortcut but is never the only way. Values are clamped to the
 allowed range, and the range / limit is shown next to the box. Applied on Enter or when the box loses focus.
 
+**U31 - moving the JAI camera along the axis for a fluorescence focus offset (hardware + program).** Owner 2026-10-24:
+"EMCCD를 움직이려면 한 번에 움직여야 할 부품이 너무 많아서 현실성이 떨어짐. IR camera (JAI)를 움직이는게 가장 간편함. 만약
+어렵다면 샘플 바꿀때만 움직이는게 좋을 것 같음. 수동이라면 위치 기록이 어렵기는 함. 빼먹을 수도 있고, 수치도 신뢰가 어려울
+수 있고". (Replaces the fluorescence-path-only idea of U26: the objective focus goes to the dye plane, the EMCCD stays
+fixed, and the JAI camera is moved so the beads image well.)
+- Facts found 2026-10-24: the SP-5000M-USB is C-mount (flange 17.526 mm per a distributor listing, to confirm). No
+  off-the-shelf **motorised** C-mount focusing tube was found; manual ones exist (ASI C-mount focus adapters ±1.7 / ±4 mm,
+  Edmund fine-focus tube, Thorlabs SM1Z).
+- Scale: moving the camera by Δ moves its conjugate plane at the sample by about Δ / M²; at 50x, about 2.5 mm of camera
+  travel per 1 µm at the sample (ASI ±4 mm ≈ ±1.6 µm). The needed range follows from the dye's height.
+- **Only between samples, before calibration.** The z look-up table assumes a fixed objective-camera geometry: after
+  any camera move the program marks the LUT invalid and blocks the experiment until a new calibration; the pixel size
+  may change slightly and is re-checked per position.
+- **Position always recorded automatically**: (1) a motorised stage with encoder (if ASI, check whether an axis can be
+  added to the existing Tiger controller), or (2) a manual tube with a digital gauge / micrometer with USB readout read
+  by the program; typing the value by hand is not relied on. The position is read at calibration start, stored in the
+  `.cal` metadata and the run metadata (U16), and a later change raises a warning.
+- **Open:** the dye's height above the surface (sets the travel); motorised vs manual + digital readout.
+
 **U11 - UI language.** Owner 2026-10-22: "글자는 무조건 영어." All UI text in English only.
 
 **Note - local AI model.** Owner 2026-10-22: "Laya 내장하는거는 염두에 두고 있음. 로컬로 트레이닝한다면 내 계정이
