@@ -460,18 +460,42 @@ def test_estop_engaged_and_released_during_rotor_pre_read_sends_nothing(rig, mon
     assert st["state"] == "aborted" and sent == []
 
 
-def test_only_one_run_starts_and_the_running_one_is_never_overwritten(rig, monkeypatch):
-    """Fix 2: two overlapping run() calls (the first one's check made slow): exactly one starts, the other is refused
-    with NotReady and a `refused` event, and the running engine stays the first one."""
-    import mtpy.protocol.check as chk
-    real, calls = chk.check, []
+class _SpyLock:
+    """Stands in for api.protocol._run_lock: records which thread arrived at the lock and which one holds it, around
+    `inner` (the real mutual exclusion; a no-op context in the negative control)."""
 
-    def slow_check(*a, **k):
-        calls.append(1)
-        if len(calls) == 1:
-            time.sleep(0.3)
+    def __init__(self, inner):
+        self.inner = inner
+        self.arrived = {"run-A": threading.Event(), "run-B": threading.Event()}
+        self.holding = {"run-A": threading.Event(), "run-B": threading.Event()}
+
+    def __enter__(self):
+        me = threading.current_thread().name
+        self.arrived[me].set()
+        self.inner.__enter__()
+        self.holding[me].set()
+        return self
+
+    def __exit__(self, *exc):
+        self.holding[threading.current_thread().name].clear()
+        return self.inner.__exit__(*exc)
+
+
+def overlapping_runs(monkeypatch, inner):
+    """Run A enters its check while holding the run lock and is held there by a signal; run B is started and must be
+    waiting on the lock; then A is released. Signals only, every wait bounded. Returns what happened."""
+    import mtpy.protocol.check as chk
+    real = chk.check
+    a_in_check, release_a = threading.Event(), threading.Event()
+
+    def held_check(*a, **k):
+        if threading.current_thread().name == "run-A":
+            a_in_check.set()
+            assert release_a.wait(5), "run A was never released"
         return real(*a, **k)
-    monkeypatch.setattr(chk, "check", slow_check)
+    monkeypatch.setattr(chk, "check", held_check)
+    spy = _SpyLock(inner)
+    monkeypatch.setattr(api.protocol, "_run_lock", spy)
     n = len(events.events())
     results = {}
 
@@ -481,18 +505,33 @@ def test_only_one_run_starts_and_the_running_one_is_never_overwritten(rig, monke
             results[name] = "started"
         except NotReady as e:
             results[name] = f"refused: {e}"
-    a = threading.Thread(target=go, args=("A",))
-    b = threading.Thread(target=go, args=("B",))
+    a = threading.Thread(target=go, args=("A",), name="run-A", daemon=True)
+    b = threading.Thread(target=go, args=("B",), name="run-B", daemon=True)
     a.start()
-    time.sleep(0.05)
+    assert a_in_check.wait(5) and spy.holding["run-A"].is_set()          # A is inside its check, holding the lock
     b.start()
+    assert spy.arrived["run-B"].wait(5)
+    b_waiting = not spy.holding["run-B"].is_set() and b.is_alive()     # B arrived and does not hold the lock
+    release_a.set()
     a.join(5)
     b.join(5)
-    assert results["A"] == "started" and results["B"].startswith("refused: a protocol is already running")
-    assert api.protocol.status()["name"] == "A"
-    starts = [e for e in events.events()[n:] if e.kind == "protocol" and e.extra["action"] == "start"]
-    assert [e.extra["name"] for e in starts] == ["A"]
-    assert [e.request["protocol"] for e in events.events()[n:] if e.kind == "refused"] == ["B"]
+    assert not a.is_alive() and not b.is_alive()
+    new = events.events()[n:]
+    return {"b_waiting": b_waiting, "results": results, "running_name": api.protocol.status()["name"],
+            "started": [e.extra["name"] for e in new if e.kind == "protocol" and e.extra["action"] == "start"],
+            "refused": [e.request["protocol"] for e in new if e.kind == "refused"]}
+
+
+def test_only_one_run_starts_and_the_running_one_is_never_overwritten(rig, monkeypatch):
+    """Fix 2 (re-review l2s-wp5-r2: signals, no sleep): A holds the run lock inside its check, B is shown waiting
+    on the lock, A is released: exactly one run starts (A), B is refused with NotReady and a `refused` event, and
+    the running engine is still A."""
+    got = overlapping_runs(monkeypatch, threading.Lock())
+    assert got["b_waiting"], got
+    assert got["started"] == ["A"], got
+    assert got["results"]["A"] == "started" and got["results"]["B"].startswith("refused: a protocol is already "
+                                                                                "running"), got
+    assert got["refused"] == ["B"] and got["running_name"] == "A", got
     api.protocol.stop()
     assert api.protocol.wait(5)["state"] == "stopped"
 

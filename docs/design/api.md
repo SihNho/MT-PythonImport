@@ -541,7 +541,11 @@ gain_dB]`; a late off with written rows beyond it: `test_late_off_reports_writte
    `test_estop_engaged_and_released_during_rotor_pre_read_sends_nothing` (zero sends, run aborted; with the run scope
    disabled the first one fails with one magnet send - checked once as a negative control, not kept as a test).
 2. **One run at a time:** `api.protocol.run` does the running() check, the check and the engine start under one lock;
-   the engine is registered only after it started. Test: `test_only_one_run_starts_and_the_running_one_is_never_overwritten`.
+   the engine is registered only after it started. Test: `test_only_one_run_starts_and_the_running_one_is_never_overwritten`
+   (re-review l2s-wp5-r2: signals, no sleep - a spy around `_run_lock` shows run A inside its check holding the
+   lock and run B waiting on it (`b_waiting`), then A is released; every wait bounded at 5 s). **Negative control**
+   (scratch, not committed): the same signals with the lock replaced by a no-op context -> the test fails with
+   `b_waiting False`, both runs started (B first, then A) and `_engine` overwritten by A (2026-10-25).
 3. **Focus reference:** the engine reads `focus_z0` in `start()` (before its thread), and `edit()` checks against
    it (`check(..., run_focus_z0=)`); a focus step without a run reference is refused. Tests:
    `test_mid_run_edit_focus_uses_the_run_start_reference`, `test_focus_step_without_run_reference_is_refused`.
@@ -557,6 +561,14 @@ gain_dB]`; a late off with written rows beyond it: `test_late_off_reports_writte
   U12 (no tracking zero; owner to confirm what it means).
 - **WP6:** show the value-only edit restriction in the GUI.
 - **Phase 8 editor:** structural mid-run edits and statement identity (so inserts / deletes can be told apart).
+
+**Carried (agreed in l2s-wp5-r2):**
+- **WP6:** the focus reference is read twice at a start (once by `run()`'s check, once by `Engine.start()`); they
+  can differ - use one read for both. A failure in `Engine.start()` (e.g. the focus read) raises to the caller but
+  logs no event. `test_mid_run_edit_applies_at_next_step_boundary` depends on timing (a 0.1 s sleep to land inside
+  the first hold); make it signal-driven.
+- **Phases 6-8:** screening `rule` lines are not part of the structure comparison (`structure_diff` compares the
+  statements only), so a mid-run edit may change, add or remove rules; decide when rules are evaluated.
 
 ## 4. Example: the enzyme-cleavage experiment as a Python experiment script (level 3)
 ```python
