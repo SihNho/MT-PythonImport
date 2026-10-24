@@ -5,9 +5,9 @@
 
 One run, through the public API only (`mtpy.api`), as a script would do it:
 1. A copy of the shipped `config/` in `<out>/config` becomes the active profile folder (the shipped files are never
-   written; their sha256 is compared before and after). With that copy - still the shipped profile v3 - the protocol
-   is refused before anything moves (magnet speed 15 mm/s unverified, no force maximum).
-2. A TEST-ONLY profile v4 is made in the copy through the admin write path (`mtpy.admin.safety_admin`, caller
+   written; their sha256 is compared before and after). With that copy - still the shipped profile (v4: magnet speed
+   15 mm/s rig-checked, no force maximum) - the protocol, which sets forces, is refused before anything moves.
+2. A TEST-ONLY profile (shipped version + 1) is made in the copy through the admin write path (`mtpy.admin.safety_admin`, caller
    `rig-admin`): magnet speed [0, 15] mm/s and force [0, 20] pN marked verified with the source "TEST ONLY". Its
    re-commissioning report says it is a simulator run in a temporary folder, NOT a rig check.
 3. Simulated devices (the camera replays the recorded G: fixture frames when they exist, else synthetic rings); a

@@ -635,7 +635,7 @@ gain_dB]`; a late off with written rows beyond it: `test_late_off_reports_writte
 - **Walking skeleton** `tools/walking_skeleton.py` (how to run: [dev/walking-skeleton.md](../../dev/walking-skeleton.md);
   test `tests/test_walking_skeleton.py[protocol | estop]`, needs the G: fixture). Through the public API only: a copy
   of `config/` in the output folder (the shipped files are never written; sha256 compared before and after); with
-  the shipped profile v3 the protocol is refused before anything moves; a TEST-ONLY v4 in the copy through the admin
+  the shipped profile (then v3; now v4, see below) the protocol is refused before anything moves; a TEST-ONLY next version (v4, now v5) in the copy through the admin
   path (magnet speed [0, 15] mm/s and force [0, 20] pN marked verified, report notes "TEST ONLY ... NOT a rig
   check"); sim devices with the fixture frames, camera preset 90 Hz read back, beads 1-5 of `cal002` (bead 1 =
   reference, user role), a TEST-ONLY force table; recording to HDF5; a `.mtprot` with hold / move / mark / loop of
@@ -682,7 +682,7 @@ gain_dB]`; a late off with written rows beyond it: `test_late_off_reports_writte
   keeps acquisition (current behaviour); the `magnet_force_pN` maximum; when the U12 tracking zero is set; whether
   value-only mid-run edits meet U18.
 - **Limits:** poller readings are PC-timed (0005: ms level), not exposure-accurate; its reads share the device
-  service queue with moves (interleaved, never on the frame path); the skeleton's profile v4 and force table are
+  service queue with moves (interleaved, never on the frame path); the skeleton's TEST-ONLY profile and force table are
   TEST ONLY and live only in its output folder.
 
 **Review l2s-wp6-r1 fixes (simulators and files only):**
@@ -706,6 +706,24 @@ gain_dB]`; a late off with written rows beyond it: `test_late_off_reports_writte
 - **Minor:** the skeleton check name "10 mm at the 1 pN hold" (its test reads the ramp maximum, 11.111 mm); the
   `move mm=3` step's position is not checked by the skeleton.
 - **Phase 8:** show the value-only mid-run edit rule in the GUI.
+
+**Rig safety profile v4 (2026-10-25, shipped; config changed only through the admin path):** the 15 mm/s rig check
+was done on the real PI C-863.11 (V6 card pivel15r, PASS 3/3 gates, log V6
+`tools/bench/pi_vel15_check_20261025.log`: session start with reference and limits TMN 0 / TMX 39 read back;
+VEL? = 15 (it already was 15); MOV 1 30 -> POS 30.00000, ERR 0, ONT 1, motion about 2.25 s vs 2.05 s expected;
+MOV 1 0 -> POS 0.00000, ERR 0; session end with limits released and read back. The bgrun wrapper's last line says
+rc=1 only because rig_session's own RESULT line is not in its result-line/1 schema; the process exited 0). v4 =
+v3 with `magnet_speed_mm_s` [0, 15] mm/s `verified: true`, made by `rig-admin` (open -> propose -> activate) with
+`checked: {"magnet_speed_mm_s": true}` - the normal checked path, no unverified exception - and that log cited in
+the report notes and the limit's source. Every other limit is identical to v3; v1-v3 stay in the history.
+Effect: magnet POSITION moves (`move_to`, `zero`, `move mm=`) at <= 15 mm/s pass the profile (given or read-back
+speed); > 15 mm/s is refused; force steps (`set_force`, `hold`, `ramp`, `rotate`) are still refused - no
+`magnet_force_pN` maximum (owner); rotor and focus unchanged (refused). The walking skeleton's TEST-ONLY profile is
+now the shipped version + 1 (v5) in its own copy. Tests: `test_shipped_config_is_v4_magnet_speed_15_rig_checked`,
+`test_shipped_profile_v4_magnet_moves_up_to_15_mm_s_rotor_focus_force_refused`,
+`test_profile_v3_still_refuses_every_magnet_move`, `test_shipped_profile_v4_runs_position_moves_and_refuses_force_steps`,
+`test_profile_v3_still_refuses_magnet_moves_before_anything_runs`. This closes the "15 mm/s rig check" carry of the WP6
+table above; the profile change was not run through the simulator-only skeleton as a rig claim.
 
 ## 4. Example: the enzyme-cleavage experiment as a Python experiment script (level 3)
 ```python

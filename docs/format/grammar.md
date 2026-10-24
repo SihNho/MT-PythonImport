@@ -236,8 +236,10 @@ Where the draft left a point open, WP5 chose the simplest safe option. Each is m
 13. **`mark`** uses `api.acq.mark` (with the frame position) while acquisition runs, else a `mark` event.
 14. **Check before the run, in three layers:** the API (functions and the unit in each parameter's name), the rig
     safety profile (every value; every magnet move also needs a usable `magnet_speed_mm_s` maximum: profile v1 had
-    none; the shipped v3 has 15 mm/s (0016 item 1) but verified:false until a rig move-and-read-back, so every
-    magnet statement still fails the check; force steps also need a `magnet_force_pN` maximum), and at `run()` the rig state (devices connected, a force table loaded that
+    none; v3 had 15 mm/s (0016 item 1) but verified:false, so every magnet statement failed; the shipped **v4**
+    (2026-10-25) has 15 mm/s verified by the rig move-and-read-back (V6 card pivel15r), so position statements
+    (`move`, `zero`) pass this layer; force steps (`hold`, `ramp`, `rotate`) still fail it until a
+    `magnet_force_pN` maximum is set), and at `run()` the rig state (devices connected, a force table loaded that
     covers every force and maps it inside the magnet travel, the focus target from the current position, acquisition
     running for `record`). Values that depend on the run are checked again by the API at each step.
 15. **Run behaviour:** one protocol at a time, on its own thread, only through `mtpy.api`, caller

@@ -53,27 +53,32 @@ class Motor:
         return self.pos
 
 
-def test_shipped_config_is_v3_magnet_speed_15_unverified(monkeypatch):
-    """Review l2s-wp5-r4: the shipped active profile is v3 (base v2, made through the admin path). magnet_speed_mm_s
-    is [0, 15] mm/s (owner decision 0016) but verified:false with allow_unverified false, so every magnet move is
-    refused until the rig check; nothing is recorded as checked. v1 and v2 stay in the history; every other limit
-    is identical to v1."""
+def test_shipped_config_is_v4_magnet_speed_15_rig_checked(monkeypatch):
+    """The shipped active profile is v4 (base v3, admin path, 2026-10-25): magnet_speed_mm_s [0, 15] mm/s verified
+    after the rig move-and-read-back (V6 card pivel15r), recorded as `checked` through the normal path (no
+    unverified exception). Every other limit is identical to v3; v1-v3 stay in the history, v3 as written (speed
+    15 mm/s verified:false, nothing checked)."""
     monkeypatch.setattr(safety, "CONFIG", REPO_CONFIG)
     p = safety.load_active()
     hist = {v: json.loads((REPO_CONFIG / "safety_profiles" / f"{v}.json").read_text(encoding="utf-8"))
-            for v in (1, 2, 3)}
-    assert p["version"] == 3 and p["base_version"] == 2 and safety.versions() == [1, 2, 3]
-    v3 = hist[3]
-    assert safety._thaw(p) == v3 and v3["allow_unverified"] is False and "magnet_speed_mm_s" in v3["unverified"]
-    assert v3["recommissioning"]["checked"] == {}
-    assert v3["recommissioning"]["not_checked_unverified"] == ["magnet_speed_mm_s"]
-    speed = v3["limits"]["magnet_speed_mm_s"]
-    assert speed["max"] == 15.0 and speed["verified"] is False and "NOT yet checked on the rig" in speed["source"]
+            for v in (1, 2, 3, 4)}
+    assert p["version"] == 4 and p["base_version"] == 3 and safety.versions() == [1, 2, 3, 4]
+    v3, v4 = hist[3], hist[4]
+    assert safety._thaw(p) == v4 and v4["allow_unverified"] is False and "magnet_speed_mm_s" not in v4["unverified"]
+    assert v4["recommissioning"]["checked"] == {"magnet_speed_mm_s": True}
+    assert v4["recommissioning"]["not_checked_unverified"] == []
+    assert "pivel15r" in v4["recommissioning"]["notes"] and "pi_vel15_check_20261025.log" in v4["recommissioning"]["notes"]
+    speed = v4["limits"]["magnet_speed_mm_s"]
+    assert speed["min"] == 0.0 and speed["max"] == 15.0 and speed["verified"] is True and "pivel15r" in speed["source"]
+    assert [q for q in v4["limits"] if v4["limits"][q] != v3["limits"][q]] == ["magnet_speed_mm_s"]
+    assert v3["limits"]["magnet_speed_mm_s"]["verified"] is False and v3["recommissioning"]["checked"] == {}
     for v in (1, 2):
         assert [q for q in hist[v]["limits"] if hist[v]["limits"][q] != v3["limits"][q]] == ["magnet_speed_mm_s"]
-    assert "not a rig move-and-read-back" in v3["reason"]
-    with pytest.raises(SafetyRefused, match="not verified"):
-        safety.check("magnet_speed_mm_s", 10.0)
+    assert safety.check("magnet_speed_mm_s", 15.0) is True
+    with pytest.raises(SafetyRefused, match=r"outside the allowed range \[0, 15\]"):
+        safety.check("magnet_speed_mm_s", 15.5)
+    with pytest.raises(SafetyRefused, match="magnet_force_pN has no limit set"):
+        safety.check("magnet_force_pN", 1.0)
 
 
 def _speed_limits(verified, max_=15.0):

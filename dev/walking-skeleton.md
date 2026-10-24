@@ -18,7 +18,7 @@ As a test: `.venv\Scripts\python.exe -m pytest tests\test_walking_skeleton.py` (
 fixture).
 
 ## What it leaves in the output folder
-- `config/` - the copy used as the active profile folder, with the TEST-ONLY `safety_profiles/4.json`;
+- `config/` - the copy used as the active profile folder, with the TEST-ONLY next profile version (`safety_profiles/5.json` while v4 is shipped);
 - `<name>.mtprot` - the protocol that ran (`skeleton` or `skeleton_estop`);
 - `<name>.h5` and `<name>.meta.json` - the run file and its metadata copy;
 - `<name>-000` - the `.tra` export; `<name>.cal` - the `.cal` export (byte-identical to `cal002`).
