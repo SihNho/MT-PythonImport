@@ -444,6 +444,27 @@ coating 문제임. 그러나 완벽한 샘플은 없을 것 같고, 아마 왠�
 - Sticking is expected to stay: the sample preset records the **surface coating type and batch**, so the
   troubleshooting log (U9) can show sticking frequency per coating / batch.
 
+**U35 - keeping the fluorescence in focus without disturbing bead tracking (discussion).** Owner 2026-10-24: "우선
+현재로서는 형광 z-position을 기록할 계획이 없음. Z-position은 Bead에 대한 기록만 할거임. 그런데, 내 말은 형광체가 워낙
+작으니 초점이 조금만 어긋나도 intensity 측정에 문제가 생길 것 같다는 뜻. 그러니 초점이 계속해서 형광을 쫓아다녀야함. 그 경우
+Reference bead, magnetic bead 둘 다 위치를 같이 움직이기 때문에 원론상으로는 문제가 없는 것이 맞지만, piezo stage 움직임에
+따른 충격, bead calibration 구간 변동에 따른 노이즈 및 정밀도 차이 이 부분이 걱정된다는 뜻". (So: no dye z is recorded;
+U34's computed dye height is used, if at all, only as a focus target.)
+- Is continuous following needed? Defocus spreads photons rather than losing them; with an ROI larger than the PSF
+  (e.g. 5 × 5 px) the summed intensity changes little for ±200-300 nm (more background noise). TIRF excitation vs
+  height changes intensity far more and is not fixed by refocusing. At constant force the dye moves ~10 nm; large moves
+  come with force changes. So refocusing **once per protocol segment** to the expected height may be enough.
+- **First a rig measurement:** a fluorescent bead / dye, defocus 0, ±100, ±200, ±300 nm, intensity vs ROI size -> the
+  focus accuracy actually needed.
+- If the piezo is used: small smooth ramps between segments only; settling frames auto-excluded (settling time from a
+  reference-bead step response); bead z corrected by the piezo position recorded every frame; LUT-region effects
+  handled by the error-vs-height map and per-frame uncertainty (U34).
+- **Preferred alternative: an electrically tunable lens in front of the EMCCD** (one C-mount part; the EMCCD itself does
+  not move): changes only the fluorescence focus, so the objective and bead tracking are untouched (no shock, no LUT
+  shift); ms response. Costs: slight magnification change (JAI <-> EMCCD map per ETL setting or modelled), space with
+  the image splitter, price (about USD 1,400-2,600 for EL-16-40 C-mount types).
+- **Open:** the defocus-vs-intensity measurement; EMCCD-side space and mount for an ETL.
+
 **U11 - UI language.** Owner 2026-10-22: "글자는 무조건 영어." All UI text in English only.
 
 **Note - local AI model.** Owner 2026-10-22: "Laya 내장하는거는 염두에 두고 있음. 로컬로 트레이닝한다면 내 계정이
