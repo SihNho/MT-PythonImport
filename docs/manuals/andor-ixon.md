@@ -13,7 +13,7 @@ It does not free-run: it is triggered externally by the Arduino frame divider, o
 | interface | USB (Andor kernel driver `atmcd.inf` "AndorWDM" 4.33.0.0 and Andor `libusb0` 1.2.6.0 in the driver store) | `pnputil /enum-drivers`, read 2026-10-22 |
 | camera | **not connected**: `GetAvailableCameras` returned rc 20002 (`DRV_SUCCESS`) and **0 cameras** | earlier LabVIEW2Scr session (owner's record), see project memory "LabVIEW2Scr project state" |
 | trigger input | EXT TRIG (TTL) from the Arduino D9 output; level and connector not checked | decision 0005 |
-| model | "iXon Ultra"; exact model (888 / 897 / ...) unknown | owner |
+| model | **iXon Ultra 897** (512 × 512, 16 µm pixels) per the owner's optical schematic of 2026-10-06 ([hardware/mt-tirf-optical-layout.svg](../hardware/mt-tirf-optical-layout.svg), read 2026-10-24); earlier entry "exact model unknown" | owner's schematic |
 
 ## Driver / SDK
 
