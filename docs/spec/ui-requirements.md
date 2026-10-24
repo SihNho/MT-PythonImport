@@ -416,6 +416,20 @@ fixed, and the JAI camera is moved so the beads image well.)
 - Cross-checks: (B) TIRF intensity vs height (needs the penetration depth calibrated; confounded by bleaching /
   blinking); (C) astigmatic 3D localisation with a cylindrical lens in the EMCCD path (about ±400 nm range).
 - A mismatch between computed and measured z is an anomaly signal (e.g. sticking, U33).
+- Owner's challenge 2026-10-24: "A는 bead가 eWLC를 완벽히 따른다는 가정 하에 적용 가능할듯. 애초에, bead calibration
+  구간마다 정밀도가 달라져서 생기는 문제아님? 어떻게 해결한다는건지?" Discussion (estimates, not measured):
+  - A needs no eWLC when the extension is measured; it assumes **uniform relative stretching** along the DNA, which
+    fails for nucleosomes / unwrapping (inhomogeneous), at low force (not straight) and with off-centre attachment.
+  - Calibration-range-dependent bead-z precision enters the dye height scaled by f (dye's relative position, ~0.3-0.4):
+    e.g. 4 nm bead noise -> ~1.2-1.6 nm; the 1.4-2.3 nm height-dependent interpolation error -> ~0.5-0.9 nm. It cannot be
+    removed, but it can be **reported per frame** as an uncertainty (local LUT sensitivity + noise, as Kovari 2019).
+  - Larger errors are elsewhere: the zero (surface reference), the focal-shift factor, off-centre attachment, and the
+    structural model.
+  - Handling: a per-calibration **error-vs-height map** from a slow piezo scan of a reference bead, stored with the
+    calibration; choose the calibration start so the working heights sit in the good region and show where the bead
+    is in the LUT range; per-frame sigma for bead z and dye height (shown as bands); mark segments where A's assumptions
+    are weak; validate A with (B)/(C) and once with a simple DNA of known dye position.
+  - **Open:** dye position and total length in bp, and where nucleosomes sit relative to the dye.
 
 **U33 addendum (owner 2026-10-24).** "분자가 바닥에 붙어버리게 되면 magnetic bead의 autofluorescence를 무시할 수 없게 됨.
 bead autofluorescence를 실시간 측정하다가 해당 구간을 알려주는 것도 괜찮은 방법 같음. (그리고 만약 .tif 자체가 아닌
