@@ -465,6 +465,18 @@ checked separately in phases 6/7):**
   (6).
 - **Not changed (owner question pending):** the `.tra` column-0 origin (segment's first received buffer).
 
+**Re-review l2s-wp4-r2 fix:** `api.acq.start(record=True)` runs the four-settings check on its settings read
+before it builds the sink, uses the ROI or starts the pipeline: a missing setting gives exactly one `refused` event
+and `NotReady`, acquisition not running, no file (tests `test_api_start_record_missing_setting_refused_first[roi |
+gain_dB]`; a late off with written rows beyond it: `test_late_off_reports_written_rows_outside`).
+
+**Carried (agreed in l2s-wp4-r2):**
+- **WP5:** a status test for the `max_pending` overflow (the pipeline's sink loop, pipeline.py:295-298, catches the
+  `RecordingRefused` per frame and continues; show the count in `api.acq.status()`).
+- **WP6:** motor back-fill across several flushed 4096-row blocks (tested only within one block).
+- **Driver:** a late `.cal` is ignored when its path does not exist (only a `note` attribute); `start(record=False)`
+  with `roi` missing from the settings read raises `KeyError` at the ROI fit check instead of `NotReady`.
+
 **Carried (agreed in l2s-wp4-r1), WP6:**
 - a crash during a flush, including the motor back-fill rewrite path (not tested, nothing promised);
 - a real MATLAB run of `matlab/read_mtpy_h5.m` and of the owner's analysis scripts on an exported `.tra` (owner's

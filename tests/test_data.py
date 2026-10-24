@@ -454,6 +454,34 @@ def test_api_recording_on_missing_setting_refused_before_flag(cam, tmp_path, mon
         assert f["mt/buffer_number"][-1] == f["recordings/off_buffer"][0]
 
 
+@pytest.mark.parametrize("missing", ["roi", "gain_dB"])
+def test_api_start_record_missing_setting_refused_first(cam, tmp_path, monkeypatch, missing):
+    """Review l2s-wp4-r2: start(record=True) checks the four settings before the sink, the ROI or the pipeline."""
+    monkeypatch.setattr(api.beads, "_selected", Beads((1,), np.array([[640.0, 512.0]]), [], 120, None, None, "test"))
+    real = cam.device.settings
+    monkeypatch.setattr(cam.device, "settings", lambda: {k: v for k, v in real().items() if k != missing})
+    n = len(api.events.events())
+    with pytest.raises(api.NotReady, match="lack"):
+        api.acq.start(record=True, name="norec", folder=tmp_path)
+    assert [e.kind for e in api.events.events()[n:]] == ["refused"]
+    assert not api.acq.running() and not cam.device.acquiring() and not cam.recording
+    assert not list(tmp_path.glob("*.h5"))
+
+
+def test_late_off_reports_written_rows_outside(tmp_path):
+    """An off event that arrives after frames beyond it were written: the rows stay, their count is reported."""
+    w = HDF5Writer(tmp_path / "o.h5", flush_frames=1)
+    w.write_event(rec_on(0.0))
+    for b in range(6):
+        w.write_frame(frame(1, b, 0.1 + b / 90))               # interval still open-ended: all written
+    w.write_event(ev(0.2, "recording", action="off", name="r1", segment=1, buffer_number=2))
+    with pytest.raises(RecordingRefused, match="3 written rows outside"):
+        w.close()
+    with h5py.File(tmp_path / "o.h5", "r") as f:
+        assert f.attrs["frames_outside_recordings"] == 3 and f.attrs["frames_not_written"] == 0
+        assert f["mt/buffer_number"].shape == (6,) and f.attrs["closed_cleanly"] == 1
+
+
 def test_api_existing_file_refused(cam, tmp_path):
     (tmp_path / "taken.h5").write_bytes(b"")
     with pytest.raises(api.NotReady, match="exists"):

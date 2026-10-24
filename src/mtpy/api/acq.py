@@ -67,6 +67,8 @@ def start(record=False, name=None, sink=None, ring_capacity=64, folder=None, rol
         raise NotReady("the camera is already acquiring outside api.acq")
     beads = _beads.selected()
     s = svc.call(dev.settings, what="read settings")
+    if record:            # review l2s-wp4-r2: the four settings first, before any sink, ROI use or pipeline
+        _settings_snapshot(name, s)
     if sink is None and folder is not None:
         sink = _hdf5_sink(folder, name, beads, roles, svc, dev, s)
     kernel = None
