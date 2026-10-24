@@ -23,6 +23,32 @@ Both figures are inferences; **measure the 50x pixel size** (stage micrometer, o
 distance and track a stuck bead) before converting pixels to nm. **LabVIEW does not use this number**: tracking
 works in pixels, and analysis is done in MATLAB with its own parameters (owner 2026-10-22, Q3.07).
 
+## MT-TIRF optical layout (owner's schematic "2026-10-06_MT-TIRF_Optical_Schematic_paper_style_v1", read 2026-10-24)
+
+Owner: "현재로서는 셋업인데, 나중에 바뀔 예정. 그래도 이거 보면 이해가 쉬울듯. Ingest 하고 나중에 갱신하게 될테니 source에
+두지는 말도록" and then "아니 저장소에는 둬. 다만 수정 가능하도록 저장하라는 뜻." The drawing is kept as an **editable
+document**: [hardware/mt-tirf-optical-layout.svg](hardware/mt-tirf-optical-layout.svg) (plain SVG text; edit it in place
+when the setup changes, git keeps the old versions; update this table with it). Not part of the program source.
+
+| Part | As drawn |
+|---|---|
+| Excitation lasers | **532 nm** and **637 nm**; polarisers, combined on a PBS (its 2nd output unused); two irises |
+| TIRF optics | L1 f = 35 mm + L2 f = 300 mm = ≈8.6× beam expander; L3 f = 500 mm focuses on the objective back focal plane; **L3 and the last mirror share a translation stage that sets the TIRF angle**; beam enters the IX73 back port |
+| Turret | DM1 = ZT532/640rpc-UF3 (excitation / emission); DM2 = "IR turret" (sends 850 nm to the JAI) |
+| Objective (as drawn) | **100×/oil, UPlanSApo** — differs from the 50x oil the owner uses now (open question) |
+| Tracking light | **850 nm LED** above the sample, through the gap of the magnet pair |
+| Magnets | antiparallel pair; z translation; rotation about z (±) |
+| Tracking camera | JAI SP-5000M-USB, "z tracking, 60–150 Hz" |
+| Emission path | DM1 → mirror → **slit** → L4 f = 100 mm → DM3 640rdc-UF1 (**Cy5 channel planned**, not built) → mirror → L5 f = 150 mm → notch filters NF 537/635 → **EMCCD = Andor iXon Ultra 897** |
+| Synchronisation | JAI → Arduino → EMCCD trigger, frame ratio ≈ 3:1 (decision 0005) |
+
+Consequences (inference, to be confirmed by a pixel-size measurement):
+- L4 → L5 adds ≈1.5× after the slit, so the EMCCD magnification ≈ objective × 1.5 (assuming the standard Olympus tube
+  lens): 50x → ≈75x, ≈213 nm/px (iXon 897: 16 µm pixels, 512 × 512); 100x → ≈150x, ≈107 nm/px. This is why the
+  fluorescence field is narrow; changing the L4/L5 ratio is the direct way to widen it (U27).
+- The TIRF-angle stage (L3 + mirror) position should be recorded automatically per run (motor, or manual + digital
+  readout), as for the JAI camera position (U31).
+
 ## Samples
 
 | Fact | Value | Source |

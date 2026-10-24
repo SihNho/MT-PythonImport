@@ -247,12 +247,12 @@ button,select,input,textarea{font-family:inherit;font-size:12px}
 <sc-for list="{{seqSections}}" as="sec" hint-placeholder-count="3">
 <div style="border: 1px solid #E5E7EB; border-radius: 6px; padding: 6px; display: flex; flex-direction: column; gap: 4px">
 <div style="display: flex; gap: 6px; align-items: center"><strong>{{sec.label}}</strong><span style="font-size: 12px; color: #4B5563">{{sec.note}}</span><button onClick="{{sec.add}}" style="margin-left: auto; border: 1px dashed #6B7280; background: #FFFFFF; border-radius: 4px; padding: 2px 8px; cursor: pointer">+ frame</button></div>
-<div style="display: flex; gap: 4px; font-size: 11px; color: #4B5563"><span style="width: 44px">frame</span><span style="width: 52px">532 nm</span><span style="width: 52px">638 nm</span></div>
+<div style="display: flex; gap: 4px; font-size: 11px; color: #4B5563"><span style="width: 44px">frame</span><span style="width: 52px">532 nm</span><span style="width: 52px">637 nm</span></div>
 <sc-for list="{{sec.rows}}" as="r" hint-placeholder-count="2">
 <div style="display: flex; gap: 4px; align-items: center">
 <span style="width: 44px; font-family: 'JetBrains Mono', monospace; font-size: 11px">{{r.n}}</span>
 <button onClick="{{r.tg}}" aria-label="Toggle 532 nm" style="width: 52px; height: 24px; border: 1px solid #9CA3AF; border-radius: 4px; cursor: pointer; background: {{r.gBg}}; color: {{r.gFg}}">{{r.gT}}</button>
-<button onClick="{{r.tr}}" aria-label="Toggle 638 nm" style="width: 52px; height: 24px; border: 1px solid #9CA3AF; border-radius: 4px; cursor: pointer; background: {{r.rBg}}; color: {{r.rFg}}">{{r.rT}}</button>
+<button onClick="{{r.tr}}" aria-label="Toggle 637 nm" style="width: 52px; height: 24px; border: 1px solid #9CA3AF; border-radius: 4px; cursor: pointer; background: {{r.rBg}}; color: {{r.rFg}}">{{r.rT}}</button>
 <button onClick="{{r.del}}" aria-label="Remove frame" style="border: 1px solid #D1D5DB; background: #FFFFFF; border-radius: 4px; padding: 0 6px; cursor: pointer">×</button>
 </div>
 </sc-for>
@@ -263,7 +263,7 @@ button,select,input,textarea{font-family:inherit;font-size:12px}
 <div style="display: flex; flex-wrap: wrap; gap: 2px">
 <sc-for list="{{seqPreview}}" as="p" hint-placeholder-count="20"><span title="{{p.t}}" style="width: 12px; height: 18px; border-radius: 2px; background: {{p.c}}; display: inline-block"></span></sc-for>
 </div>
-<div style="display: flex; gap: 10px; font-size: 11px; color: #4B5563"><span><span style="display: inline-block; width: 10px; height: 10px; background: #16A34A"></span> 532</span><span><span style="display: inline-block; width: 10px; height: 10px; background: #DC2626"></span> 638</span><span><span style="display: inline-block; width: 10px; height: 10px; background: #7C3AED"></span> both</span><span><span style="display: inline-block; width: 10px; height: 10px; background: #374151"></span> dark</span></div>
+<div style="display: flex; gap: 10px; font-size: 11px; color: #4B5563"><span><span style="display: inline-block; width: 10px; height: 10px; background: #16A34A"></span> 532</span><span><span style="display: inline-block; width: 10px; height: 10px; background: #DC2626"></span> 637</span><span><span style="display: inline-block; width: 10px; height: 10px; background: #7C3AED"></span> both</span><span><span style="display: inline-block; width: 10px; height: 10px; background: #374151"></span> dark</span></div>
 <div style="background: {{ltCheckBg}}; color: {{ltCheckFg}}; padding: 6px 8px; border-radius: 6px; font-size: 12px">{{ltCheck}}</div>
 <div style="display: flex; gap: 6px; flex-wrap: wrap">
 <button onClick="{{ltImport}}" style="border: 1px solid #9CA3AF; background: #FFFFFF; border-radius: 6px; padding: 6px 8px; cursor: pointer">Import ShutterManager file…</button>
@@ -272,7 +272,7 @@ button,select,input,textarea{font-family:inherit;font-size:12px}
 <div style="font-weight: 600">Manual (alignment / focusing)</div>
 <div style="display: flex; gap: 6px">
 <button onClick="{{tgManG}}" style="flex: 1 1 0; border: 1px solid #9CA3AF; border-radius: 6px; padding: 8px; cursor: pointer; background: {{manGBg}}; color: {{manGFg}}">532 nm {{manGT}}</button>
-<button onClick="{{tgManR}}" style="flex: 1 1 0; border: 1px solid #9CA3AF; border-radius: 6px; padding: 8px; cursor: pointer; background: {{manRBg}}; color: {{manRFg}}">638 nm {{manRT}}</button>
+<button onClick="{{tgManR}}" style="flex: 1 1 0; border: 1px solid #9CA3AF; border-radius: 6px; padding: 8px; cursor: pointer; background: {{manRBg}}; color: {{manRFg}}">637 nm {{manRT}}</button>
 </div>
 <div style="font-size: 12px; color: #4B5563">Run by the Arduino on camera frames, never timed by the PC. Lights close automatically when not recording.</div>
 </div>
@@ -800,7 +800,7 @@ class Component extends DCLogic {
 
     // ---- mapping ----
     const nCh = parseInt(s.layout, 10);
-    const chColor = ['#16A34A', '#DC2626', '#2563EB'], chEx = ['532 nm', '638 nm', '488 nm'];
+    const chColor = ['#16A34A', '#DC2626', '#2563EB'], chEx = ['532 nm', '637 nm', '488 nm'];
     const regions = { 1: ['0,0,512,512'], 2: ['0,0,256,512', '256,0,256,512'], 3: ['0,0,170,512', '170,0,171,512', '341,0,171,512'] };
     const chRows = [];
     for (let c = 0; c < nCh; c++) chRows.push({ id: 'CH' + (c + 1), name: s.chNames[c], color: chColor[c], ex: chEx[c], region: '[' + regions[nCh][c] + ']',

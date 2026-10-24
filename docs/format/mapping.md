@@ -30,7 +30,7 @@ JSON because it is small, human-readable, diff-able and read by MATLAB `jsondeco
   "rig": {"objective": "50x oil", "jai_binning": 2, "emccd_model": "iXon Ultra [model]"},
   "channels": [
     {"id": "ch1", "name": "Donor Cy3", "region_px": [0, 0, 256, 512], "excitation_nm": 532, "emission": "585/40", "color": "#22C55E"},
-    {"id": "ch2", "name": "Acceptor Cy5", "region_px": [256, 0, 256, 512], "excitation_nm": 638, "emission": "680/40", "color": "#EF4444"}
+    {"id": "ch2", "name": "Acceptor Cy5", "region_px": [256, 0, 256, 512], "excitation_nm": 637, "emission": "680/40", "color": "#EF4444"}
   ],
   "reference": "ch1",
   "transforms": [
