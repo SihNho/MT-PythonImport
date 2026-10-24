@@ -106,6 +106,21 @@ proposals; phase 5 may refine them, and every change after the first release fol
 The safety profile itself is changed only from the rig-admin settings screen with a re-commissioning check; no API
 function writes it.
 
+**Implemented in WP1 (2026-10-24, `api.VERSION = "0.1.0"`):**
+- `mtpy.api.errors`: `MtpyError` (base) and the four errors above; `DeviceError(device, command, hint)`.
+- `mtpy.api.events`: `log(kind, request, readback, **extra)`, `events(since)`, `subscribe(fn)` (for the HDF5 writer);
+  the caller is a context variable set with `as_caller(name)`, one of `gui`, `rig-admin`, `script:<name>@<version>`,
+  `plugin:<name>`, `ai:<read|propose|run_approved|autonomous>`; code that sets none is logged as `unknown`.
+- `mtpy.api.estop`: `engage(reason)`, `clear()`, `active()`.
+- `mtpy.api.safety`: active profile `config/safety_profile.json`, every version kept as
+  `config/safety_profiles/<version>.json`; `load_active()`, `profile()` (read-only), `check(quantity, value, origin)`
+  (`origin` = session-start position for relative windows such as the ASI stage), `versions()`;
+  `propose_change(limits, by, reason)` -> `Pending` and `activate(pending, RecommissioningReport)`, both only for the
+  `rig-admin` caller. Quantity names: `magnet_position_mm`, `magnet_force_pN`, `magnet_speed_mm_s`, `rotor_turns`,
+  `rotor_speed_turns_s`, `focus_z_um`, `stage_x_mm`, `stage_y_mm`, `laser_power_mW.<laser>`.
+- `mtpy.api._act.acting(quantity, value, do, readback, tol, origin)`: steps 1, 3, 4 and 5 above for every device
+  function (step 2, the device-service thread, comes with the device layer).
+
 ## 4. Example: the enzyme-cleavage experiment as a Python experiment script (level 3)
 ```python
 from mtpy import api   # api.VERSION >= 0.1

@@ -1,0 +1,24 @@
+{
+  "version": 1,
+  "created": "2026-10-24T00:00:00",
+  "by": "WP1 default (AI code session; values copied from the MT_LabVIEW motion gate)",
+  "reason": "First profile for the current rig (50x, assembled). Entries with verified=false or a null bound are placeholders: a null bound refuses every request until a rig-admin sets it with a re-commissioning check.",
+  "limits": {
+    "magnet_position_mm": {"min": 0.0, "max": 39.0, "unit": "mm", "relative_to": null, "verified": true,
+      "source": "PI C-863.11 TMN 0 / TMX 39 written by MT_LabVIEW tools/motor_gate.py (tools/bench/motor_limits.json pi lo_mm/hi_mm, 2026-09-18, owner at the rig)"},
+    "magnet_force_pN": {"min": 0.0, "max": null, "unit": "pN", "relative_to": null, "verified": false,
+      "source": "unverified - maximum force not stated yet; force is derived from the position-to-force table (0010)"},
+    "magnet_speed_mm_s": {"min": 0.0, "max": null, "unit": "mm/s", "relative_to": null, "verified": false,
+      "source": "unverified - not stated yet"},
+    "rotor_turns": {"min": -5.0, "max": 5.0, "unit": "turns", "relative_to": "session_start", "verified": false,
+      "source": "unverified for the application - development-gate envelope, owner 2026-10-19 '-5 .. +5 turns' from the session-start position (motor_limits.json rotor half_width_pulses 2500 at 500 pulses per turn)"},
+    "rotor_speed_turns_s": {"min": 0.0, "max": null, "unit": "turns/s", "relative_to": null, "verified": false,
+      "source": "unverified - the gate caps the SPD argument at 100 (native units, pulses/s = SPD x multiplier); not converted to turns/s yet"},
+    "focus_z_um": {"min": null, "max": null, "unit": "um", "relative_to": "session_start", "verified": false,
+      "source": "unverified - focus window not stated yet"},
+    "stage_x_mm": {"min": -2.0, "max": 2.0, "unit": "mm", "relative_to": "session_start", "verified": true,
+      "source": "ASI SL/SU = session-start position +- 2.0 mm (motor_limits.json asi half_width_mm, owner 2026-10-15)"},
+    "stage_y_mm": {"min": -2.0, "max": 2.0, "unit": "mm", "relative_to": "session_start", "verified": true,
+      "source": "ASI SL/SU = session-start position +- 2.0 mm (motor_limits.json asi half_width_mm, owner 2026-10-15)"}
+  }
+}
