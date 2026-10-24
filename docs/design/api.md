@@ -642,7 +642,8 @@ gain_dB]`; a late off with written rows beyond it: `test_late_off_reports_writte
   ramps / `zero` / `end protocol`; stop; then the file is read and exported and 17 checks run (frames, one segment,
   rate triple preset / read back / measured, every step's start / end line, mark, recording on / off, magnet on
   every frame following the moves, `.tra` frame column from the first recorded frame and magnet column = `/mt`,
-  `.cal` byte-identical, roles). `--estop`: the stop is engaged during a magnet move; 19 checks (run aborted at the
+  `.cal` byte-identical, roles). `--estop`: the stop is engaged during a magnet move; 20 checks since 1b52a11 (19 before; the 20th: at least 2 new magnet
+  readings with distinct completion times after the stop, present in `/mt`) (run aborted at the
   step's line, magnet stopped in place and still there after the release, acquisition and recording go on, frames
   after the stop in the file, magnet column constant after it, no move read-back after it, file closed cleanly).
 - **New / changed:** `acq.start(..., motor_poll_s=0.05)` (None = off); `acq.status()` gains `camera_stop` and
@@ -675,7 +676,7 @@ gain_dB]`; a late off with written rows beyond it: `test_late_off_reports_writte
 | `mtpy.api` <-> `mtpy.devices` import cycle (WP3-r1) | done: `import mtpy.devices` first FAILED before; fixed (devices loads `mtpy.api` first, camera imports `mtpy.devices.base`) | `test_import_order_devices_first_works` |
 | long runs (WP3-r1) | deferred | needs hours of acquisition; phase 6 soak on the rig (frame loss at 150 Hz) |
 | value-only edit restriction shown in the GUI (WP5-r1) | deferred | phase 8 (no GUI yet) |
-| 15 mm/s magnet move and read-back, then a verified profile (0016, WP5-r4) | not done | hardware: rig session |
+| 15 mm/s magnet move and read-back, then a verified profile (0016, WP5-r4) | done 2026-10-25 (V6 card pivel15r) -> profile v4 (8068225); see "Rig check evidence and its limits" below | V6 tools/bench/pi_vel15_check_20261025.log |
 | MATLAB 2026 run of `matlab/read_mtpy_h5.m` (0016, WP4-r1) | not done | no MATLAB here; that run should also add the crash-file rule (`frames_written`) to the MATLAB reader |
 
 - **Unchanged, owner decisions pending:** `.tra` origin when recording restarts within one segment; `end protocol`
@@ -743,6 +744,22 @@ api.acq.stop()
 api.data.save_run(folder=None, name=None)             # None -> file dialog at the start folder (U21)
 ```
 The script file and its version are stored with the data (0015 item 4).
+
+### Rig check evidence and its limits (review l2s-wp6-r2, peer V6 archive/peer/2026-10-25-pivel15_rcfail.md)
+- **What v4's `verified: true` rests on:** `VEL?` read back 15 after `VEL 1 15`; the 30 mm move out and back reached
+  30.00000 / 0.00000 by the controller's encoder with `ERR?` 0 each time; the session start (reference, limits 0 / 39
+  read back) and end (magnet at 0, limits released and read back) were clean. The admin path check is structural
+  (the normal `checked` path was used).
+- **What it does not show:** the controller was already at VEL 15, so the effect of a speed WRITE is untested; the
+  elapsed-time check polls about every 0.525 s and would pass any speed from about 11.5 to 20 mm/s (the "+9.8 %"
+  figure is not a real precision; uncertainty about +-12 %). The encoder belongs to the same controller (no
+  independent position check).
+- **The rc=1 of that log** comes only from `rig_session.py`'s final summary line, which is not a valid result-line/1;
+  every other RESULT line passed. Fix belongs to V6 tooling (rig_session prints a valid result line; bgrun unchanged,
+  it checks every RESULT line on purpose).
+- **Carry, phase 6 (real PI driver acceptance, owner's go needed):** a discriminating test - VEL 10 then a 30 mm move
+  (predicted about 5.1-5.6 s elapsed), then VEL 15 back to 0 (about 4.1 s). Phase 8: show the time of the last reply
+  (`last_reply_t`). V6 tooling: rig_session RESULT format.
 
 ## 5. Open
 - Final names and the split between `api.magnet` / `api.focus` / `api.stage`.
