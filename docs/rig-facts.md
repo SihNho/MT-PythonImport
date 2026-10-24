@@ -9,6 +9,7 @@ changes, add the new line with its date and keep the old one marked "superseded"
 |---|---|---|
 | Camera | JAI SP-5000M-USB (USB3 Vision, via NI-IMAQdx `cam1`), 1280 x 1024 used (binning 2) | owner 2026-10-22; V6 `docs/instrument-libraries.md` |
 | Sensor pixel | 5.0 x 5.0 µm (2560 x 2048, Lince5M) | JAI product page, accessed 2026-10-22 |
+| Microscope / JAI position | Olympus **IX73**; the JAI sits at the turret position directly below the objective (owner 2026-10-24: "현재 JAI 위치는 IX73 현미경 시스템 상에서 렌즈 바로 밑에 위치한 터렛."). Its own tube lens and focal length: not yet recorded | owner 2026-10-24 |
 | Objective | **50x oil immersion** since the field of view was widened; **100x oil** before | owner 2026-10-22 |
 | Image pixel, nominal | 5.0 µm x 2 (binning) / 50 ≈ **200 nm/px** (assumes the objective's matching tube lens) | computed 2026-10-22, not measured |
 | `pixel distance (nm)` in the calibration file | **84 nm/px** (last DBL of the `cal002` tail; also the panel default) — stale, from the 100x objective | `cal002`; `spec/3-calibration.md` F3.01; owner 2026-10-22 |

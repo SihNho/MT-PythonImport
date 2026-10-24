@@ -372,7 +372,13 @@ fixed, and the JAI camera is moved so the beads image well.)
   added to the existing Tiger controller), or (2) a manual tube with a digital gauge / micrometer with USB readout read
   by the program; typing the value by hand is not relied on. The position is read at calibration start, stored in the
   `.cal` metadata and the run metadata (U16), and a later change raises a warning.
-- **Open:** the dye's height above the surface (sets the travel); motorised vs manual + digital readout.
+- Owner 2026-10-24: the JAI sits on the IX73 at the turret position directly below the objective. If that branch has
+  its own tube lens in infinity space (likely, to be confirmed), refocusing the JAI does not touch the EMCCD path, and
+  besides moving the camera, **moving only the JAI tube lens** or putting an **electrically tunable lens** there are
+  options that may fit the tight turret space better. The JAI magnification is 50x × (its tube-lens focal length / 180 mm,
+  Olympus standard), so the nominal 200 nm/px and the travel estimate depend on that focal length.
+- **Open:** the dye's height above the surface (sets the travel); motorised vs manual + digital readout; the JAI tube
+  lens (present? focal length?) and the free space around the turret port.
 
 **U11 - UI language.** Owner 2026-10-22: "글자는 무조건 영어." All UI text in English only.
 
