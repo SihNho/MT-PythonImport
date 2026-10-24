@@ -339,19 +339,38 @@ def test_api_refusal_mid_run_stops_the_run(rig):
 
 
 def test_mid_run_edit_applies_at_next_step_boundary(rig):
-    """Loop value edits (n, a force, a text) still apply at the next boundary (regression for review l2s-wp5-r1)."""
+    """Loop value edits (n, a force, a text) still apply at the next boundary (regression for review l2s-wp5-r1).
+    WP6 carry: signal-driven, no sleep - the engine pauses itself (from its own thread, in the step-start event) at
+    the first hold of pass 1, so the edit is offered while that hold is held and the pass-1 mark has not started."""
     n = len(events.events())
-    api.protocol.run(parse(HEAD + 'loop n=3\n  hold f=1 t=0.3\n  mark "a"\nend\n'))
-    time.sleep(0.1)                                    # inside the first hold
+    held = threading.Event()
+
+    def pause_in_first_hold(ev):
+        if (ev.kind == "protocol_step" and ev.extra.get("phase") == "start" and ev.extra.get("line") == 4
+                and ev.extra.get("loop") == 1 and not held.is_set()):
+            _until(lambda: api.protocol._engine is not None)   # run() registers the engine right after its start
+            api.protocol._engine.pause()               # on the engine thread, before the hold starts
+            held.set()
+    unsubscribe = events.subscribe(pause_in_first_hold)
+    try:
+        api.protocol.run(parse(HEAD + 'loop n=3\n  hold f=1 t=0.3\n  mark "a"\nend\n'))
+        assert held.wait(5), "the first hold never started"
+        _until(lambda: api.protocol.status()["state"] == "paused")
+    finally:
+        unsubscribe()
+    assert _marks(n) == []
     with pytest.raises(ScriptError, match="25 pN"):
         api.protocol.edit(HEAD + 'loop n=3\n  hold f=25 t=0.3\n  mark "a"\nend\n')
     api.protocol.edit(HEAD + 'loop n=2\n  hold f=2 t=0.3\n  mark "b"\nend\n')
     api.protocol.apply_edits()
+    api.protocol.resume()
     st = api.protocol.wait(10)
     assert st["state"] == "completed" and st["protocol_version"] == 1
     assert _marks(n) == ["b", "b"]                     # the not-started mark takes it at once; 2 passes in all
     ed = [e for e in events.events()[n:] if e.kind == "protocol_edit"]
     assert [e.extra["action"] for e in ed] == ["refused", "applied"] and 'mark "b"' in ed[1].extra["new_text"]
+    acts = [e.extra["action"] for e in events.events()[n:] if e.kind == "protocol"]
+    assert acts == ["start", "resume", "end"]          # paused by the engine itself, resumed through the API
 
 
 def _edit_refused(draft, match):
@@ -521,10 +540,19 @@ class _NoExclusion:
 def overlapping_runs(monkeypatch, inner):
     """Run A enters its check while holding the run lock and is held there by a signal; run B is started and must
     signal `waiting` (its non-blocking acquire refused); then A is released. Signals only, every wait bounded; A is
-    released and both threads joined on every path, also when an assertion fails. Returns what happened."""
+    released and both threads joined on every path, also when an assertion fails. Returns what happened.
+
+    WP6 carries: A's ENGINE is also held by a signal (its step-start event blocks until the end of this function),
+    so it is certainly still running when B gets the lock - no assumption about `wait t=1`; a thread is joined only
+    if it was started (an assertion before b.start() is not hidden by a join error); B's progress is "waiting or
+    finished", so the negative control fails at once instead of after a 5 s wait; every engine that started is
+    released and waited for before returning."""
     import mtpy.protocol.check as chk
+    from mtpy.protocol.engine import Engine
     real = chk.check
-    a_in_check, release_a = threading.Event(), threading.Event()
+    a_in_check, release_a, release_engine = threading.Event(), threading.Event(), threading.Event()
+    b_progress = threading.Event()
+    engines = []
 
     def held_check(*a, **k):
         if threading.current_thread().name == "run-A":
@@ -532,6 +560,16 @@ def overlapping_runs(monkeypatch, inner):
             assert release_a.wait(5), "run A was never released"
         return real(*a, **k)
     monkeypatch.setattr(chk, "check", held_check)
+    real_start = Engine.start
+
+    def start(self):
+        engines.append(self)
+        return real_start(self)
+    monkeypatch.setattr(Engine, "start", start)
+
+    def hold_engine_a(ev):
+        if ev.kind == "protocol_step" and ev.extra.get("phase") == "start" and ev.caller.startswith("script:A@"):
+            release_engine.wait(5)
     spy = _SpyLock(inner)
     monkeypatch.setattr(api.protocol, "_run_lock", spy)
     n = len(events.events())
@@ -539,25 +577,46 @@ def overlapping_runs(monkeypatch, inner):
 
     def go(name):
         try:
-            api.protocol.run(parse(f'grammar 0.1\nprotocol "{name}"\nwait t=1\n'))
+            api.protocol.run(parse(f'grammar 0.1\nprotocol "{name}"\nwait t=0.1\n'))
             results[name] = "started"
         except NotReady as e:
             results[name] = f"refused: {e}"
+        finally:
+            if name == "B":
+                b_progress.set()
+    waiting_set = spy.waiting["run-B"].set
+
+    def waiting_and_progress():
+        waiting_set()
+        b_progress.set()
+    spy.waiting["run-B"].set = waiting_and_progress
     a = threading.Thread(target=go, args=("A",), name="run-A", daemon=True)
     b = threading.Thread(target=go, args=("B",), name="run-B", daemon=True)
+    unsubscribe = events.subscribe(hold_engine_a)
     try:
         a.start()
         assert a_in_check.wait(5) and spy.holding["run-A"].is_set(), "A is not inside its check holding the lock"
         b.start()
-        assert spy.waiting["run-B"].wait(5), "no waiting signal: B's non-blocking acquire was not refused"
+        assert b_progress.wait(5), "B neither waited for the lock nor finished"
+        assert spy.waiting["run-B"].is_set(), "no waiting signal: B's non-blocking acquire was not refused"
         assert not spy.holding["run-B"].is_set()
-    finally:
         release_a.set()
         a.join(5)
         b.join(5)
-    assert not a.is_alive() and not b.is_alive()
+        assert not a.is_alive() and not b.is_alive()
+        running_name = api.protocol.status()["name"]
+        a_alive = any(e.script.name == "A" and not e.done for e in engines)
+    finally:
+        release_a.set()
+        for t in (a, b):
+            if t.ident is not None:               # only a started thread can be joined
+                t.join(5)
+        release_engine.set()
+        unsubscribe()
+        for e in engines:
+            e.wait(5)
     new = events.events()[n:]
-    return {"results": results, "running_name": api.protocol.status()["name"],
+    return {"results": results, "running_name": running_name, "a_alive_when_b_decided": a_alive,
             "started": [e.extra["name"] for e in new if e.kind == "protocol" and e.extra["action"] == "start"],
             "refused": [e.request["protocol"] for e in new if e.kind == "refused"]}
 
@@ -565,15 +624,22 @@ def overlapping_runs(monkeypatch, inner):
 def test_only_one_run_starts_and_the_running_one_is_never_overwritten(rig, monkeypatch):
     """Fix 2 (re-reviews l2s-wp5-r2 / r3: signals, no sleep): A holds the run lock inside its check, B's
     non-blocking acquire is refused (waiting signal), A is released: exactly one run starts (A), B is refused with
-    NotReady and a `refused` event, and the running engine is still A. Assumes A's engine (wait t=1) is still
-    running when B gets the lock (WP6 carry)."""
+    NotReady and a `refused` event, and the running engine is still A. WP6: A's engine is held alive by a signal
+    until B has been decided (no timing assumption)."""
     got = overlapping_runs(monkeypatch, threading.Lock())
     assert got["started"] == ["A"], got
     assert got["results"]["A"] == "started" and got["results"]["B"].startswith("refused: a protocol is already "
                                                                                 "running"), got
-    assert got["refused"] == ["B"] and got["running_name"] == "A", got
-    api.protocol.stop()
-    assert api.protocol.wait(5)["state"] == "stopped"
+    assert got["refused"] == ["B"] and got["running_name"] == "A" and got["a_alive_when_b_decided"], got
+    assert api.protocol.wait(5)["state"] == "completed"
+
+
+def test_one_run_negative_control_without_mutual_exclusion_fails(rig, monkeypatch):
+    """WP6 carry (review l2s-wp5-r4): the negative control, committed. The same observer with only the mutual
+    exclusion removed (an inner lock whose acquire always succeeds) must fail with the waiting-signal assertion -
+    proof that the test above can fail. Both runs start here; both engines are waited for."""
+    with pytest.raises(AssertionError, match="no waiting signal: B's non-blocking acquire was not refused"):
+        overlapping_runs(monkeypatch, _NoExclusion())
 
 
 def test_engine_calls_only_the_public_api():

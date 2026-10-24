@@ -2,9 +2,10 @@
 thread, ONLY through the public function layer `mtpy.api` - it never calls a device, so every rig-safety check
 (profile, emergency stop, refusals) applies to each step exactly as to a manual action.
 
-- **Events:** `protocol` (action start / pause / resume / stop_requested / end), `protocol_step` (phase start / end
-  / refused / failed / stopped / aborted, with the line, the statement, the loop iteration and the protocol version)
-  and `protocol_edit` (applied / refused). They go through `api.events.log`, so while recording they reach the HDF5
+- **Events:** `protocol` (action start / pause / resume / stop_requested / end; `warning` before `zero`, WP6),
+  `protocol_step` (phase start / end / refused / failed / stopped / aborted, with the line, the statement, the loop
+  iteration and the protocol version) and `protocol_edit` (applied / refused; `replaced` when a pending draft is
+  replaced by a newer one, WP6). They go through `api.events.log`, so while recording they reach the HDF5
   `/events` like every other event. The run's caller is `script:<name>@<sha256[:12]>`.
 - **Refusal:** a step the API refuses (SafetyRefused) ends the run as `refused`; a device error, a time-out or any
   other API error ends it as `failed`. Nothing is skipped silently and the next step never starts.
@@ -44,8 +45,14 @@ class _End(Exception):
         self.state, self.reason = state, reason
 
 
+_READ = object()
+
+
 class Engine:
-    def __init__(self, script, motion_timeout_s=120.0, ramp_step_s=0.5):
+    def __init__(self, script, motion_timeout_s=120.0, ramp_step_s=0.5, gen=None, focus_z0=_READ):
+        """gen: the emergency-stop generation of the run (api.protocol.run passes the one in force when it was
+        called, WP6; None = read in start()). focus_z0: the focus reference read once by api.protocol.run (WP6;
+        None = the run has no reference); left out, start() reads it when the script has a focus step."""
         if not (motion_timeout_s > 0 and ramp_step_s > 0):
             raise ValueError("motion_timeout_s and ramp_step_s must be > 0")
         self.script, self.version, self.caller = script, 0, script.caller
@@ -54,10 +61,11 @@ class Engine:
         self._stop, self._pause, self._done = threading.Event(), threading.Event(), threading.Event()
         self._pending = None
         self._pos = []            # per nesting level: the index of the statement (ancestors: the running loops)
-        self._gen = None
+        self._gen = gen
         self._ordinal = self._ordinals(script)
         self.state, self.reason, self.current = "ready", None, None
-        self.steps_done, self.edits, self.focus_z0 = 0, [], None
+        self.steps_done, self.edits = 0, []
+        self._read_focus, self.focus_z0 = focus_z0 is _READ, None if focus_z0 is _READ else focus_z0
         self.t_start = self.t_end = None
 
     @staticmethod
@@ -66,8 +74,9 @@ class Engine:
 
     # --- control (any thread) -------------------------------------------------------------------------------------
     def start(self):
-        self._gen = api.estop.generation()           # an emergency stop from here on aborts the run for good
-        if any(x.kind == "focus" for x in walk(self.script.body)):
+        if self._gen is None:
+            self._gen = api.estop.generation()       # an emergency stop from here on aborts the run for good
+        if self._read_focus and any(x.kind == "focus" for x in walk(self.script.body)):
             # `focus um=` is relative to this; read before the thread starts, so a mid-run edit is always checked
             # against the same reference the engine uses (review l2s-wp5-r1). None = this run has no reference.
             self.focus_z0 = api.focus.position()
@@ -84,9 +93,15 @@ class Engine:
         self._pause.clear()
 
     def offer_edit(self, script):
-        """Queue a checked new version; applied (or refused) at the next step boundary."""
+        """Queue a checked new version; applied (or refused) at the next step boundary. A draft still pending is
+        replaced by the new one, and that replacement is a `protocol_edit` event (action `replaced`, WP6 carry), so
+        a draft that never ran is never dropped silently."""
         with self._lock:
-            self._pending = script
+            old, self._pending = self._pending, script
+        if old is not None:
+            api.events.log("protocol_edit", action="replaced", reason="a newer draft was offered before this one was "
+                           "applied; it is never applied", old_sha256=old.sha256, new_sha256=script.sha256,
+                           protocol_version=self.version)
 
     def wait(self, timeout_s):
         return self._done.wait(timeout_s)
@@ -295,6 +310,10 @@ class Engine:
         return default if a is None else a.value
 
     def _do_zero(self, st):
+        # WP6 carry: said BEFORE the move, so nobody takes `zero` for the U12 tracking zero (owner question open)
+        api.events.log("protocol", action="warning", line=st.line, name=self.script.name, level="warning",
+                       reason="'zero' moves the magnet to 0 mm only (decision 0016 item 2); the tracking zero (U12) "
+                              "is NOT set")
         self._motion(lambda: api.magnet.move_to(0.0))
         self._sleep(self._a(st, "t"))
         return {"note": "magnet at 0 mm (top); the tracking zero is NOT set: api.tracking.zero does not exist yet"}

@@ -24,8 +24,14 @@ Rules the writer keeps (review l2s-wp3-r1 / r2 carries):
   tested (a subprocess ended with `os._exit`): after a flush with rows still waiting in memory, and right after a new
   event-kind group was created; in both the file opened and held exactly the rows of the last flush, with
   `closed_cleanly = 0`. For those points the loss is the rows since the last flush (at most `flush_frames`, default
-  150). A crash during a flush (including the motor back-fill rewrite) is NOT tested (WP6); nothing is promised for
-  it.
+  150). WP6 adds two crash points INSIDE a flush (tests/test_wp6.py): (3) after some /mt columns of a flush were
+  extended and written - the file opens, those columns are longer than the others, and the root attribute
+  `frames_written` (updated only after a whole flush) still gives the last complete flush; the readers
+  (`read_run`, `legacy_matrix`, via `mt_rows`) cut /mt to it; (4) inside the motor back-fill rewrite, after
+  `magnet_mm` / `magnet_t` were rewritten and before `rotor_deg` / `rotor_t` - the file opens with the previous
+  flush's rows, the magnet columns already back-filled (each value a real reading) and the rotor columns not; the
+  late reading's own event row, not flushed yet, is lost. Only these points are tested; HDF5 without SWMR or a
+  journal promises nothing in general.
 - **Late information is applied at the next flush**: a motor reading that arrives after rows with later PC times
   were flushed rewrites those rows' magnet / rotor columns; a .cal path that arrives late is stored and /beads is
   rebuilt from it (user roles kept).
@@ -264,7 +270,9 @@ class HDF5Writer(ResultSink):
         self._seg_info = {}           # number -> dict of what is known about the segment (merged from all sources)
         self._seg_rows = {}           # number -> stats from the recorded frames
         self._hist = []               # (t, key, value, source): camera settings history from events
-        self._motor = {"magnet": [], "rotor": []}    # sorted (t, value)
+        self._motor = {"magnet": ([], []), "rotor": ([], [])}    # (times, values), sorted by time
+        self.sink_errors = []         # storage failures the pipeline noted (WP6), written to /events/sink_error
+        self._sink_errors_written = 0
         self._mt_rows = []            # waiting /mt rows (filled with motor positions at flush)
         self._ids = {}                # id(event) -> event_id
         self._cal = None
@@ -325,6 +333,27 @@ class HDF5Writer(ResultSink):
             raise RecordingRefused(f"{self.max_pending} recorded frames wait for an accepted recording-on interval; "
                                    f"frame (segment {rec.segment}, buffer {rec.buffer_number}) not written")
         self._pending_frames.append(result)
+
+    SINK_ERROR_ROWS = 1000
+
+    def note_error(self, item, error, segment=None, buffer=None, event_kind=None):
+        """WP6 carry (storage errors in the file, not only in api.acq.status()): the pipeline calls this for every
+        failure it met while handing this writer a frame or an event (also the writer's own refusals, e.g. the
+        `max_pending` overflow). Each becomes an `/events/sink_error` row (the first SINK_ERROR_ROWS; the root
+        attribute `sink_failures` counts all), written with the next flush - or when the file opens, for failures
+        before it existed. Limit: when the file itself is what fails, this row may not reach the disk either; then
+        only api.acq.status() shows the failure."""
+        self.sink_errors.append({"t": time.time(), "item": item, "error": str(error), "segment": segment,
+                                 "buffer": buffer, "event_kind": event_kind})
+        if self.f is not None:
+            self._write_sink_errors()
+
+    def _write_sink_errors(self):
+        for e in self.sink_errors[self._sink_errors_written:self.SINK_ERROR_ROWS]:
+            self._write_event_row("sink_error", None, data={k: v for k, v in e.items() if k != "t"},
+                                  buffer=e["buffer"], segment=e["segment"], t=e["t"])
+        self._sink_errors_written = min(len(self.sink_errors), self.SINK_ERROR_ROWS)
+        self.f.attrs["sink_failures"] = len(self.sink_errors)
 
     def close(self):
         """Flush everything, write the end time and the frame-rate triple, set closed_cleanly = 1 and close. Then
@@ -436,23 +465,28 @@ class HDF5Writer(ResultSink):
             self._merge_segment(n, info, f"segment {x.get('action')} event")
         elif ev.kind == "acquisition" and x.get("action") == "start" and not self.cal_path and x.get("cal"):
             self.cal_path = x.get("cal")            # applied at the next flush, whenever it arrives
-        elif ev.kind == "act" and isinstance(ev.request, dict):
+        elif ev.kind in ("act", "motor_reading") and isinstance(ev.request, dict):
             q = ev.request.get("quantity")
             motor = {"magnet_position_mm": ("magnet", 1.0), "rotor_turns": ("rotor", 360.0)}.get(q)
             if motor is not None and _num(ev.readback) == _num(ev.readback):
-                self._insert(self._motor[motor[0]], ev.t, float(ev.readback) * motor[1])
+                t = _num(x.get("t_read"), ev.t)            # a poller reading carries the time it was read (WP6)
+                self._insert(self._motor[motor[0]], t, float(ev.readback) * motor[1])
                 if self._mt is not None and self._mt.n:      # rows already on disk may need it: back-fill at flush
-                    self._motor_dirty = ev.t if self._motor_dirty is None else min(self._motor_dirty, ev.t)
-            elif q in _CAMERA_QUANTITIES:
+                    self._motor_dirty = t if self._motor_dirty is None else min(self._motor_dirty, t)
+            elif ev.kind == "act" and q in _CAMERA_QUANTITIES:
                 self._hist.append((ev.t, _CAMERA_QUANTITIES[q], ev.readback, "act read-back"))
-            elif q == "camera_preset" and isinstance(ev.readback, dict):
+            elif ev.kind == "act" and q == "camera_preset" and isinstance(ev.readback, dict):
                 for k, v in ev.readback.items():
                     if k in SETTINGS:
                         self._hist.append((ev.t, k, v, "preset read-back"))
 
     @staticmethod
     def _insert(lst, t, v):
-        lst.insert(bisect_right([a for a, _ in lst], t), (t, v))
+        """Insert a reading into (times, values) kept sorted by time (readings mostly arrive in order: an append)."""
+        times, values = lst
+        i = bisect_right(times, t)
+        times.insert(i, t)
+        values.insert(i, v)
 
     _COUNTERS = ("first_buffer", "last_buffer", "frames_received", "camera_gaps", "pipeline_drops", "end_pc_s",
                  "end_loss", "ended")
@@ -545,6 +579,8 @@ class HDF5Writer(ResultSink):
                                                              "event": {"kind": e.kind, "extra": e.extra}})
         for e in pending_e:
             self._write_event(e)
+        self.f.attrs["sink_failures"] = 0
+        self._write_sink_errors()                          # failures noted before the file existed (WP6)
         self._pending_frames = pending_f
         self._release_pending()
         self.flush()
@@ -643,11 +679,11 @@ class HDF5Writer(ResultSink):
         """(values, reading times from t0) of the last reading at or before each PC time in t_pc (array); NaN
         before the first reading."""
         t_pc = np.asarray(t_pc, dtype=np.float64)
-        lst = self._motor[name]
-        if not lst:
+        times, values = self._motor[name]
+        if not times:
             return np.full(t_pc.shape, math.nan), np.full(t_pc.shape, math.nan)
-        ts = np.array([a for a, _ in lst])
-        vs = np.array([v for _, v in lst])
+        ts = np.asarray(times, dtype=np.float64)
+        vs = np.asarray(values, dtype=np.float64)
         i = np.searchsorted(ts, t_pc, side="right")
         ok = i > 0
         j = np.maximum(i - 1, 0)
@@ -852,12 +888,31 @@ def _read_group(g):
     return out
 
 
+def mt_rows(f):
+    """How many /mt rows are valid: all of them in a file closed cleanly; in a file NOT closed cleanly (a crash),
+    the root attribute `frames_written`, which a flush updates only after every /mt column was written (WP6: a
+    crash inside a flush can leave some columns longer than others; those extra rows are an unfinished flush)."""
+    if "mt" not in f:
+        return 0
+    n = min(f["mt"][k].shape[0] for k in f["mt"])
+    if int(f.attrs.get("closed_cleanly", 0)) == 1:
+        return n
+    return min(n, int(f.attrs.get("frames_written", n)))
+
+
 def read_run(path):
     """The whole file as nested dicts: {"attrs": root attributes, "mt", "beads", "segments", "recordings", "events":
-    {kind: columns}, "metadata"}; strings decoded, JSON columns parsed. Datasets are numpy arrays."""
+    {kind: columns}, "metadata"}; strings decoded, JSON columns parsed. Datasets are numpy arrays. For a file not
+    closed cleanly, /mt is cut to `mt_rows()` and `recovered` says how many rows of an unfinished flush were left
+    out."""
     with h5py.File(path, "r") as f:
         out = _read_group(f)
         out["attrs"] = {k: (v.decode() if isinstance(v, bytes) else v) for k, v in f.attrs.items()}
         if "mt" in f:
             out["mt_attrs"] = {k: f["mt"][k].attrs.get("source") for k in ("t_camera",)}
+            n = mt_rows(f)
+            longest = max(f["mt"][k].shape[0] for k in f["mt"])
+            if longest > n:
+                out["mt"] = {k: v[:n] for k, v in out["mt"].items()}
+                out["recovered"] = {"mt_rows": n, "rows_of_unfinished_flush_left_out": longest - n}
     return out

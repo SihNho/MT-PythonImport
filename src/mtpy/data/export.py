@@ -9,8 +9,9 @@ segment's first `/mt` row, a dropped or untracked one included, so its gaps stil
 every segment, so a run with more than one segment gives one `.tra` series per segment (`<base>-s<segment>-000`,
 ...), each counted from its own first recorded frame; a one-segment run gives
 `<base>-000`, ... as LabVIEW. A series is split every `nominal` rows (LabVIEW: 2,000,000), `file k of a series`.
-Column 1 is the magnet position (mm) and column 2 the rotor (deg) last read before the frame (NaN before the first
-reading: the writer has no motor polling yet).
+Column 1 is the magnet position (mm) and column 2 the rotor (deg) last read before the frame: since WP6 from the
+acquisition's motor poller (`api.acq`, a reading every 50 ms and one before the first frame) and every move's
+read-back; NaN only without a reading (e.g. a motor not connected).
 """
 import datetime
 import hashlib
@@ -22,6 +23,8 @@ import numpy as np
 from mtpy.api.errors import NotReady
 from mtpy.lvfiles import tra_header, write_tra
 
+from .hdf5 import mt_rows
+
 NOMINAL = 2_000_000
 
 
@@ -32,12 +35,12 @@ def legacy_matrix(path, segment=None):
     with h5py.File(path, "r") as f:
         if "mt" not in f:
             return {}
-        mt = f["mt"]
-        seg, buf = mt["segment"][()], mt["buffer_number"][()].astype(np.int64)
-        ok = (mt["dropped"][()] == 0) & (mt["track_error"][()] == 0)
+        mt, n = f["mt"], mt_rows(f)                 # a crashed file: rows of an unfinished flush left out (WP6)
+        seg, buf = mt["segment"][:n], mt["buffer_number"][:n].astype(np.int64)
+        ok = (mt["dropped"][:n] == 0) & (mt["track_error"][:n] == 0)
         n_beads = int(mt.attrs["n_beads"])
-        xyz = [mt[k][()] for k in ("x_px", "y_px", "z_um")] if n_beads else []
-        mag, rot = mt["magnet_mm"][()], mt["rotor_deg"][()]
+        xyz = [mt[k][:n] for k in ("x_px", "y_px", "z_um")] if n_beads else []
+        mag, rot = mt["magnet_mm"][:n], mt["rotor_deg"][:n]
     out = {}
     for s in sorted(set(seg.tolist()) if segment is None else {segment}):
         sel = ok & (seg == s)

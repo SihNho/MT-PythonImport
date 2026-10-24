@@ -27,9 +27,21 @@ def _fixture_cal():
     return cals[0]
 
 
+def _camera_roi():
+    """The camera ROI read back now, or None when no camera is connected (U23, WP6: kept with the selection and its
+    origin compared at api.acq.start, since bead positions are ROI pixels)."""
+    from .devices import _services
+    svc = _services.get("camera")
+    if svc is None or not svc.connected:
+        return None
+    return tuple(int(v) for v in svc.call(svc.device.settings, what="read settings")["roi"])
+
+
 def select(ids, cal_path=None):
     """Select beads by their 1-based id in the `.cal` file and load their calibration (positions in px and the
     calibration clusters). cal_path None: the first `cal*` file in the simulated camera's fixture folder.
+    The camera ROI read back now is kept with the selection (WP6 / U23): api.acq.start refuses a camera whose ROI
+    origin differs from it (None when no camera is connected: then only the size is checked at start).
     Refused (NotReady) while acquisition runs. Returns {id: {"x_px", "y_px"}} (calibration-time positions)."""
     global _selected
     from mtpy.lvfiles import read_cal
@@ -47,8 +59,10 @@ def select(ids, cal_path=None):
     cross = cal["stack"].shape[2] + 1
     win_rs, win_h = calib.windows(cross)
     idx = [i - 1 for i in ids]
-    _selected = Beads(ids, cal["xy"][idx, :2].copy(), [clusters[i] for i in idx], cross, win_rs, win_h, str(path))
-    events.log("beads", request={"select": list(ids)}, cal=str(path))
+    roi = _camera_roi()
+    _selected = Beads(ids, cal["xy"][idx, :2].copy(), [clusters[i] for i in idx], cross, win_rs, win_h, str(path),
+                      roi)
+    events.log("beads", request={"select": list(ids)}, cal=str(path), roi=roi)
     return {i: {"x_px": float(x), "y_px": float(y)} for i, (x, y) in zip(ids, _selected.xy0)}
 
 

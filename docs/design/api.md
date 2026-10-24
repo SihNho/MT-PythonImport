@@ -631,6 +631,60 @@ gain_dB]`; a late off with written rows beyond it: `test_late_off_reports_writte
   (e.g. those in `not_checked_unverified`): switching it on must not turn an owner's value into a usable limit
   without a rig check.
 
+**Implemented in WP6 (2026-10-25, `api.VERSION = "0.7.0"`, simulators and files only):**
+- **Walking skeleton** `tools/walking_skeleton.py` (how to run: [dev/walking-skeleton.md](../../dev/walking-skeleton.md);
+  test `tests/test_walking_skeleton.py[protocol | estop]`, needs the G: fixture). Through the public API only: a copy
+  of `config/` in the output folder (the shipped files are never written; sha256 compared before and after); with
+  the shipped profile v3 the protocol is refused before anything moves; a TEST-ONLY v4 in the copy through the admin
+  path (magnet speed [0, 15] mm/s and force [0, 20] pN marked verified, report notes "TEST ONLY ... NOT a rig
+  check"); sim devices with the fixture frames, camera preset 90 Hz read back, beads 1-5 of `cal002` (bead 1 =
+  reference, user role), a TEST-ONLY force table; recording to HDF5; a `.mtprot` with hold / move / mark / loop of
+  ramps / `zero` / `end protocol`; stop; then the file is read and exported and 17 checks run (frames, one segment,
+  rate triple preset / read back / measured, every step's start / end line, mark, recording on / off, magnet on
+  every frame following the moves, `.tra` frame column from the first recorded frame and magnet column = `/mt`,
+  `.cal` byte-identical, roles). `--estop`: the stop is engaged during a magnet move; 19 checks (run aborted at the
+  step's line, magnet stopped in place and still there after the release, acquisition and recording go on, frames
+  after the stop in the file, magnet column constant after it, no move read-back after it, file closed cleanly).
+- **New / changed:** `acq.start(..., motor_poll_s=0.05)` (None = off); `acq.status()` gains `camera_stop` and
+  `motor_poll`; `Beads.roi` / `beads.select` keeps the camera ROI; `devices.reconnect("camera")` during acquisition
+  is a segment end; `camera.apply_preset` remembers the preset for the run file (`/metadata/presets/camera`, so the
+  frame-rate triple has its preset value); `HDF5Writer.note_error`; `mtpy.data.hdf5.mt_rows`; `Engine(gen=,
+  focus_z0=)`. New events: `motor_reading`, `motor_reading_error`, `sink_error` (in the file), `protocol` actions
+  `warning` and `start_failed`, `protocol_edit` action `replaced`, `device_fault` with `applied_after_timeout`.
+
+| WP6 carry (where agreed) | Result | Test, or reason |
+|---|---|---|
+| per-frame magnet / rotor reading, off the frame path (WP4-r1) | done: `api.acq` poller thread reads `api.magnet.position` / `api.rotor.position` every 50 ms (one read before the first frame), `motor_reading` events with the newest frame; writer fills `/mt` from them | `test_motor_poller_gives_every_frame_a_reading_off_the_frame_path`, `test_slow_or_failing_motor_never_blocks_acquisition` |
+| `sink_error` stored in the file (WP4-r1) | done: pipeline -> `note_error` -> `/events/sink_error` + root `sink_failures` (limit: a failing file may not take the row either) | `test_sink_error_is_stored_in_the_file`, `test_sink_error_before_the_file_exists_is_written_when_it_opens` |
+| failed `stop_acquisition` must not hide a running camera (WP3-r2 d) | done: `acquiring()` read separately after every stop; `camera_stop` in status + event | `test_failed_stop_does_not_hide_a_running_camera` |
+| ROI at bead selection, origin compared at start (WP3-r2, U23) | done (None when no camera connected at selection: size check only) | `test_roi_origin_moved_while_stopped_is_refused_at_start` |
+| `wait_arrival` generation check (WP2-r2) | done (also the run scope) | `test_estop_engaged_and_released_during_a_move_ends_it_cancelled` |
+| a send applied after a reply timeout (cycles, WP2) | done: abandoned atomically under a per-request lock; a late send is not sent if still queued, else stopped again with an event (a camera setting's `stop()` is a no-op: the event records it) | `test_send_applied_after_reply_timeout_is_stopped_again` |
+| `offer_edit` replacing a pending draft logs an event (WP5-r1) | done | `test_offer_edit_replacing_a_pending_draft_logs_an_event` |
+| e-stop engage + release between `run()`'s check and the engine's generation (WP5-r1) | done: the run's generation is taken when `run()` is called; a change during the check refuses; after it, the engine aborts at once | `test_estop_engaged_and_released_during_the_run_check_refuses_the_run`, `test_estop_between_the_check_and_the_engine_start_aborts_with_nothing_sent` |
+| warning before `zero` (WP5-r1) | done | `test_zero_logs_a_warning_before_the_magnet_moves` |
+| focus reference read once (WP5-r2) | done | `test_focus_reference_is_read_once_for_check_and_engine` |
+| `Engine.start()` failure logs an event (WP5-r2) | done (`start_failed`, also for the focus read) | `test_engine_start_failure_logs_an_event`, `test_focus_read_failure_at_start_logs_an_event` |
+| loop value-edit test timing-independent (WP5-r2) | done: the engine pauses itself in the step-start event of the first hold | `test_mid_run_edit_applies_at_next_step_boundary` |
+| one-run test: negative control committed (WP5-r4) | done, runs always (fast: B's progress = waiting or finished) | `test_one_run_negative_control_without_mutual_exclusion_fails` |
+| one-run test: join of a never-started B (WP5-r4) | done: only started threads are joined | `overlapping_runs` |
+| one-run test: A alive at B's decision (WP5-r3 / r4) | done: A's engine is held by a signal; asserted | `test_only_one_run_starts_and_the_running_one_is_never_overwritten` |
+| crash during a flush incl. the back-fill (WP4-r1) | done for two tested points + reader rule (`frames_written`, `mt_rows`) | `test_crash_inside_a_flush[mt columns | back-fill]` |
+| motor back-fill across several 4096-row blocks (WP4-r2) | done (9000 rows, three blocks) | `test_late_motor_reading_backfills_across_several_flushed_blocks` |
+| camera reconnect as a segment end (WP3-r1) | done (refused restart if the ROI no longer suits the beads) | `test_camera_reconnect_while_recording_is_a_segment_end` |
+| `mtpy.api` <-> `mtpy.devices` import cycle (WP3-r1) | done: `import mtpy.devices` first FAILED before; fixed (devices loads `mtpy.api` first, camera imports `mtpy.devices.base`) | `test_import_order_devices_first_works` |
+| long runs (WP3-r1) | deferred | needs hours of acquisition; phase 6 soak on the rig (frame loss at 150 Hz) |
+| value-only edit restriction shown in the GUI (WP5-r1) | deferred | phase 8 (no GUI yet) |
+| 15 mm/s magnet move and read-back, then a verified profile (0016, WP5-r4) | not done | hardware: rig session |
+| MATLAB 2026 run of `matlab/read_mtpy_h5.m` (0016, WP4-r1) | not done | no MATLAB here; that run should also add the crash-file rule (`frames_written`) to the MATLAB reader |
+
+- **Unchanged, owner decisions pending:** `.tra` origin when recording restarts within one segment; `end protocol`
+  keeps acquisition (current behaviour); the `magnet_force_pN` maximum; when the U12 tracking zero is set; whether
+  value-only mid-run edits meet U18.
+- **Limits:** poller readings are PC-timed (0005: ms level), not exposure-accurate; its reads share the device
+  service queue with moves (interleaved, never on the frame path); the skeleton's profile v4 and force table are
+  TEST ONLY and live only in its output folder.
+
 ## 4. Example: the enzyme-cleavage experiment as a Python experiment script (level 3)
 ```python
 from mtpy import api   # api.VERSION >= 0.1

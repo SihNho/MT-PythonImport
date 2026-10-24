@@ -97,14 +97,30 @@ class DeviceService:
             item = self._q.get()
             if item is None:
                 return
-            ctx, fn, args, fut, guard, what = item
+            ctx, fn, args, fut, guard, what, late = item
             if fut.set_running_or_notify_cancel():
                 try:
-                    fut.set_result(ctx.run(fn, *args) if guard is None else self._send(ctx, fn, args, guard, what))
+                    result = ctx.run(fn, *args) if guard is None else self._send(ctx, fn, args, guard, what, late)
                 except BaseException as e:  # noqa: BLE001 - handed to the waiting caller
                     fut.set_exception(e)
+                    continue
+                with late["lock"]:
+                    if late["abandoned"] and guard is not None:
+                        self._late_send(ctx, what or getattr(fn, "__name__", repr(fn)))
+                        fut.set_exception(NotReady(f"{self.name}: applied after the reply timeout; stopped again"))
+                    else:
+                        fut.set_result(result)
 
-    def _send(self, ctx, fn, args, guard, what=None):
+    def _late_send(self, ctx, what):
+        """WP6 carry: an acting send that completed AFTER its caller's reply timeout (the caller already got
+        DeviceError and will not act on it). The device is stopped again on this thread and a `device_fault` event
+        with `applied_after_timeout` records it, so a late move never runs on unnoticed."""
+        self._stop_again(ctx)
+        ctx.run(events.log, "device_fault", device=self.name, command=what, applied_after_timeout=True,
+                hint=f"the command completed after the caller's reply timeout ({self.reply_timeout_s:g} s); "
+                     f"{self.name}.stop() was called again - {self.device.hint}")
+
+    def _send(self, ctx, fn, args, guard, what=None, late=None):
         """A device send of an acting call (review l2s-wp2-r1): checked against the e-stop generation and the cancel
         flag right before (void -> nothing sent) and right after (void -> this thread stops the device again).
 
@@ -116,6 +132,8 @@ class DeviceService:
         why = estop.invalid(guard)
         if why:
             raise NotReady(f"{self.name}: {why}; not sent")
+        if late is not None and late["abandoned"]:
+            raise NotReady(f"{self.name}: the caller stopped waiting (reply timeout); not sent")
         try:
             result = ctx.run(fn, *args)
         except Exception as e:  # checked for voiding first, else re-raised unchanged
@@ -151,13 +169,24 @@ class DeviceService:
         """
         what = what or getattr(fn, "__name__", repr(fn))
         fut, t0 = Future(), time.monotonic()
-        self._q.put((contextvars.copy_context(), fn, args, fut, estop.send_guard(), what))
+        late = {"lock": threading.Lock(), "abandoned": False}
+        self._q.put((contextvars.copy_context(), fn, args, fut, estop.send_guard(), what, late))
         wait = self.reply_timeout_s if timeout_s is None else timeout_s
         try:
-            result = fut.result(wait)
+            fut.result(wait)
         except FutureTimeout:
-            fut.cancel()
-            self._fail(what, f"no reply for {wait:g} s - {self.device.hint}")
+            # WP6 carry: atomically either take a result that just arrived or mark the request abandoned, so a send
+            # that completes later is stopped again by the service thread (`_late_send`), never left running
+            with late["lock"]:
+                if not fut.done():
+                    late["abandoned"] = True
+                    fut.cancel()
+            if late["abandoned"]:
+                self._fail(what, f"no reply for {wait:g} s - {self.device.hint}")
+        except Exception:  # noqa: BLE001, S110 - read again just below, where it is handled
+            pass
+        try:
+            result = fut.result(0)
         except NotReady:
             raise
         except Exception as e:  # noqa: BLE001 - any device failure becomes a DeviceError with a hint
@@ -284,14 +313,19 @@ class Motion:
         self._cancel.set()
         self._svc.device.stop()
 
-    def wait_arrival(self, moving):
-        """Poll moving() through the service until the move ends; NotReady if cancelled or e-stopped."""
+    def wait_arrival(self, moving, gen=None):
+        """Poll moving() through the service until the move ends; NotReady if cancelled or e-stopped.
+
+        gen (WP6 carry): the emergency-stop generation recorded when the move was requested. A stop engaged AND
+        released while the move runs halts the axis but leaves the flag clear; without this check the halt would
+        look like an arrival (and end in a read-back mismatch). Inside a protocol run the run's generation counts
+        too (`estop.run_scope_void`)."""
         t_end = time.monotonic() + self._svc.device.move_timeout_s
         while True:
             still = self._svc.call(moving, what="moving?")
             # checked AFTER the poll: the stop flags are set before the stop is sent, so a halt caused by them is
             # never mistaken for an arrival
-            if estop.active():
+            if estop.active() or (gen is not None and estop.generation() != gen) or estop.run_scope_void():
                 raise NotReady(f"{self.what} stopped by the emergency stop")
             if self._cancel.is_set():
                 raise NotReady(f"{self.what} cancelled")

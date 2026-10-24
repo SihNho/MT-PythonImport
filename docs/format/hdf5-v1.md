@@ -49,6 +49,8 @@ while this page is a draft.
 | `legacy_tra_files` | string array | paths of the `.tra` files of this run |
 | `legacy_cal_file` | string | path of the `.cal` file used |
 | `run_id` | string | unique id of the run (UUID); the same id is in any separate fluorescence / image file and in the JSON copy, so the files of one run are linked (0006 "Later notes") |
+| `frames_written` | int64 | /mt rows of the last COMPLETE flush (updated after every column was written); a reader of a file with `closed_cleanly = 0` uses only this many rows (`mtpy.data.hdf5.mt_rows`) — *WP4, reader rule WP6* |
+| `sink_failures` | int64 | storage failures the pipeline met while handing frames / events to the writer; each (first 1000) is an `/events/sink_error` row — *WP6* |
 
 ## `/metadata` — devices, presets, run (0006 "Later notes", U16)
 
@@ -242,7 +244,11 @@ Common columns in every table:
 *WP4:* `buffer_number` is int64 with −1 when the event carries no frame position (the writer never guesses one from
 arrival order); `event_id` is the order of arrival at the writer, not event order. The tables are the `api.events`
 kinds as logged (`act`, `refused`, `recording`, `segment`, `acquisition`, `mark`, `guarded_change`, ...) plus the
-writer's `writer_refused` and `writer_tracking_error`; the named tables below are the target.
+writer's `writer_refused` and `writer_tracking_error`; the named tables below are the target. *WP6:* `motor_reading`
+(the acquisition's magnet / rotor poller: `request.quantity`, `readback` = position in mm / turns, `data.t_read` =
+PC time of the read, `buffer_number` = newest frame at the read; `/mt` `magnet_mm` / `rotor_deg` come from these and
+the moves' `act` read-backs), `motor_reading_error`, `sink_error` (caller `writer`; `data`: item, error, event_kind)
+and `protocol` action `warning` (before `zero`).
 
 Tables and their own columns:
 
@@ -282,8 +288,11 @@ needs them.
    **WP4:** (c) is implemented without a repair step: rows are buffered in memory and written at a flush (every
    150 rows or 1 s, and at close). Tested crash points only: a subprocess ended after a flush with rows still in
    memory, and right after a new event-kind group was created, left a readable file with exactly the flushed rows
-   (`closed_cleanly = 0`). A crash during a flush (including the motor back-fill rewrite) is not tested and nothing
-   is promised for it (WP6). SWMR is not used (event tables are created on first use). The file is written with
+   (`closed_cleanly = 0`). **WP6:** two crash points inside a flush are tested too: after 3 of the /mt columns of a
+   flush were extended (the file opens; those columns are longer; root `frames_written` still names the last
+   complete flush and the readers cut /mt to it), and inside the motor back-fill (magnet columns rewritten, rotor
+   not; the late reading's event row is lost). Nothing else is promised. SWMR is not used (event tables are created
+   on first use). The file is written with
    `libver=("earliest", "v108")` (HDF5 1.8 object formats at most; a real MATLAB check is WP6).
 2. Per-bead ROI images (decision 0006 item 6) — not in v1.
 3. ~~A command / event log — needed?~~ **Resolved** by the owner's requirements: re-zero / exclusion events (U14),

@@ -36,6 +36,7 @@ class Beads:
     win_rs: np.ndarray
     win_h: np.ndarray
     source: str = ""
+    roi: tuple = None        # camera ROI (x, y, w, h) when the beads were selected (U23, WP6); None = unknown
 
     @property
     def half_window(self):
@@ -144,6 +145,7 @@ class Pipeline:
         self._cam_on, self._worker_on = threading.Event(), threading.Event()
         self._threads, self._unsubscribe = [], None
         self.stop_state, self._out_closed = None, False   # None while running; "complete" / "incomplete: ..."
+        self.camera_stop = self.motor_poll = None         # set by api.acq (WP6): stop check, motor poller
 
     # --- lifecycle ------------------------------------------------------------------------------------------------
     def start(self, subscribe=None):
@@ -296,10 +298,24 @@ class Pipeline:
                 self.sink.write_frame(x) if kind == "frame" else self.sink.write_event(x)
             except Exception as e:  # noqa: BLE001 - shown in status(); never an event (it would come back here)
                 self.sink_failures, self.sink_error = self.sink_failures + 1, f"{type(e).__name__}: {e}"
+                self._note_sink_error(kind, x, e)
         try:
             self.sink.close()
         except Exception as e:  # noqa: BLE001
             self.sink_failures, self.sink_error = self.sink_failures + 1, f"close: {type(e).__name__}: {e}"
+
+    def _note_sink_error(self, kind, x, e):
+        """WP6 carry: a sink that can store its own failures (`note_error`, the HDF5 writer) gets each one, so the
+        file says what it is missing; a failure to note it is only counted (the storage may be what failed)."""
+        note = getattr(self.sink, "note_error", None)
+        if note is None:
+            return
+        rec = getattr(x, "record", None)
+        try:
+            note(kind, f"{type(e).__name__}: {e}", segment=getattr(rec, "segment", None),
+                 buffer=getattr(rec, "buffer_number", None), event_kind=getattr(x, "kind", None))
+        except Exception:  # noqa: BLE001
+            self.sink_note_failures = getattr(self, "sink_note_failures", 0) + 1
 
     # --- reads ------------------------------------------------------------------------------------------------------
     def latest(self):

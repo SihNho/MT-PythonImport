@@ -61,6 +61,12 @@ def _offline(files, results, beads):
     assert worst_bad < TOL_BAD
 
 
+def _no_poll(evs):
+    """Events without the motor poller's readings (WP6): they arrive at ~20 Hz from their own thread while
+    acquisition runs, so a test that lists event kinds leaves them out."""
+    return [e for e in evs if e.kind not in ("motor_reading", "motor_reading_error")]
+
+
 def _run(n_frames, timeout_s=30, **start):
     api.acq.start(**start)
     api.acq.wait_frames(n_frames, timeout_s)
@@ -178,11 +184,12 @@ def test_recording_on_off_events_and_guard_flag(cam):
     api.acq.wait_frames(20, 5)
     st = api.acq.stop()
     sink = api.acq.sink()
-    kinds = [e.kind for e in sink.events]
+    evs = _no_poll(sink.events)
+    kinds = [e.kind for e in evs]
     assert kinds[0] == "recording" and kinds[-1] == "recording" and "mark" in kinds, kinds
-    assert sink.events[0].extra["action"] == "on" and sink.events[0].extra["name"] == "r1"
-    assert sink.events[-1].extra["action"] == "off" and sink.closed
-    on, off = sink.events[0].extra["buffer_number"], sink.events[-1].extra["buffer_number"]
+    assert evs[0].extra["action"] == "on" and evs[0].extra["name"] == "r1"
+    assert evs[-1].extra["action"] == "off" and sink.closed
+    on, off = evs[0].extra["buffer_number"], evs[-1].extra["buffer_number"]
     # exactly the frames received after the 'on' event up to the 'off' event (one segment, no drops, no gaps)
     assert [r.record.buffer_number for r in sink.frames] == list(range(on + 1, off + 1))
     assert off - on >= 20 and len(sink.frames) < st["frames_received"] and all(r.record.recording for r in sink.frames)
@@ -282,7 +289,8 @@ def test_stop_timeout_slow_worker_keeps_incomplete_pipeline(cam, monkeypatch):
     assert sink.closed and _all_buffers(sink.frames, st["segments"][0])
     assert sum(r.dropped for r in sink.frames) == st["pipeline_drops"] == st["frames_received"] - st["frames_tracked"]
     ends = [e for e in sink.events if e.kind == "segment" and e.extra["action"] == "end"]
-    assert len(ends) == 1 and sink.events[-1].kind == "recording" and sink.events[-1].extra["action"] == "off"
+    last = _no_poll(sink.events)[-1]
+    assert len(ends) == 1 and last.kind == "recording" and last.extra["action"] == "off"
 
 
 def test_stop_timeout_slow_sink_keeps_incomplete_pipeline(cam):
@@ -310,7 +318,7 @@ def test_roi_incompatible_with_beads_refused_before_stop(cam, monkeypatch, chang
     n = len(events.events())
     with pytest.raises(SafetyRefused, match="beads"):
         change()
-    new = events.events()[n:]
+    new = _no_poll(events.events()[n:])
     assert [e.kind for e in new] == ["refused"], [e.kind for e in new]   # nothing paused, nothing sent
     assert cam.device.acquiring() and cam.device.get("roi") == (0, 0, 1280, 1024)
     assert cam.device.get("exposure_ms") == pytest.approx(1.909)

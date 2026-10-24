@@ -14,21 +14,103 @@
   need `confirm=True` (U17). Recorded frames and every event logged while recording go to the results sink.
 - **Emergency stop**: decision 0007 stops motion only; acquisition (an observation, not a motion) keeps running and
   `start` is allowed while the stop is engaged, so the data keep showing what happens after a stop.
+- **Motor readings per frame (WP6)**: while acquisition runs, a poller thread reads the magnet and rotor positions
+  through the public API (`api.magnet.position`, `api.rotor.position`) every `motor_poll_s` and logs each reading
+  as a `motor_reading` event with the newest frame's segment and buffer number (decision 0005: each motor reading is
+  stored with the latest JAI frame number). It is a latest-value reader on its own thread: the frame path never
+  calls it and never waits for it; a slow or failed device delays only the poller. The HDF5 writer fills `/mt`
+  `magnet_mm` / `rotor_deg` from these readings (the last one before each frame's PC receive time).
 """
+import contextvars
+import threading
+import time
+
 import numpy as np
 
 from mtpy.acq import Pipeline, make_kernel
 
 from . import beads as _beads
 from . import events
+from . import magnet as _magnet
+from . import rotor as _rotor
 from .devices import _services, service
-from .errors import NotReady, Timeout
+from .errors import MtpyError, NotReady, Timeout
 
 _pipe = None          # the running Pipeline
 _last = None          # the last finished one (status, sink and latest stay readable after stop)
 _svc = None           # the camera service of the running acquisition
 _make_kernel = make_kernel
 SNAPSHOT_FIELDS = ("roi", "rate_Hz", "exposure_ms", "gain_dB")   # = api.camera.PRESET_FIELDS (no import: cycle)
+MOTOR_POLL_S = 0.05   # 20 readings per second per motor (LabVIEW reads them every frame; 0005: ms-level timing)
+
+
+class _MotorPoller:
+    """Reads the magnet and rotor positions through the public API on its own thread (latest value; never on the
+    frame path). Each reading is a `motor_reading` event: request {"quantity"}, readback = the position (mm, turns),
+    `t_read` = PC time of the read, plus the newest frame's segment / buffer number. A device that fails is read
+    again after `retry_s` (one `motor_reading_error` event per new error text, not one per poll)."""
+
+    _READ = (("magnet", "magnet_position_mm", lambda: _magnet.position()),
+             ("rotor", "rotor_turns", lambda: _rotor.position()))
+
+    def __init__(self, pipe, period_s, retry_s=1.0):
+        self.pipe, self.period_s, self.retry_s = pipe, float(period_s), float(retry_s)
+        self.latest, self.errors, self.reads = {}, {}, 0
+        self._next = {}
+        self._stop = threading.Event()
+        self._ctx = contextvars.copy_context()           # events carry the caller that started acquisition
+        self._thread = None
+
+    def _devices(self):
+        return [r for r in self._READ if r[0] in _services and _services[r[0]].connected]
+
+    def read_once(self):
+        """One reading of every connected motor (also called synchronously at the start of acquisition, so every
+        recorded frame has a reading before it)."""
+        for name, quantity, read in self._devices():
+            now = time.monotonic()
+            if now < self._next.get(name, 0.0):
+                continue
+            t = time.time()
+            try:
+                v = read()
+            except MtpyError as e:
+                msg = f"{type(e).__name__}: {e}"
+                if self.errors.get(name) != msg:
+                    events.log("motor_reading_error", device=name, error=msg, **self.pipe.last_record())
+                self.errors[name], self._next[name] = msg, now + self.retry_s
+                continue
+            self.errors.pop(name, None)
+            self.latest[name] = (t, v)
+            self.reads += 1
+            events.log("motor_reading", request={"quantity": quantity}, readback=v, device=name, t_read=t,
+                       **self.pipe.last_record())
+
+    def relog(self):
+        """Log the latest reading of each motor again (same `t_read`), e.g. right after recording is switched on,
+        so the run file has a reading in force before its first recorded frame."""
+        for name, quantity, _ in self._READ:
+            if name in self.latest:
+                t, v = self.latest[name]
+                events.log("motor_reading", request={"quantity": quantity}, readback=v, device=name, t_read=t,
+                           repeated=True, **self.pipe.last_record())
+
+    def _loop(self):
+        while not self._stop.wait(self.period_s):
+            self.read_once()
+
+    def start(self):
+        self._thread = threading.Thread(target=self._ctx.run, args=(self._loop,), name="acq-motor-poll", daemon=True)
+        self._thread.start()
+
+    def stop(self, timeout_s=1.0):
+        self._stop.set()
+        if self._thread is not None:
+            self._thread.join(timeout_s)        # a read stuck in a device keeps only this daemon thread
+
+    def status(self):
+        return {"period_s": self.period_s, "reads": self.reads, "errors": dict(self.errors),
+                "latest": {n: {"t": t, "value": v} for n, (t, v) in self.latest.items()}}
 
 
 def running():
@@ -50,25 +132,37 @@ def _seg_event(action, seg):
                    end_loss="unknown" if seg.end_loss is None else seg.end_loss)
 
 
-def start(record=False, name=None, sink=None, ring_capacity=64, folder=None, roles=None):
+def start(record=False, name=None, sink=None, ring_capacity=64, folder=None, roles=None,
+          motor_poll_s=MOTOR_POLL_S):
     """Start acquisition (and tracking of the selected beads, if any). record=True also starts recording.
 
     name: the run name. sink: a `mtpy.acq.ResultSink`. folder (WP4): with no sink given, the recorded data go to the
     HDF5 v1 file `<folder>/<name>.h5` (`mtpy.data.HDF5Writer`; name None -> `run_<local time>`; an existing file is
     refused, NotReady); roles: {bead_id: "reference" | "tethered" | "candidate"} for that file. Neither sink nor
-    folder -> an in-memory sink (read it with `api.acq.sink()`). NotReady if acquisition already runs, the camera is
-    not connected or the selected beads do not fit the camera ROI. Returns status()."""
+    folder -> an in-memory sink (read it with `api.acq.sink()`). motor_poll_s (WP6): period of the magnet / rotor
+    poller (None = no polling; see the module docstring). NotReady if acquisition already runs, the camera is not
+    connected, the selected beads do not fit the camera ROI, or the camera ROI origin is not the one in force when
+    the beads were selected (U23, WP6). Returns status()."""
     global _pipe, _svc
     if _pipe is not None:
         raise NotReady("acquisition is already running")
     svc = service("camera")
     dev = svc.require()
     if svc.call(dev.acquiring, what="acquiring?"):
-        raise NotReady("the camera is already acquiring outside api.acq")
+        raise NotReady("the camera is already acquiring outside api.acq (a failed stop leaves it running: see "
+                       "api.acq.status()['camera_stop'])")
     beads = _beads.selected()
     s = svc.call(dev.settings, what="read settings")
     if record:            # review l2s-wp4-r2: the four settings first, before any sink, ROI use or pipeline
         _settings_snapshot(name, s)
+    if beads is not None and beads.roi is not None and tuple(s["roi"][:2]) != tuple(beads.roi[:2]):
+        # WP6 / U23: bead positions are ROI pixels; an ROI moved while acquisition was stopped would point every
+        # bead at other sensor pixels (the size alone is checked by beads.fit below)
+        reason = (f"camera ROI origin {tuple(s['roi'][:2])} is not the origin {tuple(beads.roi[:2])} in force when "
+                  f"beads {list(beads.ids)} were selected (ROI {tuple(beads.roi)}); bead positions are ROI pixels: "
+                  "restore the ROI or select beads again")
+        events.log("refused", request={"acquisition": "start", "name": name, "roi": tuple(s["roi"])}, reason=reason)
+        raise NotReady(reason)
     if sink is None and folder is not None:
         sink = _hdf5_sink(folder, name, beads, roles, svc, dev, s)
     kernel = None
@@ -82,6 +176,7 @@ def start(record=False, name=None, sink=None, ring_capacity=64, folder=None, rol
                      np.rint(beads.xy0[:, 1]).astype(np.int64), np.ones(len(beads.ids), dtype=bool))
     pipe = Pipeline(dev, beads, kernel, sink, ring_capacity, t_source=getattr(dev, "timestamp_source", "unknown"))
     pipe.start(events.subscribe)
+    pipe.motor_poll = _MotorPoller(pipe, motor_poll_s) if motor_poll_s else None
     _pipe, _svc = pipe, svc
     try:
         seg = pipe.begin_segment(s)
@@ -90,7 +185,11 @@ def start(record=False, name=None, sink=None, ring_capacity=64, folder=None, rol
         events.log("acquisition", action="start", name=name, record=bool(record),
                    beads=list(pipe.bead_ids), cal=beads.source if beads is not None else None)
         _seg_event("begin", seg)
+        if pipe.motor_poll is not None:
+            pipe.motor_poll.read_once()                  # a reading before the first frame (camera not started yet)
         svc.call(dev.start_acquisition, what="start acquisition")
+        if pipe.motor_poll is not None:
+            pipe.motor_poll.start()
     except BaseException:
         _finish()
         raise
@@ -112,7 +211,24 @@ def _hdf5_sink(folder, name, beads, roles, svc, dev, settings):
     except Exception as e:  # noqa: BLE001 - identity is metadata; its absence is recorded, acquisition goes on
         identity = {"error": f"{type(e).__name__}: {e}"}
     meta = {"devices": {"jai": {"identity": identity, "settings_at_start": settings}}}
+    preset = getattr(svc, "preset", None)               # the last camera preset applied (U15 frame-rate triple)
+    if preset is not None:
+        meta["presets"] = {"camera": preset}
     return HDF5Writer(path, beads=beads, roles=roles, metadata=meta)
+
+
+def _check_camera_stopped(pipe, error):
+    """WP3-r2 carry (WP6): after the stop call - failed or not - read separately whether the camera still acquires,
+    keep it in status()['camera_stop'] and log it, so a failed stop never hides a running camera."""
+    try:
+        acquiring = bool(_svc.call(_svc.device.acquiring, what="acquiring? (after stop)"))
+    except Exception as e:  # noqa: BLE001 - the answer is then unknown, and shown as such
+        acquiring = f"unknown ({type(e).__name__}: {e})"
+    pipe.camera_stop = {"stop_call": "ok" if error is None else f"failed: {type(error).__name__}: {error}",
+                        "camera_acquiring": acquiring}
+    if error is not None or acquiring is not False:
+        events.log("acquisition", action="stop failed" if error is not None else "camera still acquiring",
+                   **pipe.camera_stop)
 
 
 def _finish(timeout_s=10.0):
@@ -121,9 +237,16 @@ def _finish(timeout_s=10.0):
     done = False
     try:
         if pipe.stop_state is None:               # first stop: camera, segment end, recording off (once)
+            if getattr(pipe, "motor_poll", None) is not None:
+                pipe.motor_poll.stop()
+            error = None
             try:
                 _svc.call(_svc.device.stop_acquisition, what="stop acquisition")
+            except Exception as e:
+                error = e
+                raise
             finally:
+                _check_camera_stopped(pipe, error)
                 _seg_event("end", pipe.end_segment())
                 events.log("acquisition", action="stop", frames_received=pipe.frames_received,
                            pipeline_drops=sum(s.pipeline_drops for s in pipe.segments),
@@ -196,6 +319,8 @@ def set_recording(on, name=None, _settings=None):
     last, seg = pipe.set_recording(on)
     if on:
         events.log("recording", action="on", name=name, segment_info=seg, settings=snap, **last)
+        if getattr(pipe, "motor_poll", None) is not None:
+            pipe.motor_poll.relog()           # the readings in force reach the run file before its first frame
     else:
         pipe.forward(events.log("recording", action="off", name=name, **last))   # flag already cleared
     return on
@@ -221,7 +346,9 @@ def status():
     pipe = _pipe or _last
     if pipe is None:
         return {"running": False}
-    return {"running": pipe is _pipe, **pipe.status()}
+    poll = getattr(pipe, "motor_poll", None)
+    return {"running": pipe is _pipe, **pipe.status(), "camera_stop": getattr(pipe, "camera_stop", None),
+            "motor_poll": None if poll is None else poll.status()}
 
 
 def sink():
@@ -262,3 +389,34 @@ def _camera_paused():
 def _camera_restarting(settings):
     if _pipe is not None:
         _seg_event("begin", _pipe.begin_segment(settings, "settings change"))
+
+
+def _reconnect_camera(svc):
+    """api.devices.reconnect("camera") while acquisition runs (WP3 carry, WP6): the reconnect is a segment end.
+    Stop the camera (a failure is expected for a camera being reconnected and only logged), close the segment (frames
+    still buffered are taken first), reconnect, re-apply the last preset (the JAI resets on open, U15), read the
+    settings back and open the next segment ("camera reconnect") before restarting. Refused (NotReady, `refused`
+    event, acquisition left with its segment closed and the camera stopped; call api.acq.stop()) when the ROI read back
+    does not suit the tracked beads."""
+    pipe = _require()
+    dev = svc.device
+    try:
+        svc.call(dev.stop_acquisition, what="stop acquisition (reconnect)")
+    except MtpyError as e:
+        events.log("acquisition", device="camera", action="stop failed before reconnect", error=str(e))
+    _seg_event("end", pipe.end_segment())
+    events.log("acquisition", device="camera", action="pause", reason="camera reconnect")
+    svc.reconnect()
+    events.log("device", device="camera", action="reconnect")
+    if svc.reapply is not None:
+        svc.reapply()
+    s = svc.call(dev.settings, what="read settings")
+    why = _roi_refusal(tuple(s["roi"]), pipe.segments[-1].roi) if pipe.segments else None
+    if why is not None:
+        events.log("refused", request={"acquisition": "restart after camera reconnect", "roi": tuple(s["roi"])},
+                   reason=why)
+        raise NotReady(f"camera reconnected but not restarted: {why}")
+    _seg_event("begin", pipe.begin_segment(s, "camera reconnect"))
+    svc.call(dev.start_acquisition, what="start acquisition")
+    events.log("acquisition", device="camera", action="restart", reason="camera reconnect")
+    return svc.status()

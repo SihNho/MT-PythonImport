@@ -62,11 +62,22 @@ def run(script, motion_timeout_s=120.0, ramp_step_s=0.5):
     """Check the protocol with the rig state and start it on the engine thread; returns status().
 
     Refused before anything runs: ScriptError (check errors, with a `refused` event), NotReady (a protocol is already
-    running, or the emergency stop is engaged). motion_timeout_s: the longest wait for one move; ramp_step_s: the
-    time between the force increments of a `ramp` (WP5 decision)."""
+    running, or the emergency stop is engaged - or was engaged, even if released again, since run() was called).
+    motion_timeout_s: the longest wait for one move; ramp_step_s: the time between the force increments of a `ramp`
+    (WP5 decision).
+
+    WP6 carries: the run's emergency-stop generation is the one in force when run() is called (an engage -> release
+    during the check refuses the run; one after the check aborts it at its first step, nothing is sent); the focus
+    position is read ONCE, and that one value is both the check's reference and the engine's `focus_z0`; a failure
+    while starting (the focus read, the engine start) logs a `protocol` event `start_failed` and raises."""
     global _engine, _draft
-    from mtpy.protocol.check import require_ok
+    from mtpy.protocol.check import check as _check
+    from mtpy.protocol.check import require_ok, walk
     from mtpy.protocol.engine import Engine
+
+    from . import devices as _devices
+    from . import focus as _focus
+    gen = estop.generation()
     script = _script(script)
     request = {"protocol": script.name, "file": script.file, "sha256": script.sha256}
     with _run_lock:                      # review l2s-wp5-r1: one run at a time, never overwritten
@@ -76,13 +87,30 @@ def run(script, motion_timeout_s=120.0, ramp_step_s=0.5):
         if estop.active():
             events.log("refused", request=request, reason="emergency stop engaged")
             raise NotReady("the emergency stop is engaged; release it before starting a protocol")
-        report = check(script, devices=True)
+        focus = {}
+        st = _devices.status().get("focus")
+        if any(x.kind == "focus" for x in walk(script.body)) and st is not None and st["state"] in ("connected",
+                                                                                                    "slow"):
+            try:
+                focus["run_focus_z0"] = _focus.position()        # the one read: check and engine share it
+            except Exception as e:
+                events.log("protocol", action="start_failed", request=request, reason=f"focus read: {e}")
+                raise
+        report = _check(script, devices=True, **focus)
         if not report["ok"]:
             events.log("refused", request=request, reason="protocol check failed",
                        errors=[str(d) for d in report["errors"]])
             require_ok(report)
-        eng = Engine(script, motion_timeout_s, ramp_step_s)
-        eng.start()
+        if estop.generation() != gen:
+            reason = "the emergency stop was engaged (and released) while the protocol was checked; start it again"
+            events.log("refused", request=request, reason=reason)
+            raise NotReady(reason)
+        eng = Engine(script, motion_timeout_s, ramp_step_s, gen=gen, focus_z0=focus.get("run_focus_z0"))
+        try:
+            eng.start()
+        except Exception as e:
+            events.log("protocol", action="start_failed", request=request, reason=f"{type(e).__name__}: {e}")
+            raise
         _engine, _draft = eng, None
     return status()
 

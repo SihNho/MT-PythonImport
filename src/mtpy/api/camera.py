@@ -8,7 +8,7 @@ Rate and ROI change how data are read: while recording they need confirm=True an
 While acquiring they stop acquisition, apply, read back and restart; if the read-back fails, acquisition stays
 stopped (U15: a mismatch is shown and acquisition does not start).
 """
-from mtpy.devices import NEEDS_PAUSE
+from mtpy.devices.base import NEEDS_PAUSE  # .base, not the package: see the mtpy.devices import-order note
 
 from . import acq, events
 from ._act import acting, precheck
@@ -133,5 +133,6 @@ def apply_preset(preset, confirm=False):
     got = _run(svc, dev, list(values), lambda: acting("camera_preset", values, do, readback, 0.0, device="camera",
                                                        check=check, match=match))
     svc.reapply = lambda: apply_preset(preset, confirm=True)
+    svc.preset = dict(preset)                       # stored with the next recording (U15 frame-rate triple, WP6)
     events.log("preset", device="camera", name=preset["name"], readback=got)
     return got

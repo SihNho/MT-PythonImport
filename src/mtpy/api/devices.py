@@ -71,8 +71,12 @@ def info(name):
 
 def reconnect(name):
     """Close and reopen one device without restarting the program, then re-apply what an open resets (the camera's
-    last preset, U15). Returns its status()."""
+    last preset, U15). Returns its status(). The camera while acquisition runs (WP6): the reconnect ends the segment
+    and acquisition restarts in a new one (`api.acq` "camera reconnect")."""
     svc = service(name)
+    from . import acq
+    if name == "camera" and acq.running():
+        return acq._reconnect_camera(svc)
     svc.reconnect()
     events.log("device", device=name, action="reconnect")
     if svc.reapply is not None:
@@ -101,7 +105,7 @@ def _move(name, quantity, value, read, send=None, origin=None, check=None, match
 
     def body(motion):
         def readback():
-            motion.wait_arrival(dev.moving)
+            motion.wait_arrival(dev.moving, gen)
             return svc.call(read, what="position")
         return acting(quantity, value, send, readback, dev.tol, origin, name, check, match, gen=gen,
                       cancel=motion.cancel_flag)

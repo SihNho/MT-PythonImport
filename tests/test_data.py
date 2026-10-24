@@ -11,7 +11,7 @@ import h5py
 import numpy as np
 import pytest
 from conftest import FIXTURE, need
-from test_acq import SlowKernel, _connect
+from test_acq import SlowKernel, _connect, _no_poll
 
 from mtpy import api
 from mtpy.acq import Beads, FrameRecord, FrameResult
@@ -463,7 +463,7 @@ def test_api_recording_on_missing_setting_refused_before_flag(cam, tmp_path, mon
         api.acq.set_recording(True, name="second")
     st = api.acq.status()
     assert not st["recording"] and not cam.recording
-    assert [e.kind for e in api.events.events()[n:]] == ["refused"]
+    assert [e.kind for e in _no_poll(api.events.events()[n:])] == ["refused"]
     api.acq.wait_frames(10, 5)
     monkeypatch.setattr(cam.device, "settings", real)
     st = api.acq.stop()
