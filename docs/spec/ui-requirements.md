@@ -380,6 +380,34 @@ fixed, and the JAI camera is moved so the beads image well.)
 - **Open:** the dye's height above the surface (sets the travel); motorised vs manual + digital readout; the JAI tube
   lens (present? focal length?) and the free space around the turret port.
 
+**U32 - dye height, focus and following the dye (discussion).** Owner 2026-10-24: "현재 튜브렌즈가 있기는 한데,
+제품명을 확인할 수 없음. 형광 분자는 현재 생각으로는 약 300~400 nm 떠있을 것 같음. 이 부분도 사실 고민인데, magnetic bead
+위치에 따라서 형광 위치가 계속 움직일거임. 그렇다면 사실 트래킹은 형광 위치를 가장 핵심으로 해야할 것 같음."
+- Focus: a high-NA oil objective's depth of field is roughly 0.5-0.8 µm, so a dye 300-400 nm up may be in focus with the
+  surface focus; a 0.35 µm offset needs about 0.9 mm of JAI camera travel at 50x (scales with magnification²).
+- Excitation: TIRF intensity decays exponentially with a typical 1/e depth of 100-200 nm; at 350 nm and 150 nm depth it
+  is about 10 % of the surface value. A smaller TIRF angle (deeper field) or HILO may be needed. The FRET ratio is
+  rather insensitive to height (both dyes at about the same height); absolute intensity is not, and could even be used
+  to estimate height.
+- Dye motion: along a straight tether the dye moves by the bead's displacement × (dye height / bead height); e.g. bead
+  thermal sd ~100 nm (assumed), dye at 0.35 µm, extension 1 µm -> ~35 nm, well below an EMCCD pixel (~320 nm at 50x
+  without extra magnification). Proposal: **the MT tracking drives the fluorescence ROI** (predicted dye position per
+  frame from anchor, bead xy and extension; the ROI follows only when the predicted shift exceeds e.g. 0.3 px), and the
+  measured spot position, when bright enough, is a cross-check (a mismatch flags trouble, e.g. sticking, U33).
+- The tube lens model is unknown; **measuring the pixel size** (stage micrometer or known stage steps) gives the real
+  magnification and settles nm/px and the travel estimates.
+- **Open:** is the TIRF angle / penetration depth adjustable?
+
+**U33 - detect a molecule sticking to the surface.** Owner 2026-10-24: "실험 하다가 이유를 알 수 없게 분자가 바닥에
+붙어버리는 경우도 생김."
+- Signs, watched live: x-y fluctuation of the bead drops (rolling variance), extension stops responding to force
+  changes, the rotation circle disappears; in MT-TIRF the spot stops moving and its TIRF intensity may jump (closer to
+  the surface).
+- Action: an event with an alert; the segment is marked as suspect; the case goes to the troubleshooting log (U9) with
+  conditions (force history, buffer, time into the run) so causes can be found later. Any detach attempt (e.g. a short
+  force pulse) only after the user confirms, inside the safety limits.
+- **Open:** when sticking usually happens (low force for long, a buffer, late in a run, ...), to set the detection rules.
+
 **U11 - UI language.** Owner 2026-10-22: "글자는 무조건 영어." All UI text in English only.
 
 **Note - local AI model.** Owner 2026-10-22: "Laya 내장하는거는 염두에 두고 있음. 로컬로 트레이닝한다면 내 계정이
