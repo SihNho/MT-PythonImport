@@ -509,6 +509,13 @@ U34's computed dye height is used, if at all, only as a focus target.)
   go to the lab library with examples.
 - After the project (0001, no AI): documented plug-in and scripting APIs with examples, so lab members who know Python
   can extend it; rule of thumb: solve a new need at the lowest level that works.
+- Owner 2026-10-24: "이를 위해서는 모듈화 함수가 잘 준비되어 있어야겠네." So one **public function layer** used by the GUI,
+  scripts, plug-ins and the AI gateway alike: one job per function; units in names / arguments (`force_pN`,
+  `exposure_ms`); safety inside the function (limits, read-back, logging) so no caller can skip it; docstring, example,
+  test and simulator support for every function; a versioned API with a deprecation period so lab scripts do not break.
+  Groups: devices, acquisition, tracking stages, fluorescence signals, events, analysis, data.
+- **Next (proposed):** write this as an API specification (names, arguments and units, returns, safety behaviour,
+  examples) before the phase-5 device-layer code; documents only, so it does not collide with code work in progress.
 
 **U11 - UI language.** Owner 2026-10-22: "글자는 무조건 영어." All UI text in English only.
 
