@@ -408,6 +408,28 @@ fixed, and the JAI camera is moved so the beads image well.)
   force pulse) only after the user confirms, inside the safety limits.
 - **Open:** when sticking usually happens (low force for long, a buffer, late in a run, ...), to set the detection rules.
 
+**U34 - the molecule's z without moving the piezo.** Owner 2026-10-24: "분자 트래킹에서 Z-axis 마찬가지로 트래킹이 필요하다는
+점. 현재 디자인이라면 piezo stage 자체를 움직여야 하는데, 그 경우 magnetic bead tracking에도 영향을 줄 것."
+- **Primary, computed from MT:** dye height ≈ surface + (dye position along the DNA / total length) × extension, with
+  the dye position (bp) in the sample preset and the extension per frame from bead tracking (WLC at the current force
+  for the stretched length). No hardware; inherits the bead tracking's nm precision.
+- Cross-checks: (B) TIRF intensity vs height (needs the penetration depth calibrated; confounded by bleaching /
+  blinking); (C) astigmatic 3D localisation with a cylindrical lens in the EMCCD path (about ±400 nm range).
+- A mismatch between computed and measured z is an anomaly signal (e.g. sticking, U33).
+
+**U33 addendum (owner 2026-10-24).** "분자가 바닥에 붙어버리게 되면 magnetic bead의 autofluorescence를 무시할 수 없게 됨.
+bead autofluorescence를 실시간 측정하다가 해당 구간을 알려주는 것도 괜찮은 방법 같음. (그리고 만약 .tif 자체가 아닌
+intensity 기록으로 남기게 된다면 이에 대한 보정 역시 프로그램이 진행을 해줘야함)" and "바닥 부착의 경우 대개는 surface
+coating 문제임. 그러나 완벽한 샘플은 없을 것 같고, 아마 왠만한 조건에서도 어느정도 달고 살게 될 문제로 보임".
+- A **bead-autofluorescence ROI** (the mapped bead blob) is measured every frame beside the molecule ROI; a rise (bead
+  entering the TIRF field) flags the segment, together with the other sticking signs.
+- Correction: molecule ROI = signal + background + k × bead autofluorescence; k per bead from frames after the dye has
+  bleached, or from dye-free beads; subtract k × bead AF.
+- **Keep the raw EMCCD movie** (0006) so corrections can be redone. If only intensities are kept, store per frame the
+  molecule ROI, a local background ROI and the bead-AF ROI, plus ROI geometry, k and the method.
+- Sticking is expected to stay: the sample preset records the **surface coating type and batch**, so the
+  troubleshooting log (U9) can show sticking frequency per coating / batch.
+
 **U11 - UI language.** Owner 2026-10-22: "글자는 무조건 영어." All UI text in English only.
 
 **Note - local AI model.** Owner 2026-10-22: "Laya 내장하는거는 염두에 두고 있음. 로컬로 트레이닝한다면 내 계정이
