@@ -1,0 +1,23 @@
+{
+  "_comment": "USER-EDITABLE limit file, 2026-09-18. The REAL limits live in the CONTROLLERS; this file says what the session-start hook writes into them and what every --execute readback must match. PI values are mm on the C-863.11 (SPA 1 0x15 = TMX high, SPA 1 0x30 = TMN low; RAM only, lost at controller power-cycle - never WPA). ASI values are ABSOLUTE mm (SL = lower, SU = upper; persistent in the ASI controller; never SS Z). 'release' = what `--session end` writes back. 2026-10-15 user ('그냥 실행 당시 위치를 기준으로 하자'): asi.mode 'relative' = the session-start hook reads the ASI X/Y position (read-only, no motion) and sets SL/SU = that position +- half_width_mm; the window used is recorded in tools/bench/motor_session.json. Set mode 'absolute' to go back to the fixed sl/su below (the 2026-09-18 anchor window).",
+  "pi": {
+    "lo_mm": 0.0,
+    "hi_mm": 39.0,
+    "release_hi_mm": 52.0
+  },
+  "asi": {
+    "mode": "relative",
+    "half_width_mm": {"X": 2.0, "Y": 2.0},
+    "sl": {"X": -3.8475, "Y": -4.7744},
+    "su": {"X": 0.1525, "Y": -0.7744},
+    "release": {"sl": -500, "su": 500}
+  },
+  "rotor": {
+    "_comment": "2026-10-19 user ('-5바퀴 에서 + 5바퀴', '기계 리턴은 펄스로 주는지라 각도로 환산해야함'): Autonics PMC-2HS X axis, COM5 9600 8N1, native unit pulses, 0.72 deg/pulse (500 pulses = 1 turn). mode 'relative' = the session-start hook reads POS (read-only) and every PAB/PIC target must lie in start +- half_width_pulses (2500 = 5 turns; the gate refuses a wider value). Enforced by motor_gate.py + motor_rotor_io.ps1, NOT by the controller (its EEPROM soft limit is not installed - docs/rotor-protocol.md). max_speed = SPD argument cap (the main VI's 'Rot Speed' default 100; actual pps = SPD x speed multiplier).",
+    "mode": "relative",
+    "half_width_pulses": 2500,
+    "deg_per_pulse": 0.72,
+    "max_speed": 100
+  },
+  "tolerance": 0.001
+}

@@ -1,0 +1,25 @@
+[project]
+name = "mtpy"
+version = "0.0.1"
+description = "Python port of the Kim Lab magnetic-tweezers tracking and experiment-control program"
+requires-python = ">=3.10"
+dependencies = ["numpy"]
+
+[project.optional-dependencies]
+fast = ["numba", "rocket-fft"]
+dev = ["mtpy[fast]", "pillow", "pytest", "ruff"]
+
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 120
+src = ["src"]
+extend-exclude = ["third_party"]

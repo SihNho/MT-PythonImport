@@ -12,7 +12,10 @@ Per bead, per frame:
    - remove the baseline and apply a window;
    - autocorrelate each profile with its mirror image via FFT;
    - fit a parabola to the peak;
-   - remove the pixel-discretization bias with three phase-shift iterations.
+   - remove the pixel-discretization bias in two more passes: shift the spectrum's phase by the fractional peak
+     offset, inverse FFT and fit the parabola again (so per axis: 3 inverse FFTs, 3 parabola fits, 2 phase shifts;
+     the original VI's 3-frame stacked sequence). *Corrected 2026-10-22: first written as "three phase-shift
+     iterations".*
 3. **Radial profile I(r)** around the new XY centre (each pixel split between two radius bins).
 4. **Z:**
    - mirror I(r) and apply a cosine band-pass via FFT to get a complex ("corkscrew") signal;
@@ -42,3 +45,15 @@ Per bead, per frame:
 | Simulated bead images (known truth) | accuracy and bias, XY–Z crosstalk, pixel-grid bias, behaviour at the ends of the Z range |
 | Recorded rig data | precision (reference-bead noise, Allan deviation), lost-bead rate, robustness to neighbours and defocus |
 | Both | time per bead, fit in the 150 Hz budget |
+
+## Later notes (not changes to the decision)
+- **2026-10-22 literature survey:** [Bead tracking algorithms review](../literature/reports/Bead%20tracking%20algorithms%20review.md)
+  (notes in `docs/literature/research_notes/`). It ranks quadrant interpolation first for XY and a better sub-slice
+  interpolation on the existing look-up table (smoothing spline + Gauss-Newton, Kovari et al. 2019) first for Z;
+  FFT-phasor (Brouwer et al. 2020) is a robustness option; MagTrack is GPL-3.0, so only an outside numeric check.
+  Suggested first measurement: pixel bias and Z linearity of the current method, including how much the two extra
+  phase-shift passes contribute, before porting anything.
+- **Owner reconfirmed 2026-10-22:** "우선 새 프로그램의 경우 LabVIEW와 동일한 알고리즘을 통해서 기준선 이하의 오차를
+  보이는게 1차적인 목표임. 이후 더 좋은 알고리즘이 있다고 한다면 그걸로 갈아탈 수 있으면 좋겠음. 다만 이 부분을 모듈화하여
+  선택 가능하도록." (= decision items 1, 2 and 5.)
+- **Baseline for the recorded data:** bead 1 of the fixture is the reference bead ([rig-facts.md](../rig-facts.md)).

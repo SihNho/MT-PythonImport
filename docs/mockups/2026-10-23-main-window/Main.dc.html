@@ -1,0 +1,958 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>MT Tracker main window</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;family=JetBrains+Mono:wght@400;600&amp;display=swap">
+<style>
+body{margin:0;background:#EEF0F3}
+a{color:#1D4ED8}a:hover{color:#1E3A8A}
+button,select,input,textarea{font-family:inherit;font-size:12px}
+</style>
+</helmet>
+<div style="font-family: Inter, system-ui, sans-serif; color: #16191D; background: #EEF0F3; height: 100vh; min-height: 720px; display: flex; flex-direction: column; overflow: hidden; font-size: 13px">
+
+<header style="display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; padding: 8px 16px; background: #16191D; color: #F3F4F6; min-height: 48px; box-sizing: border-box">
+<div style="font-weight: 700; font-size: 15px">MT Tracker</div>
+<div style="display: flex; align-items: center; gap: 6px; padding: 4px 10px; border-radius: 999px; background: #2A3038"><span style="width: 8px; height: 8px; border-radius: 50%; background: #4ADE80"></span><span>Rig: Assembled</span></div>
+<div style="display: flex; flex-wrap: wrap; gap: 4px 16px; font-family: 'JetBrains Mono', monospace; font-size: 12px; color: #D1D5DB">
+<span>JAI {{fpsText}} fps</span><span>lost 0.2 %</span><span>magnet {{magText}} mm ({{forceText}} pN)</span><span>rotor {{rotText}} turns</span><span>focus 51.50 µm</span>
+</div>
+<div style="display: flex; align-items: center; gap: 6px" aria-label="Device summary">
+<sc-for list="{{devices}}" as="d" hint-placeholder-count="7"><span title="{{d.name}}: {{d.stateText}}" style="width: 10px; height: 10px; border-radius: 50%; background: {{d.dot}}; display: inline-block"></span></sc-for>
+</div>
+<sc-if value="{{runOn}}" hint-placeholder-val="{{ false }}"><span style="background: #14532D; color: #DCFCE7; border-radius: 999px; padding: 4px 10px">{{runBadge}}</span></sc-if>
+<div style="flex: 1 1 0"></div>
+<button onClick="{{toggleLive}}" style="background: #2A3038; color: #F3F4F6; border: 1px solid #4B5563; border-radius: 6px; padding: 6px 12px; cursor: pointer; min-height: 32px">{{liveLabel}}</button>
+<button onClick="{{toggleRec}}" style="background: {{recBg}}; color: #FFFFFF; border: 1px solid #4B5563; border-radius: 6px; padding: 6px 12px; cursor: pointer; min-height: 32px">{{recLabel}}</button>
+<span style="color: #D1D5DB">User: SiHyeong</span>
+<button onClick="{{estop}}" aria-label="Emergency stop" style="background: #B91C1C; color: #FFFFFF; border: 2px solid #FCA5A5; border-radius: 6px; padding: 6px 16px; font-weight: 700; cursor: pointer; min-height: 36px">STOP</button>
+</header>
+
+<sc-if value="{{estopOn}}" hint-placeholder-val="{{ false }}">
+<div style="background: #FEE2E2; color: #7F1D1D; padding: 8px 16px; display: flex; gap: 16px; align-items: center; border-bottom: 1px solid #FCA5A5">
+<strong>Emergency stop:</strong><span>magnet, rotor and stage halted; protocol stopped; data saved up to now (mock).</span>
+<button onClick="{{clearEstop}}" style="margin-left: auto; background: #FFFFFF; border: 1px solid #7F1D1D; color: #7F1D1D; border-radius: 6px; padding: 4px 10px; cursor: pointer">Acknowledge</button>
+</div>
+</sc-if>
+
+<div style="flex: 1 1 0; min-height: 0; display: flex; flex-wrap: wrap; gap: 8px; padding: 8px; box-sizing: border-box">
+
+<nav aria-label="Experiment steps" style="flex: 0 1 160px; min-width: 130px; background: #FFFFFF; border-radius: 8px; padding: 8px; display: flex; flex-direction: column; gap: 4px; box-sizing: border-box">
+<sc-for list="{{steps}}" as="st" hint-placeholder-count="8">
+<button onClick="{{st.go}}" style="text-align: left; border: none; border-radius: 6px; padding: 10px; cursor: pointer; background: {{st.bg}}; color: {{st.fg}}; font-weight: {{st.fw}}; min-height: 40px; display: flex; gap: 8px; align-items: center; font-size: 13px">
+<span style="font-family: 'JetBrains Mono', monospace; font-size: 11px; width: 14px">{{st.num}}</span><span>{{st.label}}</span>
+</button>
+</sc-for>
+<div style="flex: 1 1 0"></div>
+<button onClick="{{openLibrary}}" style="border: 1px solid #9CA3AF; background: #FFFFFF; border-radius: 6px; padding: 8px; cursor: pointer; min-height: 40px">Library…</button>
+<div style="font-size: 11px; color: #4B5563; padding: 6px; line-height: 1.4">Mock data. No device is connected.</div>
+</nav>
+
+<main style="flex: 999 1 520px; min-width: 0; min-height: 0; display: flex; flex-direction: column; gap: 8px">
+<section aria-label="Camera" style="flex: 1 1 0; min-height: 200px; background: #FFFFFF; border-radius: 8px; padding: 8px; display: flex; flex-direction: column; gap: 6px; box-sizing: border-box">
+<div style="display: flex; flex-wrap: wrap; align-items: center; gap: 8px">
+<strong>Camera</strong>
+<button onClick="{{viewBF}}" style="border: 1px solid #9CA3AF; border-radius: 6px; padding: 4px 10px; cursor: pointer; background: {{bfBg}}; color: {{bfFg}}">Bright field (JAI)</button>
+<sc-if value="{{tirf}}" hint-placeholder-val="{{ true }}"><button onClick="{{viewFL}}" style="border: 1px solid #9CA3AF; border-radius: 6px; padding: 4px 10px; cursor: pointer; background: {{flBg}}; color: {{flFg}}">Fluorescence (iXon, simulated)</button></sc-if>
+<span style="color: #4B5563">{{camPreset}}</span>
+</div>
+<div style="flex: 1 1 0; min-height: 0; position: relative; background: #2B2F35; border-radius: 6px; overflow: hidden">
+<sc-if value="{{showBF}}" hint-placeholder-val="{{ true }}">
+<svg viewBox="0 0 640 360" preserveAspectRatio="xMidYMid meet" role="img" aria-label="Bright-field image with bead markers" style="position: absolute; inset: 0; width: 100%; height: 100%">
+<rect x="0" y="0" width="640" height="360" fill="#6B7280"></rect>
+<circle cx="120" cy="90" r="22" fill="none" stroke="#D1D5DB" stroke-width="3"></circle><circle cx="120" cy="90" r="12" fill="none" stroke="#374151" stroke-width="3"></circle>
+<circle cx="260" cy="200" r="22" fill="none" stroke="#D1D5DB" stroke-width="3"></circle><circle cx="260" cy="200" r="12" fill="none" stroke="#374151" stroke-width="3"></circle>
+<circle cx="420" cy="120" r="22" fill="none" stroke="#D1D5DB" stroke-width="3"></circle><circle cx="420" cy="120" r="12" fill="none" stroke="#374151" stroke-width="3"></circle>
+<circle cx="520" cy="270" r="22" fill="none" stroke="#D1D5DB" stroke-width="3"></circle><circle cx="520" cy="270" r="12" fill="none" stroke="#374151" stroke-width="3"></circle>
+<circle cx="340" cy="300" r="22" fill="none" stroke="#D1D5DB" stroke-width="3"></circle><circle cx="340" cy="300" r="12" fill="none" stroke="#374151" stroke-width="3"></circle>
+<circle cx="560" cy="60" r="22" fill="none" stroke="#D1D5DB" stroke-width="3"></circle><circle cx="560" cy="60" r="12" fill="none" stroke="#374151" stroke-width="3"></circle>
+<rect x="88" y="58" width="64" height="64" fill="none" stroke="#FB923C" stroke-width="2"></rect><text x="88" y="52" fill="#FED7AA" font-size="13" font-family="Inter">B1 ref</text>
+<rect x="228" y="168" width="64" height="64" fill="none" stroke="#60A5FA" stroke-width="2"></rect><text x="228" y="162" fill="#BFDBFE" font-size="13" font-family="Inter">B2</text>
+<rect x="388" y="88" width="64" height="64" fill="none" stroke="#60A5FA" stroke-width="2"></rect><text x="388" y="82" fill="#BFDBFE" font-size="13" font-family="Inter">B3</text>
+<rect x="488" y="238" width="64" height="64" fill="none" stroke="#60A5FA" stroke-width="2"></rect><text x="488" y="232" fill="#BFDBFE" font-size="13" font-family="Inter">B4</text>
+<rect x="308" y="268" width="64" height="64" fill="none" stroke="#9CA3AF" stroke-width="1" stroke-dasharray="4 3"></rect><text x="308" y="262" fill="#E5E7EB" font-size="12" font-family="Inter">C5 candidate</text>
+<rect x="528" y="28" width="64" height="64" fill="none" stroke="#9CA3AF" stroke-width="1" stroke-dasharray="4 3"></rect><text x="500" y="22" fill="#E5E7EB" font-size="12" font-family="Inter">C6 candidate</text>
+</svg>
+</sc-if>
+<sc-if value="{{showFL}}" hint-placeholder-val="{{ false }}">
+<svg viewBox="0 0 640 360" preserveAspectRatio="xMidYMid meet" role="img" aria-label="Simulated EMCCD image, donor and acceptor halves" style="position: absolute; inset: 0; width: 100%; height: 100%">
+<rect x="0" y="0" width="318" height="360" fill="#0B0F14"></rect><rect x="322" y="0" width="318" height="360" fill="#0B0F14"></rect>
+<text x="10" y="20" fill="#86EFAC" font-size="13" font-family="Inter">CH1 {{ch1Name}}</text><text x="332" y="20" fill="#FCA5A5" font-size="13" font-family="Inter">CH2 {{ch2Name}}</text>
+<circle cx="120" cy="150" r="20" fill="#1F2937" stroke="#4B5563" stroke-width="1"></circle><circle cx="442" cy="150" r="20" fill="#1F2937" stroke="#4B5563" stroke-width="1"></circle>
+<circle cx="230" cy="250" r="20" fill="#1F2937" stroke="#4B5563" stroke-width="1"></circle><circle cx="552" cy="250" r="20" fill="#1F2937" stroke="#4B5563" stroke-width="1"></circle>
+<line x1="112" y1="150" x2="128" y2="150" stroke="#FBBF24" stroke-width="1.5"></line><line x1="120" y1="142" x2="120" y2="158" stroke="#FBBF24" stroke-width="1.5"></line>
+<line x1="434" y1="150" x2="450" y2="150" stroke="#FBBF24" stroke-width="1.5"></line><line x1="442" y1="142" x2="442" y2="158" stroke="#FBBF24" stroke-width="1.5"></line>
+<circle cx="111" cy="138" r="3" fill="#BBF7D0"></circle><circle cx="123" cy="153" r="3.5" fill="#86EFAC"></circle><circle cx="140" cy="168" r="3" fill="#BBF7D0"></circle>
+<circle cx="433" cy="138" r="2.5" fill="#FECACA"></circle><circle cx="445" cy="153" r="4" fill="#FCA5A5"></circle><circle cx="462" cy="168" r="2.5" fill="#FECACA"></circle>
+<circle cx="123" cy="153" r="8" fill="none" stroke="#38BDF8" stroke-width="1.5"></circle><circle cx="445" cy="153" r="8" fill="none" stroke="#38BDF8" stroke-width="1.5"></circle>
+<text x="96" y="132" fill="#E5E7EB" font-size="10" font-family="Inter">S1</text><text x="128" y="150" fill="#E5E7EB" font-size="10" font-family="Inter">S2</text><text x="144" y="178" fill="#E5E7EB" font-size="10" font-family="Inter">S3</text>
+<text x="80" y="190" fill="#9CA3AF" font-size="11" font-family="Inter">B2 (autofluorescence blob, anchor +)</text>
+<text x="10" y="350" fill="#9CA3AF" font-size="11" font-family="Inter">Simulated (iXon not connected). Map {{mapId}}</text>
+</svg>
+</sc-if>
+</div>
+</section>
+
+<section aria-label="Live graphs" style="flex: 0 0 auto; display: flex; flex-wrap: wrap; gap: 8px">
+<sc-for list="{{graphs}}" as="g" hint-placeholder-count="2">
+<div style="flex: 1 1 300px; min-width: 0; background: #FFFFFF; border-radius: 8px; padding: 8px; box-sizing: border-box; display: flex; flex-direction: column; gap: 6px">
+<div style="display: flex; flex-wrap: wrap; gap: 6px; align-items: center">
+<label style="display: flex; gap: 4px; align-items: center">Y <select value="{{g.y}}" onChange="{{g.setY}}" style="padding: 3px; border: 1px solid #9CA3AF; border-radius: 4px"><sc-for list="{{axisOpts}}" as="o" hint-placeholder-count="5"><option value="{{o.v}}">{{o.l}}</option></sc-for></select></label>
+<label style="display: flex; gap: 4px; align-items: center">X <select value="{{g.x}}" onChange="{{g.setX}}" style="padding: 3px; border: 1px solid #9CA3AF; border-radius: 4px"><sc-for list="{{axisOpts}}" as="o" hint-placeholder-count="5"><option value="{{o.v}}">{{o.l}}</option></sc-for></select></label>
+<label style="display: flex; gap: 4px; align-items: center">Y2 <select value="{{g.y2}}" onChange="{{g.setY2}}" style="padding: 3px; border: 1px solid #9CA3AF; border-radius: 4px"><sc-for list="{{axisOpts2}}" as="o" hint-placeholder-count="5"><option value="{{o.v}}">{{o.l}}</option></sc-for></select></label>
+<label style="display: flex; gap: 4px; align-items: center"><input type="checkbox" checked="{{g.auto}}" onChange="{{g.toggleAuto}}"> Auto scale</label>
+<sc-if value="{{g.manual}}" hint-placeholder-val="{{ false }}">
+<label style="display: flex; gap: 4px; align-items: center">min <input value="{{g.ymin}}" onChange="{{g.setYmin}}" style="width: 48px; padding: 2px 4px; border: 1px solid #9CA3AF; border-radius: 4px"></label>
+<label style="display: flex; gap: 4px; align-items: center">max <input value="{{g.ymax}}" onChange="{{g.setYmax}}" style="width: 48px; padding: 2px 4px; border: 1px solid #9CA3AF; border-radius: 4px"></label>
+</sc-if>
+<label style="display: flex; gap: 4px; align-items: center"><input type="checkbox" checked="{{g.follow}}" onChange="{{g.toggleFollow}}"> Follow 30 s</label>
+</div>
+<div style="display: flex; gap: 6px; height: 150px">
+<div style="display: flex; flex-direction: column; justify-content: space-between; font-family: 'JetBrains Mono', monospace; font-size: 11px; color: #4B5563; width: 44px; text-align: right"><span>{{g.yMaxT}}</span><span>{{g.yLabel}}</span><span>{{g.yMinT}}</span></div>
+<div style="flex: 1 1 0; min-width: 0; position: relative; border: 1px solid #D1D5DB; border-radius: 4px; background: #FBFBFC">
+<sc-for list="{{g.series}}" as="se" hint-placeholder-count="2">
+<svg viewBox="0 0 600 200" preserveAspectRatio="none" aria-hidden="true" style="position: absolute; inset: 0; width: 100%; height: 100%"><polyline points="{{se.points}}" fill="none" stroke="{{se.color}}" stroke-width="1.5" stroke-dasharray="{{se.dash}}" vector-effect="non-scaling-stroke"></polyline></svg>
+</sc-for>
+</div>
+<sc-if value="{{g.hasY2}}" hint-placeholder-val="{{ false }}">
+<div style="display: flex; flex-direction: column; justify-content: space-between; font-family: 'JetBrains Mono', monospace; font-size: 11px; color: #15803D; width: 40px"><span>{{g.y2MaxT}}</span><span>{{g.y2Label}}</span><span>{{g.y2MinT}}</span></div>
+</sc-if>
+</div>
+<div style="display: flex; justify-content: space-between; padding-left: 50px; font-family: 'JetBrains Mono', monospace; font-size: 11px; color: #4B5563"><span>{{g.xMinT}}</span><span>{{g.xLabel}}</span><span>{{g.xMaxT}}</span></div>
+</div>
+</sc-for>
+<div style="flex: 0 1 140px; background: #FFFFFF; border-radius: 8px; padding: 8px; box-sizing: border-box; display: flex; flex-direction: column; gap: 6px">
+<strong>Beads shown</strong>
+<sc-for list="{{beadChips}}" as="b" hint-placeholder-count="4"><label style="display: flex; gap: 6px; align-items: center"><input type="checkbox" checked="{{b.on}}" onChange="{{b.toggle}}"><span style="width: 12px; height: 3px; background: {{b.color}}; display: inline-block"></span>{{b.label}}</label></sc-for>
+<span style="font-size: 11px; color: #4B5563; line-height: 1.4">Display only.</span>
+</div>
+</section>
+</main>
+
+<aside aria-label="Step panel" style="flex: 1 1 380px; max-width: 460px; min-width: 300px; min-height: 0; background: #FFFFFF; border-radius: 8px; padding: 12px; box-sizing: border-box; overflow-y: auto; display: flex; flex-direction: column; gap: 10px">
+<div style="font-size: 16px; font-weight: 700">{{stepTitle}}</div>
+
+<sc-if value="{{isSetup}}" hint-placeholder-val="{{ true }}">
+<div style="display: flex; flex-direction: column; gap: 8px">
+<div style="font-weight: 600">Experiment type</div>
+<div role="radiogroup" aria-label="Experiment type" style="display: flex; gap: 6px">
+<button onClick="{{setMT}}" style="flex: 1 1 0; border: 1px solid #9CA3AF; border-radius: 6px; padding: 8px; cursor: pointer; background: {{mtBg}}; color: {{mtFg}}; min-height: 40px">MT only</button>
+<button onClick="{{setTIRF}}" style="flex: 1 1 0; border: 1px solid #9CA3AF; border-radius: 6px; padding: 8px; cursor: pointer; background: {{tirfBg}}; color: {{tirfFg}}; min-height: 40px">MT-TIRF</button>
+</div>
+<div style="font-size: 12px; color: #4B5563">{{typeNote}}</div>
+<div style="font-weight: 600">Presets</div>
+<sc-for list="{{presetRows}}" as="p" hint-placeholder-count="4">
+<div style="display: flex; flex-direction: column; gap: 2px"><span style="color: #4B5563; font-size: 12px">{{p.label}}</span>
+<div style="display: flex; gap: 6px">
+<select value="{{p.value}}" onChange="{{p.set}}" aria-label="{{p.label}} preset" style="flex: 1 1 auto; min-width: 0; padding: 6px; border: 1px solid #9CA3AF; border-radius: 6px"><sc-for list="{{p.opts}}" as="o" hint-placeholder-count="2"><option value="{{o}}">{{o}}</option></sc-for></select>
+<button onClick="{{p.save}}" style="border: 1px solid #1D4ED8; color: #1D4ED8; background: #FFFFFF; border-radius: 6px; padding: 4px 8px; cursor: pointer">Save as…</button>
+<button onClick="{{p.load}}" style="border: 1px solid #9CA3AF; background: #FFFFFF; border-radius: 6px; padding: 4px 8px; cursor: pointer">Load…</button>
+</div></div>
+</sc-for>
+<div style="display: flex; align-items: center; gap: 8px; margin-top: 6px"><span style="font-weight: 600">Devices</span><button onClick="{{runCheck}}" style="margin-left: auto; border: 1px solid #1D4ED8; color: #1D4ED8; background: #FFFFFF; border-radius: 6px; padding: 4px 10px; cursor: pointer">Run self-check</button></div>
+<sc-for list="{{devices}}" as="d" hint-placeholder-count="7">
+<button onClick="{{d.open}}" style="display: flex; align-items: center; gap: 8px; text-align: left; border: 1px solid #E5E7EB; background: #FFFFFF; border-radius: 6px; padding: 8px; cursor: pointer; min-height: 40px">
+<span style="width: 10px; height: 10px; border-radius: 50%; background: {{d.dot}}; flex: 0 0 auto"></span>
+<span style="flex: 1 1 auto"><strong>{{d.name}}</strong><br><span style="color: #4B5563; font-size: 12px">{{d.stateText}} · {{d.port}}</span></span>
+<span style="color: #1D4ED8; font-size: 12px">Details</span>
+</button>
+</sc-for>
+<sc-if value="{{checkDone}}" hint-placeholder-val="{{ false }}">
+<div style="background: #F3F4F6; border-radius: 6px; padding: 8px; display: flex; flex-direction: column; gap: 4px; font-size: 12px"><sc-for list="{{checkRows}}" as="c" hint-placeholder-count="5"><div><span style="color: {{c.color}}; font-weight: 600">{{c.res}}</span> {{c.text}}</div></sc-for></div>
+</sc-if>
+</div>
+</sc-if>
+
+<sc-if value="{{isExplore}}" hint-placeholder-val="{{ false }}">
+<div style="display: flex; flex-direction: column; gap: 10px">
+<div style="color: #4B5563">Move things and change settings while the camera runs. Nothing is recorded.</div>
+<div style="font-size: 12px; color: #4B5563">Type a value and press Enter (or leave the box); sliders and step buttons are shortcuts.</div>
+<sc-for list="{{numRows}}" as="r" hint-placeholder-count="5">
+<div style="display: flex; flex-direction: column; gap: 4px; border: 1px solid #E5E7EB; border-radius: 6px; padding: 6px 8px">
+<div style="display: flex; flex-wrap: wrap; gap: 6px; align-items: center">
+<label for="{{r.id}}" style="flex: 1 1 110px; font-weight: 500">{{r.label}}</label>
+<button onClick="{{r.dec}}" aria-label="Decrease {{r.label}}" style="border: 1px solid #9CA3AF; background: #FFFFFF; border-radius: 4px; width: 32px; height: 30px; cursor: pointer">−</button>
+<input id="{{r.id}}" type="number" value="{{r.v}}" min="{{r.min}}" max="{{r.max}}" step="{{r.step}}" onChange="{{r.set}}" style="width: 80px; padding: 4px 6px; border: 1px solid #6B7280; border-radius: 4px; font-family: 'JetBrains Mono', monospace; text-align: right">
+<button onClick="{{r.inc}}" aria-label="Increase {{r.label}}" style="border: 1px solid #9CA3AF; background: #FFFFFF; border-radius: 4px; width: 32px; height: 30px; cursor: pointer">+</button>
+<span style="width: 44px; color: #4B5563">{{r.unit}}</span>
+</div>
+<div style="display: flex; gap: 8px; align-items: center">
+<input type="range" min="{{r.min}}" max="{{r.max}}" step="{{r.step}}" value="{{r.v}}" onInput="{{r.set}}" aria-label="{{r.label}} slider" style="flex: 1 1 auto">
+<span style="font-size: 11px; color: {{r.noteColor}}; white-space: nowrap">{{r.note}}</span>
+</div>
+</div>
+</sc-for>
+<label style="display: flex; flex-direction: column; gap: 4px"><span>Frame rate <span style="color: #B45309">· needs a short pause</span></span>
+<select value="{{fpsSel}}" onChange="{{setFps}}" style="padding: 6px; border: 1px solid #9CA3AF; border-radius: 6px"><option value="90">90 Hz</option><option value="150">150 Hz</option><option value="240">240 Hz (ROI 640 × 512)</option></select></label>
+<sc-if value="{{expoWarn}}" hint-placeholder-val="{{ false }}"><div style="background: #FEF3C7; color: #78350F; padding: 6px 8px; border-radius: 6px">Exposure {{expo}} ms is longer than the frame period ({{periodText}} ms). Lower the exposure first.</div></sc-if>
+<button onClick="{{applyCam}}" style="border: none; background: #1D4ED8; color: #FFFFFF; border-radius: 6px; padding: 8px 12px; cursor: pointer; min-height: 40px">Apply frame rate</button>
+<sc-if value="{{camMsgOn}}" hint-placeholder-val="{{ false }}"><div style="background: #ECFDF5; color: #065F46; padding: 6px 8px; border-radius: 6px">{{camMsg}}</div></sc-if>
+<button onClick="{{saveCamPreset}}" style="border: 1px solid #1D4ED8; color: #1D4ED8; background: #FFFFFF; border-radius: 6px; padding: 8px 12px; cursor: pointer; min-height: 40px">Save current settings as preset…</button>
+</div>
+</sc-if>
+
+<sc-if value="{{isMap}}" hint-placeholder-val="{{ false }}">
+<div style="display: flex; flex-direction: column; gap: 8px">
+<label style="display: flex; flex-direction: column; gap: 2px"><span style="font-size: 12px; color: #4B5563">Channel layout (preset)</span>
+<select value="{{layout}}" onChange="{{setLayout}}" style="padding: 6px; border: 1px solid #9CA3AF; border-radius: 6px"><option value="1">1 channel (full frame)</option><option value="2">2 channels (left / right)</option><option value="3">3 channels (thirds)</option></select></label>
+<sc-for list="{{chRows}}" as="c" hint-placeholder-count="2">
+<div style="display: flex; flex-wrap: wrap; gap: 6px; align-items: center; border: 1px solid #E5E7EB; border-radius: 6px; padding: 6px">
+<span style="width: 10px; height: 10px; border-radius: 50%; background: {{c.color}}"></span><strong>{{c.id}}</strong>
+<input value="{{c.name}}" onChange="{{c.setName}}" aria-label="Channel name" style="flex: 1 1 120px; min-width: 0; padding: 4px; border: 1px solid #9CA3AF; border-radius: 4px">
+<span style="font-family: 'JetBrains Mono', monospace; font-size: 11px; color: #4B5563">{{c.region}} · ex {{c.ex}}</span>
+</div>
+</sc-for>
+<div style="display: flex; gap: 6px; flex-wrap: wrap"><button onClick="{{saveLayout}}" style="border: 1px solid #1D4ED8; color: #1D4ED8; background: #FFFFFF; border-radius: 6px; padding: 4px 8px; cursor: pointer">Save layout as…</button></div>
+<div style="font-weight: 600">Transforms</div>
+<sc-for list="{{tfRows}}" as="t" hint-placeholder-count="2">
+<div style="display: flex; flex-wrap: wrap; gap: 6px; align-items: center; border: 1px solid #E5E7EB; border-radius: 6px; padding: 6px; font-size: 12px">
+<strong>{{t.label}}</strong>
+<select value="{{t.model}}" onChange="{{t.setModel}}" aria-label="Model" style="padding: 3px; border: 1px solid #9CA3AF; border-radius: 4px"><option value="affine">affine</option><option value="poly2">poly2</option><option value="poly3">poly3</option><option value="similarity">similarity</option></select>
+<span>detector: {{t.det}}</span><span style="margin-left: auto; font-family: 'JetBrains Mono', monospace">rms {{t.rms}} px · n {{t.n}}</span>
+</div>
+</sc-for>
+<svg viewBox="0 0 300 120" role="img" aria-label="Residuals of mapped control points" style="width: 100%; height: 120px; background: #FBFBFC; border: 1px solid #D1D5DB; border-radius: 4px">
+<circle cx="40" cy="30" r="3" fill="#1D4ED8"></circle><line x1="40" y1="30" x2="44" y2="27" stroke="#DC2626" stroke-width="1.5"></line>
+<circle cx="110" cy="50" r="3" fill="#1D4ED8"></circle><line x1="110" y1="50" x2="112" y2="53" stroke="#DC2626" stroke-width="1.5"></line>
+<circle cx="190" cy="25" r="3" fill="#1D4ED8"></circle><line x1="190" y1="25" x2="187" y2="23" stroke="#DC2626" stroke-width="1.5"></line>
+<circle cx="250" cy="80" r="3" fill="#1D4ED8"></circle><line x1="250" y1="80" x2="254" y2="82" stroke="#DC2626" stroke-width="1.5"></line>
+<circle cx="70" cy="95" r="3" fill="#1D4ED8"></circle><line x1="70" y1="95" x2="68" y2="99" stroke="#DC2626" stroke-width="1.5"></line>
+<circle cx="160" cy="100" r="3" fill="#1D4ED8"></circle><line x1="160" y1="100" x2="163" y2="98" stroke="#DC2626" stroke-width="1.5"></line>
+<text x="6" y="114" fill="#4B5563" font-size="9" font-family="Inter">control points; red = residual × 20</text>
+</svg>
+<div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px">
+<button onClick="{{mapAcquire}}" style="border: 1px solid #9CA3AF; background: #FFFFFF; border-radius: 6px; padding: 6px; cursor: pointer; min-height: 36px">Acquire mapping image</button>
+<button onClick="{{mapFit}}" style="border: none; background: #1D4ED8; color: #FFFFFF; border-radius: 6px; padding: 6px; cursor: pointer; min-height: 36px">Find, pair and fit</button>
+<button onClick="{{mapCheck}}" style="border: 1px solid #1D4ED8; color: #1D4ED8; background: #FFFFFF; border-radius: 6px; padding: 6px; cursor: pointer; min-height: 36px">Check in situ (beads)</button>
+<button onClick="{{mapImport}}" style="border: 1px solid #9CA3AF; background: #FFFFFF; border-radius: 6px; padding: 6px; cursor: pointer; min-height: 36px">Import smCamera map…</button>
+<button onClick="{{mapSave}}" style="border: 1px solid #1D4ED8; color: #1D4ED8; background: #FFFFFF; border-radius: 6px; padding: 6px; cursor: pointer; min-height: 36px">Save map as…</button>
+<button onClick="{{mapLoad}}" style="border: 1px solid #9CA3AF; background: #FFFFFF; border-radius: 6px; padding: 6px; cursor: pointer; min-height: 36px">Load map…</button>
+</div>
+<sc-if value="{{mapMsgOn}}" hint-placeholder-val="{{ false }}"><div style="background: #ECFDF5; color: #065F46; padding: 6px 8px; border-radius: 6px; font-size: 12px">{{mapMsg}}</div></sc-if>
+<div style="font-size: 12px; color: #4B5563">In use: {{mapId}} · saved with every run.</div>
+</div>
+</sc-if>
+
+<sc-if value="{{isLight}}" hint-placeholder-val="{{ false }}">
+<div style="display: flex; flex-direction: column; gap: 8px">
+<label style="display: flex; flex-direction: column; gap: 2px"><span style="font-size: 12px; color: #4B5563">Light switch back-end</span>
+<select value="{{lt.backend}}" onChange="{{setBackend}}" style="padding: 6px; border: 1px solid #9CA3AF; border-radius: 6px"><option value="shutter">Mechanical shutter (~5 ms)</option><option value="aom">AOM (~µs)</option><option value="laser">Laser controller, digital modulation (~µs-tens of µs)</option></select></label>
+<div style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap"><span>EMCCD = 1 frame per</span><input value="{{lt.nText}}" onChange="{{setN}}" aria-label="JAI frames per EMCCD frame" style="width: 40px; padding: 2px 4px; border: 1px solid #9CA3AF; border-radius: 4px"><span>JAI frames → {{emccdHz}} Hz</span></div>
+<sc-for list="{{seqSections}}" as="sec" hint-placeholder-count="3">
+<div style="border: 1px solid #E5E7EB; border-radius: 6px; padding: 6px; display: flex; flex-direction: column; gap: 4px">
+<div style="display: flex; gap: 6px; align-items: center"><strong>{{sec.label}}</strong><span style="font-size: 12px; color: #4B5563">{{sec.note}}</span><button onClick="{{sec.add}}" style="margin-left: auto; border: 1px dashed #6B7280; background: #FFFFFF; border-radius: 4px; padding: 2px 8px; cursor: pointer">+ frame</button></div>
+<div style="display: flex; gap: 4px; font-size: 11px; color: #4B5563"><span style="width: 44px">frame</span><span style="width: 52px">532 nm</span><span style="width: 52px">637 nm</span></div>
+<sc-for list="{{sec.rows}}" as="r" hint-placeholder-count="2">
+<div style="display: flex; gap: 4px; align-items: center">
+<span style="width: 44px; font-family: 'JetBrains Mono', monospace; font-size: 11px">{{r.n}}</span>
+<button onClick="{{r.tg}}" aria-label="Toggle 532 nm" style="width: 52px; height: 24px; border: 1px solid #9CA3AF; border-radius: 4px; cursor: pointer; background: {{r.gBg}}; color: {{r.gFg}}">{{r.gT}}</button>
+<button onClick="{{r.tr}}" aria-label="Toggle 637 nm" style="width: 52px; height: 24px; border: 1px solid #9CA3AF; border-radius: 4px; cursor: pointer; background: {{r.rBg}}; color: {{r.rFg}}">{{r.rT}}</button>
+<button onClick="{{r.del}}" aria-label="Remove frame" style="border: 1px solid #D1D5DB; background: #FFFFFF; border-radius: 4px; padding: 0 6px; cursor: pointer">×</button>
+</div>
+</sc-for>
+</div>
+</sc-for>
+<label style="display: flex; gap: 6px; align-items: center">Repeat body <input value="{{lt.repText}}" onChange="{{setRep}}" style="width: 48px; padding: 2px 4px; border: 1px solid #9CA3AF; border-radius: 4px"> times · {{seqTotal}} EMCCD frames</label>
+<div style="font-weight: 600">Preview (first 40 frames)</div>
+<div style="display: flex; flex-wrap: wrap; gap: 2px">
+<sc-for list="{{seqPreview}}" as="p" hint-placeholder-count="20"><span title="{{p.t}}" style="width: 12px; height: 18px; border-radius: 2px; background: {{p.c}}; display: inline-block"></span></sc-for>
+</div>
+<div style="display: flex; gap: 10px; font-size: 11px; color: #4B5563"><span><span style="display: inline-block; width: 10px; height: 10px; background: #16A34A"></span> 532</span><span><span style="display: inline-block; width: 10px; height: 10px; background: #DC2626"></span> 637</span><span><span style="display: inline-block; width: 10px; height: 10px; background: #7C3AED"></span> both</span><span><span style="display: inline-block; width: 10px; height: 10px; background: #374151"></span> dark</span></div>
+<div style="background: {{ltCheckBg}}; color: {{ltCheckFg}}; padding: 6px 8px; border-radius: 6px; font-size: 12px">{{ltCheck}}</div>
+<div style="display: flex; gap: 6px; flex-wrap: wrap">
+<button onClick="{{ltImport}}" style="border: 1px solid #9CA3AF; background: #FFFFFF; border-radius: 6px; padding: 6px 8px; cursor: pointer">Import ShutterManager file…</button>
+<button onClick="{{ltSave}}" style="border: 1px solid #1D4ED8; color: #1D4ED8; background: #FFFFFF; border-radius: 6px; padding: 6px 8px; cursor: pointer">Save sequence as…</button>
+</div>
+<div style="font-weight: 600">Manual (alignment / focusing)</div>
+<div style="display: flex; gap: 6px">
+<button onClick="{{tgManG}}" style="flex: 1 1 0; border: 1px solid #9CA3AF; border-radius: 6px; padding: 8px; cursor: pointer; background: {{manGBg}}; color: {{manGFg}}">532 nm {{manGT}}</button>
+<button onClick="{{tgManR}}" style="flex: 1 1 0; border: 1px solid #9CA3AF; border-radius: 6px; padding: 8px; cursor: pointer; background: {{manRBg}}; color: {{manRFg}}">637 nm {{manRT}}</button>
+</div>
+<div style="font-size: 12px; color: #4B5563">Run by the Arduino on camera frames, never timed by the PC. Lights close automatically when not recording.</div>
+</div>
+</sc-if>
+
+<sc-if value="{{isBeads}}" hint-placeholder-val="{{ false }}">
+<div style="display: flex; flex-direction: column; gap: 8px">
+<div style="font-weight: 600">Find candidates</div>
+<div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px">
+<label style="display: flex; flex-direction: column; gap: 2px; grid-column: span 2"><span style="font-size: 12px; color: #4B5563">Detector</span>
+<select value="{{fd.det}}" onChange="{{fd.setDet}}" style="padding: 6px; border: 1px solid #9CA3AF; border-radius: 6px"><option value="ring">Ring (JAI bright field, magnetic beads)</option><option value="blob">Blob (EMCCD, bead autofluorescence)</option><option value="peak">Peak (EMCCD, single molecules)</option></select></label>
+<sc-for list="{{fd.fields}}" as="f" hint-placeholder-count="5"><label style="display: flex; flex-direction: column; gap: 2px"><span style="font-size: 12px; color: #4B5563">{{f.l}}</span><input value="{{f.v}}" onChange="{{f.set}}" style="padding: 4px; border: 1px solid #9CA3AF; border-radius: 4px"></label></sc-for>
+</div>
+<div style="display: flex; gap: 8px; align-items: center"><button onClick="{{fd.find}}" style="border: none; background: #1D4ED8; color: #FFFFFF; border-radius: 6px; padding: 6px 12px; cursor: pointer">Find</button><span>{{fd.result}}</span></div>
+<div style="display: flex; gap: 6px"><button onClick="{{fd.save}}" style="border: 1px solid #1D4ED8; color: #1D4ED8; background: #FFFFFF; border-radius: 6px; padding: 4px 8px; cursor: pointer">Save parameters as…</button></div>
+<div style="color: #4B5563">Live x / y / z appear right after calibration, before you pick.</div>
+<div style="overflow-x: auto"><table style="border-collapse: collapse; width: 100%; font-size: 12px">
+<thead><tr style="text-align: left; color: #4B5563"><th style="padding: 4px">Bead</th><th style="padding: 4px">Role</th><th style="padding: 4px">z (µm)</th><th style="padding: 4px">Ring</th><th style="padding: 4px">Nearest</th></tr></thead>
+<tbody><sc-for list="{{beadRows}}" as="r" hint-placeholder-count="6"><tr style="border-top: 1px solid #E5E7EB"><td style="padding: 4px; font-weight: 600">{{r.id}}</td><td style="padding: 4px; color: {{r.roleColor}}">{{r.role}}</td><td style="padding: 4px; font-family: 'JetBrains Mono', monospace">{{r.z}}</td><td style="padding: 4px">{{r.ring}}</td><td style="padding: 4px">{{r.near}}</td></tr></sc-for></tbody>
+</table></div>
+<sc-if value="{{tirf}}" hint-placeholder-val="{{ true }}">
+<div style="display: flex; flex-direction: column; gap: 6px; border-top: 1px solid #E5E7EB; padding-top: 8px">
+<div style="font-weight: 600">Fluorescence signal for bead {{sigBead}}</div>
+<div style="font-size: 12px; color: #4B5563">Anchor = centre of the bead's rotation circle, mapped to the EMCCD. Spots near it are scored; you choose.</div>
+<div style="overflow-x: auto"><table style="border-collapse: collapse; width: 100%; font-size: 12px">
+<thead><tr style="text-align: left; color: #4B5563"><th style="padding: 4px">Spot</th><th style="padding: 4px">From anchor</th><th style="padding: 4px">Event match</th><th style="padding: 4px">Bleach steps</th><th style="padding: 4px">Score</th><th style="padding: 4px"></th></tr></thead>
+<tbody><sc-for list="{{sigRows}}" as="r" hint-placeholder-count="3"><tr style="border-top: 1px solid #E5E7EB; background: {{r.bg}}"><td style="padding: 4px; font-weight: 600">{{r.id}}{{r.star}}</td><td style="padding: 4px; font-family: 'JetBrains Mono', monospace">{{r.d}}</td><td style="padding: 4px; font-family: 'JetBrains Mono', monospace">{{r.c}}</td><td style="padding: 4px">{{r.b}}</td><td style="padding: 4px; font-family: 'JetBrains Mono', monospace">{{r.s}}</td><td style="padding: 4px"><button onClick="{{r.pick}}" style="border: 1px solid #1D4ED8; color: #1D4ED8; background: #FFFFFF; border-radius: 4px; padding: 2px 6px; cursor: pointer">{{r.pickLabel}}</button></td></tr></sc-for></tbody>
+</table></div>
+</div>
+</sc-if>
+</div>
+</sc-if>
+
+<sc-if value="{{isCal}}" hint-placeholder-val="{{ false }}">
+<div style="display: flex; flex-direction: column; gap: 8px">
+<div style="color: #4B5563">One z scan calibrates every bead in view.</div>
+<div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px">
+<label style="display: flex; flex-direction: column; gap: 2px"><span style="font-size: 12px; color: #4B5563">Slices</span><input value="60" style="padding: 6px; border: 1px solid #9CA3AF; border-radius: 6px"></label>
+<label style="display: flex; flex-direction: column; gap: 2px"><span style="font-size: 12px; color: #4B5563">Step (nm)</span><input value="100" style="padding: 6px; border: 1px solid #9CA3AF; border-radius: 6px"></label>
+<label style="display: flex; flex-direction: column; gap: 2px"><span style="font-size: 12px; color: #4B5563">Frames averaged</span><input value="20" style="padding: 6px; border: 1px solid #9CA3AF; border-radius: 6px"></label>
+<label style="display: flex; flex-direction: column; gap: 2px"><span style="font-size: 12px; color: #4B5563">Cross (px)</span><input value="120" style="padding: 6px; border: 1px solid #9CA3AF; border-radius: 6px"></label>
+</div>
+<button onClick="{{runCal}}" style="border: none; background: #1D4ED8; color: #FFFFFF; border-radius: 6px; padding: 8px 12px; cursor: pointer; min-height: 40px">Run z scan</button>
+<div style="height: 8px; background: #E5E7EB; border-radius: 4px; overflow: hidden"><div style="height: 8px; width: {{calPct}}%; background: #1D4ED8"></div></div>
+<div style="font-family: 'JetBrains Mono', monospace; font-size: 12px">{{calText}}</div>
+</div>
+</sc-if>
+
+<sc-if value="{{showEditor}}" hint-placeholder-val="{{ false }}">
+<div style="display: flex; flex-direction: column; gap: 8px">
+<div style="display: flex; gap: 6px; align-items: center; flex-wrap: wrap">
+<select value="{{ed.name}}" aria-label="Protocol" style="flex: 1 1 160px; min-width: 0; padding: 6px; border: 1px solid #9CA3AF; border-radius: 6px"><sc-for list="{{ed.names}}" as="o" hint-placeholder-count="2"><option value="{{o}}">{{o}}</option></sc-for></select>
+<button onClick="{{ed.save}}" style="border: 1px solid #1D4ED8; color: #1D4ED8; background: #FFFFFF; border-radius: 6px; padding: 6px 8px; cursor: pointer">Save</button>
+<button onClick="{{ed.saveAs}}" style="border: 1px solid #1D4ED8; color: #1D4ED8; background: #FFFFFF; border-radius: 6px; padding: 6px 8px; cursor: pointer">Save as…</button>
+<button onClick="{{ed.load}}" style="border: 1px solid #9CA3AF; background: #FFFFFF; border-radius: 6px; padding: 6px 8px; cursor: pointer">Load…</button>
+</div>
+
+<sc-if value="{{ed.isExp}}" hint-placeholder-val="{{ false }}">
+<div style="display: flex; flex-direction: column; gap: 6px; background: #F3F4F6; border-radius: 6px; padding: 8px">
+<div style="display: flex; gap: 6px; align-items: center; flex-wrap: wrap">
+<button onClick="{{runStart}}" style="border: none; background: #15803D; color: #FFFFFF; border-radius: 6px; padding: 8px 14px; cursor: pointer; min-height: 36px">{{runStartLabel}}</button>
+<button onClick="{{runStop}}" style="border: 1px solid #9CA3AF; background: #FFFFFF; border-radius: 6px; padding: 8px 14px; cursor: pointer; min-height: 36px">Stop</button>
+<span>{{runStatus}}</span>
+</div>
+<sc-if value="{{draftOn}}" hint-placeholder-val="{{ false }}">
+<div style="display: flex; gap: 6px; align-items: center; flex-wrap: wrap; background: #FEF3C7; color: #78350F; border-radius: 6px; padding: 6px">
+<span style="flex: 1 1 160px">Edits pending. Steps not started yet take them now; steps already done take them from the next loop.</span>
+<button onClick="{{applyDraft}}" style="border: none; background: #B45309; color: #FFFFFF; border-radius: 6px; padding: 6px 10px; cursor: pointer">Apply changes</button>
+<button onClick="{{discardDraft}}" style="border: 1px solid #78350F; background: #FFFFFF; color: #78350F; border-radius: 6px; padding: 6px 10px; cursor: pointer">Discard</button>
+</div>
+</sc-if>
+<sc-if value="{{draftBlocked}}" hint-placeholder-val="{{ false }}"><div style="background: #FEE2E2; color: #7F1D1D; border-radius: 6px; padding: 6px">{{draftBlockText}}</div></sc-if>
+</div>
+</sc-if>
+
+<div role="tablist" aria-label="Editor mode" style="display: flex; gap: 4px">
+<button role="tab" onClick="{{modeBlocks}}" style="flex: 1 1 0; border: 1px solid #9CA3AF; border-radius: 6px; padding: 6px; cursor: pointer; background: {{blkBg}}; color: {{blkFg}}">Blocks</button>
+<button role="tab" onClick="{{modeScript}}" style="flex: 1 1 0; border: 1px solid #9CA3AF; border-radius: 6px; padding: 6px; cursor: pointer; background: {{scrBg}}; color: {{scrFg}}">Script</button>
+</div>
+
+<sc-if value="{{isBlocks}}" hint-placeholder-val="{{ true }}">
+<div style="display: flex; flex-direction: column; gap: 6px">
+<div style="font-weight: 600">Actions</div>
+<sc-for list="{{ed.rows}}" as="r" hint-placeholder-count="4">
+<div style="display: flex; flex-wrap: wrap; gap: 4px 6px; align-items: center; border: 1px solid {{r.border}}; background: {{r.bg}}; border-radius: 6px; padding: 6px">
+<span style="font-family: 'JetBrains Mono', monospace; font-size: 11px; width: 16px">{{r.n}}</span>
+<select value="{{r.k}}" onChange="{{r.setK}}" disabled="{{r.locked}}" aria-label="Action" style="padding: 4px; border: 1px solid #9CA3AF; border-radius: 4px"><sc-for list="{{kindOpts}}" as="o" hint-placeholder-count="5"><option value="{{o.v}}">{{o.l}}</option></sc-for></select>
+<sc-for list="{{r.fields}}" as="f" hint-placeholder-count="3"><label style="display: flex; gap: 3px; align-items: center; font-size: 12px">{{f.l}}<input value="{{f.v}}" onChange="{{f.set}}" disabled="{{r.locked}}" style="width: 40px; padding: 2px 4px; border: 1px solid #9CA3AF; border-radius: 4px"></label></sc-for>
+<span style="margin-left: auto; font-size: 11px; color: {{r.tagColor}}">{{r.tag}}</span>
+<button onClick="{{r.del}}" disabled="{{r.locked}}" aria-label="Remove step" style="border: 1px solid #D1D5DB; background: #FFFFFF; border-radius: 4px; padding: 2px 6px; cursor: pointer">×</button>
+</div>
+</sc-for>
+<div style="display: flex; flex-wrap: wrap; gap: 4px; align-items: center"><span style="font-size: 12px; color: #4B5563">Add</span>
+<sc-for list="{{addBtns}}" as="a" hint-placeholder-count="5"><button onClick="{{a.add}}" style="border: 1px dashed #6B7280; background: #FFFFFF; border-radius: 4px; padding: 4px 8px; cursor: pointer">+ {{a.l}}</button></sc-for>
+</div>
+<label style="display: flex; gap: 6px; align-items: center">Repeat whole list <input value="{{ed.repeat}}" onChange="{{ed.setRepeat}}" style="width: 40px; padding: 2px 4px; border: 1px solid #9CA3AF; border-radius: 4px"> times</label>
+
+<sc-if value="{{ed.isScreen}}" hint-placeholder-val="{{ false }}">
+<div style="display: flex; flex-direction: column; gap: 6px">
+<div style="font-weight: 600">Rules (all must pass)</div>
+<sc-for list="{{ruleRows}}" as="r" hint-placeholder-count="4">
+<div style="display: flex; flex-wrap: wrap; gap: 4px; align-items: center; border: 1px solid #E5E7EB; border-radius: 6px; padding: 6px">
+<select value="{{r.m}}" onChange="{{r.setM}}" aria-label="Metric" style="flex: 1 1 150px; min-width: 0; padding: 4px; border: 1px solid #9CA3AF; border-radius: 4px"><sc-for list="{{metricOpts}}" as="o" hint-placeholder-count="6"><option value="{{o.v}}">{{o.l}}</option></sc-for></select>
+<select value="{{r.op}}" onChange="{{r.setOp}}" aria-label="Comparison" style="padding: 4px; border: 1px solid #9CA3AF; border-radius: 4px"><option value=">=">≥</option><option value="<=">≤</option><option value="==">=</option></select>
+<input value="{{r.v}}" onChange="{{r.setV}}" aria-label="Threshold" style="width: 48px; padding: 2px 4px; border: 1px solid #9CA3AF; border-radius: 4px">
+<button onClick="{{r.del}}" aria-label="Remove rule" style="border: 1px solid #D1D5DB; background: #FFFFFF; border-radius: 4px; padding: 2px 6px; cursor: pointer">×</button>
+</div>
+</sc-for>
+<button onClick="{{addRule}}" style="align-self: flex-start; border: 1px dashed #6B7280; background: #FFFFFF; border-radius: 4px; padding: 4px 8px; cursor: pointer">+ Rule</button>
+</div>
+</sc-if>
+</div>
+</sc-if>
+
+<sc-if value="{{isScript}}" hint-placeholder-val="{{ false }}">
+<div style="display: flex; flex-direction: column; gap: 6px">
+<div style="font-size: 12px; color: #4B5563">One step per line, <code>key=value</code>. Blocks and script are the same protocol.</div>
+<textarea value="{{scriptText}}" onChange="{{setScript}}" aria-label="Protocol script" spellcheck="false" style="font-family: 'JetBrains Mono', monospace; font-size: 12px; min-height: 170px; padding: 8px; border: 1px solid #9CA3AF; border-radius: 6px; resize: vertical"></textarea>
+<div style="display: flex; gap: 6px; align-items: center"><button onClick="{{parseScript}}" style="border: none; background: #1D4ED8; color: #FFFFFF; border-radius: 6px; padding: 6px 12px; cursor: pointer">Check and use</button><span style="color: {{parseColor}}">{{parseMsg}}</span></div>
+</div>
+</sc-if>
+
+<div style="font-weight: 600">Preview: one pass</div>
+<div style="position: relative; height: 90px; border: 1px solid #D1D5DB; border-radius: 4px; background: #FBFBFC">
+<svg viewBox="0 0 600 100" preserveAspectRatio="none" aria-hidden="true" style="position: absolute; inset: 0; width: 100%; height: 100%"><polyline points="{{pvForce}}" fill="none" stroke="#1D4ED8" stroke-width="2" vector-effect="non-scaling-stroke"></polyline></svg>
+<svg viewBox="0 0 600 100" preserveAspectRatio="none" aria-hidden="true" style="position: absolute; inset: 0; width: 100%; height: 100%"><polyline points="{{pvRot}}" fill="none" stroke="#C2410C" stroke-width="2" stroke-dasharray="5 3" vector-effect="non-scaling-stroke"></polyline></svg>
+</div>
+<div style="display: flex; gap: 12px; font-size: 11px; color: #4B5563"><span><span style="display: inline-block; width: 14px; height: 2px; background: #1D4ED8"></span> force (0–{{pvFmax}} pN)</span><span><span style="display: inline-block; width: 14px; height: 2px; background: #C2410C"></span> rotation (±{{pvRmax}} turns)</span><span>{{pvTotal}}</span></div>
+
+<sc-if value="{{ed.isScreen}}" hint-placeholder-val="{{ false }}">
+<div style="display: flex; flex-direction: column; gap: 6px">
+<div style="font-weight: 600">{{passCount}} of {{candCount}} beads pass</div>
+<div style="overflow-x: auto"><table style="border-collapse: collapse; width: 100%; font-size: 12px">
+<thead><tr style="text-align: left; color: #4B5563"><th style="padding: 4px">Bead</th><th style="padding: 4px">Δext</th><th style="padding: 4px">Angle</th><th style="padding: 4px">Circ.</th><th style="padding: 4px">Result</th></tr></thead>
+<tbody><sc-for list="{{screenRows}}" as="r" hint-placeholder-count="8"><tr style="border-top: 1px solid #E5E7EB"><td style="padding: 4px; font-weight: 600">{{r.id}}</td><td style="padding: 4px; font-family: 'JetBrains Mono', monospace">{{r.dext}}</td><td style="padding: 4px; font-family: 'JetBrains Mono', monospace">{{r.ang}}</td><td style="padding: 4px; font-family: 'JetBrains Mono', monospace">{{r.circ}}</td><td style="padding: 4px; color: {{r.color}}">{{r.result}}</td></tr></sc-for></tbody>
+</table></div>
+</div>
+</sc-if>
+
+<sc-if value="{{ed.isExp}}" hint-placeholder-val="{{ false }}">
+<div style="display: flex; flex-direction: column; gap: 6px">
+<div style="font-weight: 600">Zero and corrections</div>
+<div style="color: #4B5563; font-size: 12px">Applies from now ({{nowText}} s). Raw data are never changed.</div>
+<div style="display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px">
+<button onClick="{{evZero}}" style="border: 1px solid #1D4ED8; color: #1D4ED8; background: #FFFFFF; border-radius: 6px; padding: 6px; cursor: pointer; min-height: 40px">Set zero here</button>
+<button onClick="{{evBridge}}" style="border: 1px solid #1D4ED8; color: #1D4ED8; background: #FFFFFF; border-radius: 6px; padding: 6px; cursor: pointer; min-height: 40px">Bridge a step</button>
+<button onClick="{{evExclude}}" style="border: 1px solid #B45309; color: #92400E; background: #FFFFFF; border-radius: 6px; padding: 6px; cursor: pointer; min-height: 40px">Exclude segment</button>
+</div>
+<sc-if value="{{tirf}}" hint-placeholder-val="{{ true }}">
+<div style="display: flex; flex-direction: column; gap: 4px">
+<div style="font-weight: 600">FRET corrections (preset, saved with the run)</div>
+<div style="display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px">
+<label style="display: flex; flex-direction: column; gap: 2px"><span style="font-size: 11px; color: #4B5563">Leakage α</span><input value="{{corrA}}" onChange="{{setCorrA}}" style="padding: 4px; border: 1px solid #9CA3AF; border-radius: 4px"></label>
+<label style="display: flex; flex-direction: column; gap: 2px"><span style="font-size: 11px; color: #4B5563">Direct exc. δ (red frames)</span><input value="{{corrD}}" onChange="{{setCorrD}}" style="padding: 4px; border: 1px solid #9CA3AF; border-radius: 4px"></label>
+<label style="display: flex; flex-direction: column; gap: 2px"><span style="font-size: 11px; color: #4B5563">γ</span><input value="{{corrG}}" onChange="{{setCorrG}}" style="padding: 4px; border: 1px solid #9CA3AF; border-radius: 4px"></label>
+</div>
+<div style="font-family: 'JetBrains Mono', monospace; font-size: 12px">B2 now: E raw {{eRaw}} → corrected {{eCorr}} (formula to match smCamera, pending)</div>
+</div>
+</sc-if>
+<div style="font-weight: 600">Event log</div>
+<sc-if value="{{noEvents}}" hint-placeholder-val="{{ true }}"><div style="color: #4B5563; font-size: 12px">No events yet.</div></sc-if>
+<sc-for list="{{events}}" as="e" hint-placeholder-count="2"><div style="font-family: 'JetBrains Mono', monospace; font-size: 12px; background: #F3F4F6; border-radius: 4px; padding: 4px 6px">{{e.text}}</div></sc-for>
+</div>
+</sc-if>
+</div>
+</sc-if>
+
+<sc-if value="{{isSave}}" hint-placeholder-val="{{ false }}">
+<div style="display: flex; flex-direction: column; gap: 8px">
+<label style="display: flex; flex-direction: column; gap: 2px"><span style="font-size: 12px; color: #4B5563">Start folder (where the save dialog opens)</span>
+<div style="display: flex; gap: 6px"><input value="{{startDir}}" onChange="{{setStartDir}}" style="flex: 1 1 auto; min-width: 0; padding: 6px; border: 1px solid #9CA3AF; border-radius: 6px; font-family: 'JetBrains Mono', monospace"><button onClick="{{browseStart}}" style="border: 1px solid #9CA3AF; background: #FFFFFF; border-radius: 6px; padding: 4px 8px; cursor: pointer">Browse…</button></div></label>
+<div style="font-weight: 600">Saved with the data (metadata)</div>
+<ul style="margin: 0; padding-left: 18px; line-height: 1.6; color: #374151">
+<li>Devices: model, serial, firmware, settings read back, limits</li>
+<li>Presets and protocols in use (full content), and every mid-run edit</li>
+<li>Frame rate: preset / read back / measured</li>
+<li>Zero, re-zero and excluded segments; device errors</li>
+</ul>
+<button onClick="{{saveRun}}" style="border: none; background: #1D4ED8; color: #FFFFFF; border-radius: 6px; padding: 8px 12px; cursor: pointer; min-height: 40px">Save run…</button>
+<sc-if value="{{savedOn}}" hint-placeholder-val="{{ false }}"><div style="background: #ECFDF5; color: #065F46; padding: 6px 8px; border-radius: 6px; font-family: 'JetBrains Mono', monospace; font-size: 12px">{{savedText}}</div></sc-if>
+</div>
+</sc-if>
+
+<sc-if value="{{isReview}}" hint-placeholder-val="{{ false }}">
+<div style="display: flex; flex-direction: column; gap: 8px">
+<div style="color: #4B5563">Open a saved run and replay it in the same screens: graphs, events, fits.</div>
+<button onClick="{{openRun}}" style="border: 1px solid #1D4ED8; color: #1D4ED8; background: #FFFFFF; border-radius: 6px; padding: 8px 12px; cursor: pointer">Open run…</button>
+<div style="font-weight: 600">Troubleshooting</div>
+<select aria-label="Symptom" style="padding: 6px; border: 1px solid #9CA3AF; border-radius: 6px"><option>z too noisy</option><option>Beads lost often</option><option>Frames dropped</option><option>Beads do not follow the magnet</option></select>
+<div style="font-family: 'JetBrains Mono', monospace; font-size: 12px; background: #F3F4F6; border-radius: 4px; padding: 6px; line-height: 1.5">Reference-bead z noise 9.1 nm (normal ≈ 4 nm)<br>Saturated pixels 0.0 %<br>Focus drift 0.3 µm / 10 min</div>
+<div style="font-size: 12px">Similar past case: 2026-10-14, stage moved by joystick → refocus and re-zero.</div>
+</div>
+</sc-if>
+</aside>
+</div>
+
+<sc-if value="{{modalOpen}}" hint-placeholder-val="{{ false }}">
+<div role="dialog" aria-label="Device details" style="position: fixed; inset: 0; background: rgba(17,24,39,0.45); display: flex; align-items: center; justify-content: center; padding: 16px">
+<div style="background: #FFFFFF; border-radius: 10px; width: 100%; max-width: 460px; padding: 16px; display: flex; flex-direction: column; gap: 8px; box-sizing: border-box">
+<div style="display: flex; align-items: center; gap: 8px"><span style="width: 10px; height: 10px; border-radius: 50%; background: {{md.dot}}"></span><strong style="font-size: 16px">{{md.name}}</strong><span style="color: #4B5563">read-only</span>
+<button onClick="{{closeModal}}" style="margin-left: auto; border: 1px solid #9CA3AF; background: #FFFFFF; border-radius: 6px; padding: 4px 10px; cursor: pointer">Close</button></div>
+<sc-for list="{{md.rows}}" as="r" hint-placeholder-count="8"><div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; border-top: 1px solid #E5E7EB; padding-top: 4px"><span style="color: #4B5563">{{r.k}}</span><span style="font-family: 'JetBrains Mono', monospace; font-size: 12px">{{r.v}}</span></div></sc-for>
+<div style="display: flex; gap: 8px; margin-top: 4px"><button style="border: 1px solid #1D4ED8; color: #1D4ED8; background: #FFFFFF; border-radius: 6px; padding: 6px 10px; cursor: pointer">Reconnect</button><a href="#" style="align-self: center">Manual</a><a href="#" style="align-self: center">Troubleshooting cases</a></div>
+</div>
+</div>
+</sc-if>
+
+<sc-if value="{{dlgOpen}}" hint-placeholder-val="{{ false }}">
+<div role="dialog" aria-label="{{dlg.title}}" style="position: fixed; inset: 0; background: rgba(17,24,39,0.45); display: flex; align-items: center; justify-content: center; padding: 16px">
+<div style="background: #FFFFFF; border-radius: 10px; width: 100%; max-width: 520px; padding: 16px; display: flex; flex-direction: column; gap: 8px; box-sizing: border-box">
+<strong style="font-size: 16px">{{dlg.title}}</strong>
+<div style="display: flex; gap: 6px; align-items: center"><span style="color: #4B5563">Folder</span><input value="{{dlg.folder}}" onChange="{{dlgSetFolder}}" style="flex: 1 1 auto; min-width: 0; padding: 6px; border: 1px solid #9CA3AF; border-radius: 6px; font-family: 'JetBrains Mono', monospace"></div>
+<div style="border: 1px solid #D1D5DB; border-radius: 6px; max-height: 140px; overflow-y: auto">
+<sc-for list="{{dlg.files}}" as="f" hint-placeholder-count="4"><button onClick="{{f.pick}}" style="display: block; width: 100%; text-align: left; border: none; border-bottom: 1px solid #F3F4F6; background: #FFFFFF; padding: 6px 8px; cursor: pointer; font-family: 'JetBrains Mono', monospace">{{f.name}}</button></sc-for>
+</div>
+<sc-if value="{{dlg.isSave}}" hint-placeholder-val="{{ true }}"><label style="display: flex; gap: 6px; align-items: center"><span style="color: #4B5563">Name</span><input value="{{dlg.name}}" onChange="{{dlgSetName}}" style="flex: 1 1 auto; min-width: 0; padding: 6px; border: 1px solid #9CA3AF; border-radius: 6px; font-family: 'JetBrains Mono', monospace"></label></sc-if>
+<div style="display: flex; gap: 8px; justify-content: flex-end"><button onClick="{{dlgCancel}}" style="border: 1px solid #9CA3AF; background: #FFFFFF; border-radius: 6px; padding: 8px 14px; cursor: pointer">Cancel</button><button onClick="{{dlgOk}}" style="border: none; background: #1D4ED8; color: #FFFFFF; border-radius: 6px; padding: 8px 14px; cursor: pointer">{{dlg.okLabel}}</button></div>
+</div>
+</div>
+</sc-if>
+
+<sc-if value="{{toastOn}}" hint-placeholder-val="{{ false }}">
+<div role="status" style="position: fixed; left: 50%; bottom: 20px; transform: translateX(-50%); background: #16191D; color: #F9FAFB; border-radius: 8px; padding: 10px 16px; font-size: 13px; max-width: 90vw">{{toast}}</div>
+</sc-if>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":900}}'>
+class Component extends DCLogic {
+  st() {
+    const d = {
+      step: 'setup', tick: 450, live: true, rec: false, estop: false, view: 'bf', modal: null, dlg: null, toast: '', toastUntil: 0,
+      shown: { B1: true, B2: true, B3: true, B4: false },
+      g0: { x: 't', y: 'ext', y2: 'fret', auto: true, ymin: '0', ymax: '1.6', follow: true },
+      g1: { x: 'rot', y: 'ext', y2: 'none', auto: true, ymin: '0', ymax: '1.6', follow: false },
+      expType: 'mttirf', layout: '2', chNames: ['Donor Cy3', 'Acceptor Cy5', 'Alexa 488'], mapMsg: '', tfModel: { c: 'poly3', j: 'affine' },
+      finder: { det: 'ring', rmin: 8, rmax: 16, thr: 0.3, nn: 5, edge: 72 }, sigBead: 'B2', sigPick: 'S2',
+      light: { backend: 'laser', header: [[0, 0], [0, 0]], body: [[1, 0], [0, 1]], footer: [[0, 1]], repeat: 50, n: 10 },
+      manual: { g: false, r: false }, corr: { a: '0.07', d: '0.05', g: '1.00' },
+      checkDone: false, magSet: 6.0, rotSet: 0, focus: 51.5, expo: 5, gain: 0, fpsSel: '90', fpsApplied: '90', camMsg: '',
+      calPct: 0, calRunning: false, mode: 'blocks', scriptDraft: null, parseMsg: '', parseOk: true,
+      events: [], startDir: 'D:\\Data\\SiHyeong\\2026-10', saved: '',
+      presets: { rig: '50x oil · binning 2', sample: 'Nucleosome · M-270 amine', camera: 'Experiment 90 Hz' },
+      prot: {
+        screen: { name: 'Single-biotin (SiHyeong)', repeat: 1, steps: [ { k: 'zero', t: 5 }, { k: 'ramp', a: 0, b: 7, t: 10 }, { k: 'hold', a: 7, t: 5 }, { k: 'rotate', a: -10, b: 10, f: 1.5, t: 40 } ],
+          rules: [ { m: 'dext', op: '>=', v: 0.8 }, { m: 'angle', op: '<=', v: 20 }, { m: 'circ', op: '>=', v: 0.8 }, { m: 'multi', op: '==', v: 0 } ] },
+        exp: { name: 'Force-extension + rotation', repeat: 3, steps: [ { k: 'zero', t: 5 }, { k: 'ramp', a: 0, b: 7, t: 30 }, { k: 'rotate', a: -10, b: 10, f: 1.5, t: 40 }, { k: 'ramp', a: 7, b: 0, t: 30 } ], rules: [] }
+      },
+      draft: null, run: { on: false, paused: false, loop: 0, idx: 0, ticks: 0 }
+    };
+    return Object.assign(d, this.state || {});
+  }
+
+  makeData() {
+    let seed = 7;
+    const rnd = () => { seed = (seed * 16807) % 2147483647; return seed / 2147483647 - 0.5; };
+    const beads = [ { id: 'B1', L: 0, ref: true }, { id: 'B2', L: 1.40 }, { id: 'B3', L: 1.32 }, { id: 'B4', L: 0.88 } ];
+    const N = 900, t = [], mag = [], force = [], rot = [], ext = { B1: [], B2: [], B3: [], B4: [] };
+    const fret = { B2: [], B3: [] }, donor = { B2: [], B3: [] }, acceptor = { B2: [], B3: [] };
+    for (let i = 0; i < N; i++) {
+      let m, r;
+      if (i < 300) { m = 18 * i / 300; r = 0; } else if (i < 600) { m = 12; r = -10 + 20 * (i - 300) / 300; } else { m = 18 - 18 * (i - 600) / 300; r = 0; }
+      const f = 0.08 * Math.exp(m / 4);
+      t.push(i / 10); mag.push(m); force.push(f); rot.push(r);
+      const w = 1 - 0.5 * Math.sqrt(4.1 / (f * 50)) + f / 1200;
+      const hat = Math.max(0.2, 1 - 0.07 * Math.max(0, Math.abs(r) - 1.5));
+      const unwrapped = f >= 2.5;
+      for (const b of beads) {
+        let v = b.ref ? 0.004 * i / N + 0.006 * rnd() : Math.max(0, b.L * w * hat) + 0.012 * rnd();
+        if (b.id === 'B2' && unwrapped) v += 0.08;
+        ext[b.id].push(v);
+      }
+      const e2 = (unwrapped ? 0.35 : 0.75) + 0.04 * rnd(), e3 = 0.5 + 0.05 * rnd();
+      fret.B2.push(e2); donor.B2.push(1000 * (1 - e2) + 30 * rnd()); acceptor.B2.push(1000 * e2 + 30 * rnd());
+      fret.B3.push(e3); donor.B3.push(900 * (1 - e3) + 30 * rnd()); acceptor.B3.push(900 * e3 + 30 * rnd());
+    }
+    return { N, t, mag, force, rot, ext, fret, donor, acceptor };
+  }
+
+  componentDidMount() {
+    this.timer = setInterval(() => {
+      const s = this.st();
+      const up = {};
+      if (s.live && !s.estop) up.tick = (s.tick + 3) % 900;
+      if (s.calRunning) { const p = Math.min(100, s.calPct + 4); up.calPct = p; if (p >= 100) up.calRunning = false; }
+      if (s.run.on && !s.run.paused && !s.estop) {
+        const r = Object.assign({}, s.run); r.ticks += 1;
+        if (r.ticks >= 15) {
+          r.ticks = 0; r.idx += 1;
+          const P = s.prot.exp;
+          if (r.idx >= P.steps.length) { r.idx = 0; r.loop += 1; if (r.loop >= P.repeat) { r.on = false; r.loop = 0; } }
+        }
+        up.run = r;
+      }
+      if (s.toast && Date.now() > s.toastUntil) up.toast = '';
+      if (Object.keys(up).length) this.setState(up);
+    }, 200);
+  }
+  componentWillUnmount() { clearInterval(this.timer); }
+
+  plot(g, s) {
+    const D = this.data;
+    const end = s.tick + 1, start = g.follow ? Math.max(0, end - 300) : 0;
+    const colors = { B1: '#C2410C', B2: '#1D4ED8', B3: '#0F766E', B4: '#7C3AED' };
+    const perBead = { ext: 1, fret: 1, donor: 1, acceptor: 1 };
+    const get = (key, b) => (perBead[key] ? (D[key][b] || null) : D[key]);
+    let xmin = Infinity, xmax = -Infinity, ymin = Infinity, ymax = -Infinity;
+    const raw = ['B1', 'B2', 'B3', 'B4'].filter((b) => s.shown[b] && get(g.x, b) && get(g.y, b)).map((b) => {
+      const xs = get(g.x, b).slice(start, end), ys = get(g.y, b).slice(start, end);
+      for (const v of xs) { if (v < xmin) xmin = v; if (v > xmax) xmax = v; }
+      for (const v of ys) { if (v < ymin) ymin = v; if (v > ymax) ymax = v; }
+      return { b, xs, ys };
+    });
+    let y2min = Infinity, y2max = -Infinity;
+    const raw2 = g.y2 && g.y2 !== 'none' ? ['B1', 'B2', 'B3', 'B4'].filter((b) => s.shown[b] && get(g.x, b) && get(g.y2, b)).map((b) => {
+      const xs = get(g.x, b).slice(start, end), ys = get(g.y2, b).slice(start, end);
+      for (const v of ys) { if (v < y2min) y2min = v; if (v > y2max) y2max = v; }
+      return { b, xs, ys };
+    }) : [];
+    if (raw2.length) { const p = (y2max - y2min) * 0.06 || 0.05; y2min -= p; y2max += p; }
+    if (!isFinite(xmin)) { xmin = 0; xmax = 1; ymin = 0; ymax = 1; }
+    if (xmax - xmin < 1e-9) xmax = xmin + 1;
+    if (g.auto) { const p = (ymax - ymin) * 0.06 || 0.1; ymin -= p; ymax += p; }
+    else { const a = parseFloat(g.ymin), c = parseFloat(g.ymax); ymin = isFinite(a) ? a : 0; ymax = isFinite(c) && c > ymin ? c : ymin + 1; }
+    const sx = (v) => ((v - xmin) / (xmax - xmin) * 600).toFixed(1);
+    const sy = (v) => (200 - (Math.min(Math.max(v, ymin), ymax) - ymin) / (ymax - ymin) * 200).toFixed(1);
+    const lab = { t: 'Time (s)', mag: 'Magnet (mm)', force: 'Force (pN)', rot: 'Rotation (turns)', ext: 'Extension (µm)', fret: 'FRET E', donor: 'Donor (a.u.)', acceptor: 'Acceptor (a.u.)' };
+    const f = (v) => (Math.abs(v) >= 100 ? v.toFixed(0) : v.toFixed(2));
+    const sy2 = (v) => (200 - (v - y2min) / (y2max - y2min) * 200).toFixed(1);
+    const s1 = raw.map((r) => ({ color: colors[r.b], dash: '0', points: r.xs.map((x, i) => sx(x) + ',' + sy(r.ys[i])).join(' ') }));
+    const s2 = raw2.map((r) => ({ color: r.b === 'B2' ? '#16A34A' : '#CA8A04', dash: '4 2', points: r.xs.map((x, i) => sx(x) + ',' + sy2(r.ys[i])).join(' ') }));
+    return { series: s1.concat(s2), hasY2: raw2.length > 0,
+      xLabel: lab[g.x], yLabel: lab[g.y].split(' ')[0], xMinT: f(xmin), xMaxT: f(xmax), yMinT: f(ymin), yMaxT: f(ymax),
+      y2Label: raw2.length ? lab[g.y2].split(' ')[0] : '', y2MinT: raw2.length ? f(y2min) : '', y2MaxT: raw2.length ? f(y2max) : '' };
+  }
+
+  stepText(st) {
+    if (st.k === 'zero') return 'zero t=' + st.t;
+    if (st.k === 'ramp') return 'ramp from=' + st.a + ' to=' + st.b + ' t=' + st.t;
+    if (st.k === 'hold') return 'hold f=' + st.a + ' t=' + st.t;
+    if (st.k === 'rotate') return 'rotate from=' + st.a + ' to=' + st.b + ' f=' + st.f + ' t=' + st.t;
+    return 'record t=' + st.t;
+  }
+  toScript(P, isScreen) {
+    const lines = ['# protocol: ' + P.name].concat(P.steps.map((x) => this.stepText(x)));
+    lines.push('repeat ' + P.repeat);
+    if (isScreen) for (const r of P.rules) lines.push('rule ' + r.m + ' ' + r.op + ' ' + r.v);
+    return lines.join('\n');
+  }
+  parse(text, P) {
+    const steps = [], rules = [], errs = [];
+    let repeat = 1;
+    text.split('\n').forEach((line, n) => {
+      const L = line.trim();
+      if (!L || L.startsWith('#')) return;
+      const tok = L.split(/\s+/), kw = tok[0];
+      const kv = {};
+      for (const t of tok.slice(1)) { const p = t.split('='); if (p.length === 2) kv[p[0]] = parseFloat(p[1]); }
+      const need = (keys) => { for (const k of keys) if (!isFinite(kv[k])) { errs.push('line ' + (n + 1) + ': ' + kw + ' needs ' + k + '='); return false; } return true; };
+      if (kw === 'zero' && need(['t'])) steps.push({ k: 'zero', t: kv.t });
+      else if (kw === 'ramp' && need(['from', 'to', 't'])) steps.push({ k: 'ramp', a: kv.from, b: kv.to, t: kv.t });
+      else if (kw === 'hold' && need(['f', 't'])) steps.push({ k: 'hold', a: kv.f, t: kv.t });
+      else if (kw === 'rotate' && need(['from', 'to', 'f', 't'])) steps.push({ k: 'rotate', a: kv.from, b: kv.to, f: kv.f, t: kv.t });
+      else if (kw === 'record' && need(['t'])) steps.push({ k: 'record', t: kv.t });
+      else if (kw === 'repeat') { const v = parseInt(tok[1], 10); if (v > 0) repeat = v; else errs.push('line ' + (n + 1) + ': repeat needs a number'); }
+      else if (kw === 'rule') { const v = parseFloat(tok[3]); if (tok.length >= 4 && isFinite(v)) rules.push({ m: tok[1], op: tok[2], v }); else errs.push('line ' + (n + 1) + ': rule <metric> <op> <value>'); }
+      else if (['zero', 'ramp', 'hold', 'rotate', 'record'].indexOf(kw) < 0) errs.push('line ' + (n + 1) + ': unknown step "' + kw + '"');
+    });
+    return { errs, P: Object.assign({}, P, { steps, rules, repeat }) };
+  }
+  maxForce(P) { let m = 0; for (const x of P.steps) { for (const v of [x.a, x.b, x.f]) if (isFinite(v) && x.k !== 'rotate') m = Math.max(m, v); if (x.k === 'rotate') m = Math.max(m, x.f); } return m; }
+
+  renderVals() {
+    if (!this.data) this.data = this.makeData();
+    const s = this.st(), D = this.data, i = s.tick;
+    const set = (o) => this.setState(o);
+    const toast = (msg) => set({ toast: msg, toastUntil: Date.now() + 3500 });
+
+    const tirf = s.expType === 'mttirf';
+    const stepDefs = [ ['setup', 'Setup'], ['explore', 'Explore'] ].concat(tirf ? [ ['map', 'Map'], ['light', 'Light'] ] : [])
+      .concat([ ['beads', 'Beads'], ['cal', 'Calibrate'], ['screen', 'Screen'], ['exp', 'Experiment'], ['save', 'Save'], ['review', 'Review'] ]);
+    const titles = { setup: 'Setup: experiment type, presets, devices', explore: 'Explore (no recording)', map: 'Mapping', light: 'Illumination sequence', beads: tirf ? 'Bead candidates and fluorescence signals' : 'Bead candidates', cal: 'Calibration', screen: 'Screening protocol', exp: 'Experiment protocol', save: 'Save', review: 'Review and troubleshooting' };
+    const nSteps = stepDefs.length;
+    const steps = stepDefs.map((d, k) => ({ num: k < nSteps - 1 ? String(k + 1) : '·', label: d[1], go: () => set({ step: d[0], scriptDraft: null, parseMsg: '' }),
+      bg: s.step === d[0] ? '#1D4ED8' : '#FFFFFF', fg: s.step === d[0] ? '#FFFFFF' : '#16191D', fw: s.step === d[0] ? '600' : '400' }));
+
+    const devDefs = [
+      { id: 'jai', name: 'JAI SP-5000M-USB', state: 'ok', port: 'USB3 · cam1', rows: [['Model', 'SP-5000M-USB'], ['Serial', '000014FB0067A270'], ['Driver', 'NI-IMAQdx'], ['Settings read back', '1280×1024, bin 2, 90.00 Hz, 5.0 ms'], ['Preset', s.presets.camera], ['Last reply', '0.1 s ago'], ['Recent errors', 'none']] },
+      { id: 'pi', name: 'PI magnet (M-126.PD1)', state: 'ok', port: 'COM3', rows: [['Model', 'M-126.PD1 / Mercury'], ['Port', 'COM3, 115200'], ['Limits (set at start)', 'TMN 0 / TMX 39 mm'], ['Force table', 'M270_50x (v3)'], ['Last reply', '0.3 s ago'], ['Recent errors', 'none']] },
+      { id: 'asi', name: 'ASI stage / piezo', state: 'ok', port: 'COM4', rows: [['Model', 'TG-1000 (Tiger)'], ['Port', 'COM4, 115200'], ['Limits', 'start ± 2.0 mm'], ['Focus axis', '51.50 µm'], ['Recent errors', 'none']] },
+      { id: 'rot', name: 'Rotor (Autonics)', state: 'ok', port: 'COM5', rows: [['Model', 'Autonics pulse motor'], ['Port', 'COM5'], ['Position', 'signed turns'], ['Recent errors', 'none']] },
+      { id: 'ard', name: 'Arduino frame sync', state: 'warn', port: 'COM6', rows: [['Board', 'UNO-compatible'], ['Divider N', 'not set'], ['Status', 'not configured for this run']] },
+      { id: 'ixon', name: 'Andor iXon EMCCD', state: 'off', port: '—', rows: [['Model', 'iXon Ultra [model]'], ['Status', 'not connected']] },
+      { id: 'obis', name: 'OBIS lasers', state: 'off', port: '—', rows: [['Status', 'not connected'], ['Modulation', 'from Arduino (planned)']] }
+    ];
+    const dotOf = { ok: '#16A34A', warn: '#D97706', off: '#9CA3AF' }, textOf = { ok: 'connected', warn: 'needs attention', off: 'not connected' };
+    const devices = devDefs.map((d) => ({ name: d.name, port: d.port, dot: dotOf[d.state], stateText: textOf[d.state], open: () => set({ modal: d.id }) }));
+    const m = devDefs.find((d) => d.id === s.modal);
+    const md = m ? { name: m.name, dot: dotOf[m.state], rows: m.rows.map((r) => ({ k: r[0], v: r[1] })) } : { name: '', dot: '#9CA3AF', rows: [] };
+
+    const openDlg = (o) => set({ dlg: Object.assign({ folder: '', name: '', okLabel: 'Save', isSave: true, files: [] }, o) });
+    const libFiles = { protocols: ['Single-biotin (SiHyeong).mtprot', 'Nucleosome relative.mtprot', 'Force-extension + rotation.mtprot', '3-state clamp x10.mtprot'],
+      presets: ['50x oil binning 2.mtpreset', 'Experiment 90 Hz.mtpreset', 'Force calibration max fps.mtpreset', 'Nucleosome M-270.mtpreset'],
+      runs: ['2026-10-21_nucleosome_run01.h5', '2026-10-21_nucleosome_run02.h5', '2026-10-22_nucleosome_run01.h5'] };
+
+    const axisOpts = [ { v: 't', l: 'Time (s)' }, { v: 'mag', l: 'Magnet (mm)' }, { v: 'force', l: 'Force (pN)' }, { v: 'rot', l: 'Rotation (turns)' }, { v: 'ext', l: 'Extension (µm)' } ]
+      .concat(tirf ? [ { v: 'fret', l: 'FRET E' }, { v: 'donor', l: 'Donor (a.u.)' }, { v: 'acceptor', l: 'Acceptor (a.u.)' } ] : []);
+    const axisOpts2 = [ { v: 'none', l: '(none)' } ].concat(axisOpts);
+    const graphs = ['g0', 'g1'].map((k) => {
+      const g0 = s[k], upd = (o) => set({ [k]: Object.assign({}, g0, o) });
+      const g = Object.assign({}, g0, { y2: tirf ? g0.y2 : 'none' });
+      return Object.assign(this.plot(g, s), { x: g.x, y: g.y, y2: g.y2, auto: g.auto, manual: !g.auto, follow: g.follow, ymin: g.ymin, ymax: g.ymax,
+        setY2: (e) => upd({ y2: e.target.value }),
+        setX: (e) => upd({ x: e.target.value }), setY: (e) => upd({ y: e.target.value }), toggleAuto: () => upd({ auto: !g.auto }), toggleFollow: () => upd({ follow: !g.follow }),
+        setYmin: (e) => upd({ ymin: e.target.value }), setYmax: (e) => upd({ ymax: e.target.value }) });
+    });
+    const chipColor = { B1: '#C2410C', B2: '#1D4ED8', B3: '#0F766E', B4: '#7C3AED' };
+    const beadChips = ['B1', 'B2', 'B3', 'B4'].map((b) => ({ label: b === 'B1' ? 'B1 (reference)' : b, color: chipColor[b], on: !!s.shown[b], toggle: () => set({ shown: Object.assign({}, s.shown, { [b]: !s.shown[b] }) }) }));
+
+    const presetRows = [
+      { label: 'Rig', key: 'rig', opts: ['50x oil · binning 2', '100x oil · binning 2'] },
+      { label: 'Sample', key: 'sample', opts: ['Nucleosome · M-270 amine', 'Naked DNA · M-270 amine'] },
+      { label: 'Camera', key: 'camera', opts: ['Experiment 90 Hz', 'Force calibration (max fps)'] }
+    ].map((p) => ({ label: p.label, opts: p.opts, value: s.presets[p.key], set: (e) => set({ presets: Object.assign({}, s.presets, { [p.key]: e.target.value }) }),
+      save: () => openDlg({ title: 'Save ' + p.label.toLowerCase() + ' preset', folder: 'Lab library\\presets', name: s.presets[p.key].replace(/ · /g, ' ') + '.mtpreset', files: libFiles.presets, kind: 'preset' }),
+      load: () => openDlg({ title: 'Load ' + p.label.toLowerCase() + ' preset', folder: 'Lab library\\presets', okLabel: 'Load', isSave: false, files: libFiles.presets, kind: 'load' }) }));
+    const checkRows = [
+      { res: 'PASS', color: '#15803D', text: 'JAI opened, preset applied, read back 1280×1024 @ 90.00 Hz' },
+      { res: 'PASS', color: '#15803D', text: 'PI replied, limits set and read back (0 / 39 mm)' },
+      { res: 'PASS', color: '#15803D', text: 'ASI replied, window = start ± 2.0 mm' },
+      { res: 'PASS', color: '#15803D', text: 'Rotor replied, position read' },
+      { res: 'WARN', color: '#B45309', text: 'Arduino: divider N not set (needed only with the iXon)' },
+      { res: 'SKIP', color: '#4B5563', text: 'iXon, OBIS: not connected' }
+    ];
+    const zNow = (b) => D.ext[b][i].toFixed(3);
+    const beadRows = [
+      { id: 'B1', role: 'reference', roleColor: '#C2410C', z: zNow('B1'), ring: 'clean', near: '9 µm' },
+      { id: 'B2', role: 'tethered', roleColor: '#1D4ED8', z: zNow('B2'), ring: 'clean', near: '12 µm' },
+      { id: 'B3', role: 'tethered', roleColor: '#1D4ED8', z: zNow('B3'), ring: 'clean', near: '11 µm' },
+      { id: 'B4', role: 'tethered', roleColor: '#1D4ED8', z: zNow('B4'), ring: 'clean', near: '8 µm' },
+      { id: 'C5', role: 'candidate', roleColor: '#4B5563', z: '0.412', ring: 'faint', near: '6 µm' },
+      { id: 'C6', role: 'candidate', roleColor: '#4B5563', z: '1.087', ring: 'clean', near: '4 µm' }
+    ];
+
+    // ---- protocol editor (shared by Screen and Experiment) ----
+    const which = s.step === 'screen' ? 'screen' : 'exp';
+    const isScreen = which === 'screen';
+    const live = s.prot[which];
+    const running = !isScreen && s.run.on;
+    const P = (!isScreen && s.draft) ? s.draft : live;
+    const commit = (NP) => {
+      if (running) set({ draft: NP });
+      else set({ prot: Object.assign({}, s.prot, { [which]: NP }) });
+    };
+    const kindOpts = [ { v: 'zero', l: 'Zero at 0 pN' }, { v: 'ramp', l: 'Ramp force' }, { v: 'hold', l: 'Hold force' }, { v: 'rotate', l: 'Rotate' }, { v: 'record', l: 'Record x-y' } ];
+    const fieldDefs = { zero: [['t', 's']], ramp: [['a', 'from pN'], ['b', 'to pN'], ['t', 's']], hold: [['a', 'pN'], ['t', 's']], rotate: [['a', 'from'], ['b', 'to turns'], ['f', 'at pN'], ['t', 's']], record: [['t', 's']] };
+    const defaults = { zero: { k: 'zero', t: 5 }, ramp: { k: 'ramp', a: 0, b: 7, t: 30 }, hold: { k: 'hold', a: 7, t: 10 }, rotate: { k: 'rotate', a: -10, b: 10, f: 1.5, t: 40 }, record: { k: 'record', t: 10 } };
+    const setStep = (j, NS) => { const arr = P.steps.slice(); if (NS) arr[j] = NS; else arr.splice(j, 1); commit(Object.assign({}, P, { steps: arr })); };
+    const rows = P.steps.map((x, j) => {
+      let tag = '', tagColor = '#4B5563', locked = false, bg = '#FFFFFF', border = '#E5E7EB';
+      if (running) {
+        if (j < s.run.idx) { tag = 'done this loop'; }
+        else if (j === s.run.idx) { tag = 'running'; tagColor = '#15803D'; locked = true; bg = '#F0FDF4'; border = '#86EFAC'; }
+        else { tag = 'next'; }
+      }
+      return { n: String(j + 1), k: x.k, tag, tagColor, locked, bg, border,
+        setK: (e) => setStep(j, Object.assign({}, defaults[e.target.value])),
+        fields: fieldDefs[x.k].map((fd) => ({ l: fd[1], v: String(x[fd[0]]), set: (e) => { const v = parseFloat(e.target.value); if (isFinite(v)) setStep(j, Object.assign({}, x, { [fd[0]]: v })); } })),
+        del: () => setStep(j, null) };
+    });
+    const addBtns = kindOpts.map((o) => ({ l: o.l, add: () => commit(Object.assign({}, P, { steps: P.steps.concat([Object.assign({}, defaults[o.v])]) })) }));
+    const metricOpts = [ { v: 'dext', l: 'Δextension 0→7 pN (µm)' }, { v: 'angle', l: 'Attachment angle (°)' }, { v: 'circ', l: 'Trace circularity' }, { v: 'multi', l: 'Multiple tethers (0/1)' }, { v: 'hatsym', l: 'Hat-curve symmetry' }, { v: 'znoise', l: 'z noise at 7 pN (nm)' }, { v: 'custom', l: 'Custom (Python function)…' } ];
+    const setRule = (j, NR) => { const arr = P.rules.slice(); if (NR) arr[j] = NR; else arr.splice(j, 1); commit(Object.assign({}, P, { rules: arr })); };
+    const ruleRows = P.rules.map((r, j) => ({ m: r.m, op: r.op, v: String(r.v), setM: (e) => setRule(j, Object.assign({}, r, { m: e.target.value })), setOp: (e) => setRule(j, Object.assign({}, r, { op: e.target.value })),
+      setV: (e) => { const v = parseFloat(e.target.value); if (isFinite(v)) setRule(j, Object.assign({}, r, { v })); }, del: () => setRule(j, null) }));
+
+    const cands = [
+      { id: 'B2', dext: 1.02, angle: 12, circ: 0.94, multi: 0, hatsym: 0.95, znoise: 5.1 }, { id: 'B3', dext: 0.95, angle: 18, circ: 0.90, multi: 0, hatsym: 0.91, znoise: 5.8 },
+      { id: 'B4', dext: 0.61, angle: 9, circ: 0.92, multi: 0, hatsym: 0.93, znoise: 4.9 }, { id: 'C5', dext: 0.88, angle: 41, circ: 0.71, multi: 0, hatsym: 0.80, znoise: 7.2 },
+      { id: 'C6', dext: 0.97, angle: 15, circ: 0.88, multi: 1, hatsym: 0.52, znoise: 6.0 }, { id: 'C7', dext: 1.10, angle: 27, circ: 0.83, multi: 0, hatsym: 0.89, znoise: 5.5 },
+      { id: 'C8', dext: 0.15, angle: 0, circ: 0.0, multi: 0, hatsym: 0, znoise: 3.9 }, { id: 'C9', dext: 0.92, angle: 8, circ: 0.96, multi: 0, hatsym: 0.94, znoise: 5.0 }
+    ];
+    const label = { dext: 'Δext', angle: 'angle', circ: 'not circular', multi: 'multi-tether', hatsym: 'hat asymmetric', znoise: 'noisy', custom: 'custom' };
+    let pass = 0;
+    const screenRows = cands.map((c) => {
+      const why = [];
+      for (const r of live.rules) {
+        if (r.m === 'custom' || !(r.m in c)) continue;
+        const v = c[r.m], ok = r.op === '>=' ? v >= r.v : r.op === '<=' ? v <= r.v : Math.abs(v - r.v) < 1e-9;
+        if (!ok) why.push(label[r.m] || r.m);
+      }
+      const ok = why.length === 0; if (ok) pass++;
+      return { id: c.id, dext: c.dext.toFixed(2), ang: c.angle + '°', circ: c.circ.toFixed(2), result: ok ? 'pass' : 'fail: ' + why.join(', '), color: ok ? '#15803D' : '#B91C1C' };
+    });
+
+    // preview of one pass: force (blue) and rotation (orange)
+    const tot = P.steps.reduce((a, x) => a + (x.t || 0), 0) || 1;
+    const fmax = Math.max(1, this.maxForce(P));
+    let rmax = 1; for (const x of P.steps) if (x.k === 'rotate') rmax = Math.max(rmax, Math.abs(x.a), Math.abs(x.b));
+    let tc = 0, fcur = 0, rcur = 0; const fp = [], rp = [];
+    const X = (t) => (t / tot * 600).toFixed(1), YF = (f) => (96 - f / fmax * 90).toFixed(1), YR = (r) => (50 - r / rmax * 45).toFixed(1);
+    fp.push(X(0) + ',' + YF(0)); rp.push(X(0) + ',' + YR(0));
+    for (const x of P.steps) {
+      let f0 = fcur, f1 = fcur, r0 = rcur, r1 = rcur;
+      if (x.k === 'zero') { f0 = 0; f1 = 0; r1 = r0; }
+      if (x.k === 'ramp') { f0 = x.a; f1 = x.b; }
+      if (x.k === 'hold') { f0 = x.a; f1 = x.a; }
+      if (x.k === 'rotate') { f0 = x.f; f1 = x.f; r0 = x.a; r1 = x.b; }
+      fp.push(X(tc) + ',' + YF(f0)); rp.push(X(tc) + ',' + YR(r0));
+      tc += x.t || 0; fp.push(X(tc) + ',' + YF(f1)); rp.push(X(tc) + ',' + YR(r1)); fcur = f1; rcur = r1;
+    }
+
+    const scriptText = s.scriptDraft !== null ? s.scriptDraft : this.toScript(P, isScreen);
+    const forceLimit = 10;
+    const draftTooHigh = !!s.draft && this.maxForce(s.draft) > forceLimit;
+
+    const nowT = D.t[i];
+    const addEv = (text) => set({ events: [{ text: nowT.toFixed(1) + ' s  ' + text + '  · SiHyeong' }].concat(s.events).slice(0, 8) });
+    const period = 1000 / parseFloat(s.fpsSel);
+    const ed = { name: P.name, names: [P.name, isScreen ? 'Nucleosome, relative to field' : '3-state clamp × 10'], isExp: !isScreen, isScreen, repeat: String(P.repeat),
+      setRepeat: (e) => { const v = parseInt(e.target.value, 10); if (v > 0) commit(Object.assign({}, P, { repeat: v })); },
+      rows, save: () => toast('Saved "' + P.name + '" to Lab library\\protocols (mock).'),
+      saveAs: () => openDlg({ title: 'Save protocol as', folder: 'Lab library\\protocols', name: P.name + ' (copy).mtprot', files: libFiles.protocols, kind: 'protocol' }),
+      load: () => openDlg({ title: 'Load protocol', folder: 'Lab library\\protocols', okLabel: 'Load', isSave: false, files: libFiles.protocols, kind: 'load' }) };
+    const dl = s.dlg;
+
+    // ---- mapping ----
+    const nCh = parseInt(s.layout, 10);
+    const chColor = ['#16A34A', '#DC2626', '#2563EB'], chEx = ['532 nm', '637 nm', '488 nm'];
+    const regions = { 1: ['0,0,512,512'], 2: ['0,0,256,512', '256,0,256,512'], 3: ['0,0,170,512', '170,0,171,512', '341,0,171,512'] };
+    const chRows = [];
+    for (let c = 0; c < nCh; c++) chRows.push({ id: 'CH' + (c + 1), name: s.chNames[c], color: chColor[c], ex: chEx[c], region: '[' + regions[nCh][c] + ']',
+      setName: (e) => { const a = s.chNames.slice(); a[c] = e.target.value; set({ chNames: a }); } });
+    const tfRows = [];
+    for (let c = 1; c < nCh; c++) tfRows.push({ label: 'CH' + (c + 1) + ' → CH1', model: s.tfModel.c, det: 'peak (beads)', rms: c === 1 ? '0.08' : '0.11', n: c === 1 ? '152' : '131', setModel: (e) => set({ tfModel: Object.assign({}, s.tfModel, { c: e.target.value }) }) });
+    tfRows.push({ label: 'JAI → CH1', model: s.tfModel.j, det: 'ring (JAI) + blob (autofluor.)', rms: '0.62', n: '24', setModel: (e) => set({ tfModel: Object.assign({}, s.tfModel, { j: e.target.value }) }) });
+    const mapId = '2026-10-23_' + nCh + 'ch_50x';
+
+    // ---- illumination sequence ----
+    const L = s.light;
+    const setL = (o) => set({ light: Object.assign({}, L, o) });
+    const mkRows = (key) => L[key].map((row, j) => ({ n: String(j + 1),
+      gBg: row[0] ? '#16A34A' : '#FFFFFF', gFg: row[0] ? '#FFFFFF' : '#374151', gT: row[0] ? 'on' : 'off',
+      rBg: row[1] ? '#DC2626' : '#FFFFFF', rFg: row[1] ? '#FFFFFF' : '#374151', rT: row[1] ? 'on' : 'off',
+      tg: () => { const a = L[key].map((x) => x.slice()); a[j][0] = 1 - a[j][0]; setL({ [key]: a }); },
+      tr: () => { const a = L[key].map((x) => x.slice()); a[j][1] = 1 - a[j][1]; setL({ [key]: a }); },
+      del: () => { const a = L[key].slice(); a.splice(j, 1); setL({ [key]: a }); } }));
+    const seqSections = [ { key: 'header', label: 'Header', note: 'once at start' }, { key: 'body', label: 'Body', note: 'repeated' }, { key: 'footer', label: 'Footer', note: 'once at end' } ]
+      .map((x) => ({ label: x.label, note: x.note, rows: mkRows(x.key), add: () => setL({ [x.key]: L[x.key].concat([[0, 0]]) }) }));
+    const full = L.header.concat([].concat(...Array(Math.max(0, L.repeat)).fill(L.body))).concat(L.footer);
+    const seqPreview = full.slice(0, 40).map((r, j) => ({ t: 'frame ' + (j + 1), c: r[0] && r[1] ? '#7C3AED' : r[0] ? '#16A34A' : r[1] ? '#DC2626' : '#374151' }));
+    const jaiHz = parseFloat(s.fpsApplied), eHz = jaiHz / Math.max(1, L.n), ePeriod = 1000 / eHz;
+    const swMs = { shutter: 5, aom: 0.001, laser: 0.05 }[L.backend];
+    let changes = 0; for (let j = 1; j < full.length; j++) if (full[j][0] !== full[j - 1][0] || full[j][1] !== full[j - 1][1]) changes++;
+    const ltOk = swMs < 0.1 * ePeriod;
+    const ltCheck = (ltOk ? 'OK: ' : 'Warning: ') + 'EMCCD frame period ' + ePeriod.toFixed(1) + ' ms, switching ≈ ' + swMs + ' ms, ' + changes + ' switches in the run' + (ltOk ? '.' : ' — switching takes more than 10 % of a frame; lower the rate or use AOM / laser modulation.');
+
+    // ---- candidate finder ----
+    const F = s.finder;
+    const fieldsByDet = { ring: [['rmin', 'Ring radius min (px)'], ['rmax', 'Ring radius max (px)'], ['thr', 'Contrast threshold'], ['nn', 'Min neighbour distance (µm)'], ['edge', 'Edge margin (px)']],
+      blob: [['rmin', 'Blob radius min (px)'], ['rmax', 'Blob radius max (px)'], ['thr', 'Intensity threshold (× bg)'], ['nn', 'Min neighbour distance (µm)'], ['edge', 'Edge margin (px)']],
+      peak: [['rmin', 'Spot radius (px)'], ['rmax', 'Background radius (px)'], ['thr', 'Threshold (× noise)'], ['nn', 'Min spot distance (px)'], ['edge', 'Edge margin (px)']] };
+    const pool = [ [10, 0.6, 9, 200], [11, 0.5, 12, 300], [12, 0.45, 11, 150], [9, 0.4, 8, 90], [13, 0.2, 6, 250], [12, 0.55, 4, 400], [18, 0.5, 10, 300], [7, 0.35, 7, 60], [11, 0.32, 15, 500], [10, 0.28, 9, 350], [14, 0.6, 3, 220], [12, 0.7, 13, 40], [11, 0.5, 10, 310], [9, 0.25, 6, 180] ];
+    let found = 0; const rej = { size: 0, contrast: 0, close: 0, edge: 0 };
+    for (const p of pool) { if (p[0] < F.rmin || p[0] > F.rmax) rej.size++; else if (p[1] < F.thr) rej.contrast++; else if (p[2] < F.nn) rej.close++; else if (p[3] < F.edge) rej.edge++; else found++; }
+    const fd = { det: F.det, setDet: (e) => set({ finder: Object.assign({}, F, { det: e.target.value }) }),
+      fields: fieldsByDet[F.det].map((x) => ({ l: x[1], v: String(F[x[0]]), set: (e) => { const v = parseFloat(e.target.value); if (isFinite(v)) set({ finder: Object.assign({}, F, { [x[0]]: v }) }); } })),
+      result: found + ' found · rejected: ' + rej.size + ' size, ' + rej.contrast + ' contrast, ' + rej.close + ' too close, ' + rej.edge + ' edge',
+      find: () => toast('Found ' + found + ' candidates (mock).'),
+      save: () => openDlg({ title: 'Save detector parameters', folder: 'Lab library\\presets', name: 'Finder ' + F.det + '.mtpreset', files: libFiles.presets, kind: 'preset' }) };
+
+    // ---- fluorescence signal identification ----
+    const spots = [ { id: 'S1', d: '9.1 px', c: '0.12', b: '1', s: 0.31 }, { id: 'S2', d: '1.8 px', c: '0.86', b: '1', s: 0.91 }, { id: 'S3', d: '12.4 px', c: '0.05', b: '2', s: 0.18 } ];
+    const sigRows = spots.map((x) => ({ id: x.id, d: x.d, c: x.c, b: x.b, s: x.s.toFixed(2), star: x.s > 0.8 ? ' ★' : '', bg: s.sigPick === x.id ? '#EFF6FF' : '#FFFFFF',
+      pickLabel: s.sigPick === x.id ? 'Chosen' : 'Use', pick: () => set({ sigPick: x.id }) }));
+
+    // ---- FRET corrections (mock formula) ----
+    const eRawV = D.fret.B2[i], cA = parseFloat(s.corr.a) || 0, cD = parseFloat(s.corr.d) || 0, cG = parseFloat(s.corr.g) || 1;
+    const Ia = D.acceptor.B2[i], Id = D.donor.B2[i];
+    const IaC = Ia - cA * Id - cD * 1000;
+    const eCorrV = IaC / (IaC + cG * Id);
+
+    const clampSet = (key, lo, hi) => (v) => { if (isFinite(v)) set({ [key]: Math.min(hi, Math.max(lo, Math.round(v * 1000) / 1000)) }); };
+    const numDefs = [
+      { id: 'n-mag', key: 'magSet', label: 'Magnet position', unit: 'mm', min: 0, max: 18, step: 0.1, note: '≈ ' + (0.08 * Math.exp(s.magSet / 4)).toFixed(2) + ' pN · limit 0-18 mm', noteColor: '#4B5563' },
+      { id: 'n-rot', key: 'rotSet', label: 'Rotor', unit: 'turns', min: -50, max: 50, step: 1, note: 'signed turns', noteColor: '#4B5563' },
+      { id: 'n-foc', key: 'focus', label: 'Focus (ASI)', unit: 'µm', min: 40, max: 60, step: 0.1, note: 'window: start ± 2 mm', noteColor: '#4B5563' },
+      { id: 'n-exp', key: 'expo', label: 'Exposure', unit: 'ms', min: 0.1, max: 11, step: 0.1, note: 'immediate', noteColor: '#15803D' },
+      { id: 'n-gain', key: 'gain', label: 'Gain', unit: 'dB', min: 0, max: 12, step: 0.5, note: 'immediate', noteColor: '#15803D' }
+    ];
+    const numRows = numDefs.map((d) => { const f = clampSet(d.key, d.min, d.max), v = s[d.key];
+      return { id: d.id, label: d.label, unit: d.unit, min: String(d.min), max: String(d.max), step: String(d.step), v: String(v), note: d.note, noteColor: d.noteColor,
+        set: (e) => f(parseFloat(e.target.value)), inc: () => f(v + d.step), dec: () => f(v - d.step) }; });
+
+    return {
+      numRows,
+      tirf, setMT: () => set({ expType: 'mt', step: s.step === 'map' || s.step === 'light' ? 'setup' : s.step, view: 'bf' }), setTIRF: () => set({ expType: 'mttirf' }),
+      mtBg: tirf ? '#FFFFFF' : '#16191D', mtFg: tirf ? '#16191D' : '#FFFFFF', tirfBg: tirf ? '#16191D' : '#FFFFFF', tirfFg: tirf ? '#FFFFFF' : '#16191D',
+      typeNote: tirf ? 'MT-TIRF adds Map and Light steps, the EMCCD view, fluorescence signals and FRET.' : 'MT only: bright-field tracking; no EMCCD, mapping or lights.',
+      isMap: s.step === 'map', isLight: s.step === 'light', axisOpts2,
+      layout: s.layout, setLayout: (e) => set({ layout: e.target.value }), chRows, tfRows, mapId,
+      ch1Name: s.chNames[0], ch2Name: s.chNames[1],
+      saveLayout: () => openDlg({ title: 'Save channel layout', folder: 'Lab library\\presets', name: nCh + 'ch layout.mtpreset', files: libFiles.presets, kind: 'preset' }),
+      mapAcquire: () => set({ mapMsg: 'Mapping image acquired (mock): 200 frames averaged.' }),
+      mapFit: () => set({ mapMsg: 'Found 160 spots per channel, paired 152, rejected 8 outliers; ' + s.tfModel.c + ' fit rms 0.08 px.' }),
+      mapCheck: () => set({ mapMsg: 'In-situ check on 18 beads (autofluorescence): residual 0.70 px vs stored 0.62 px → OK.' }),
+      mapImport: () => openDlg({ title: 'Import smCamera map', folder: 'C:\\smCamera\\Common', okLabel: 'Import', isSave: false, files: ['map_Andor1_130100.txt', 'map_Andor1_170725.txt'], kind: 'load' }),
+      mapSave: () => openDlg({ title: 'Save map', folder: 'Lab library\\maps', name: mapId + '.json', files: [mapId + '.json'], kind: 'preset' }),
+      mapLoad: () => openDlg({ title: 'Load map', folder: 'Lab library\\maps', okLabel: 'Load', isSave: false, files: [mapId + '.json', '2026-09-30_2ch_50x.json'], kind: 'load' }),
+      mapMsgOn: !!s.mapMsg, mapMsg: s.mapMsg,
+      lt: { backend: L.backend, nText: String(L.n), repText: String(L.repeat) },
+      setBackend: (e) => setL({ backend: e.target.value }), setN: (e) => { const v = parseInt(e.target.value, 10); if (v > 0) setL({ n: v }); },
+      setRep: (e) => { const v = parseInt(e.target.value, 10); if (v >= 0) setL({ repeat: v }); },
+      emccdHz: eHz.toFixed(1), seqSections, seqPreview, seqTotal: String(full.length), ltCheck, ltCheckBg: ltOk ? '#ECFDF5' : '#FEF3C7', ltCheckFg: ltOk ? '#065F46' : '#78350F',
+      ltImport: () => openDlg({ title: 'Import ShutterManager sequence', folder: 'C:\\ShutterManager\\Shutter', okLabel: 'Import', isSave: false, files: ['2 frames - 1green1red.txt', '4 frames - 1dark1green1dark1red.txt', '10 frames - 1 dark 9 red 1 green.txt'], kind: 'load' }),
+      ltSave: () => openDlg({ title: 'Save illumination sequence', folder: 'Lab library\\sequences', name: 'ALEX green-red.mtseq', files: ['ALEX green-red.mtseq', 'Green only.mtseq'], kind: 'preset' }),
+      tgManG: () => set({ manual: Object.assign({}, s.manual, { g: !s.manual.g }) }), tgManR: () => set({ manual: Object.assign({}, s.manual, { r: !s.manual.r }) }),
+      manGBg: s.manual.g ? '#16A34A' : '#FFFFFF', manGFg: s.manual.g ? '#FFFFFF' : '#16191D', manGT: s.manual.g ? 'ON' : 'off',
+      manRBg: s.manual.r ? '#DC2626' : '#FFFFFF', manRFg: s.manual.r ? '#FFFFFF' : '#16191D', manRT: s.manual.r ? 'ON' : 'off',
+      fd, sigBead: s.sigBead, sigRows,
+      corrA: s.corr.a, corrD: s.corr.d, corrG: s.corr.g,
+      setCorrA: (e) => set({ corr: Object.assign({}, s.corr, { a: e.target.value }) }), setCorrD: (e) => set({ corr: Object.assign({}, s.corr, { d: e.target.value }) }), setCorrG: (e) => set({ corr: Object.assign({}, s.corr, { g: e.target.value }) }),
+      eRaw: eRawV.toFixed(2), eCorr: isFinite(eCorrV) ? eCorrV.toFixed(2) : '—',
+      fpsText: (parseFloat(s.fpsApplied) + 0.0009).toFixed(2), magText: D.mag[i].toFixed(2), forceText: D.force[i].toFixed(2), rotText: (D.rot[i] >= 0 ? '+' : '') + D.rot[i].toFixed(1),
+      devices, steps, stepTitle: titles[s.step], liveLabel: s.live ? 'Pause display' : 'Resume display', toggleLive: () => set({ live: !s.live }),
+      recLabel: s.rec ? '● Recording' : 'Record', recBg: s.rec ? '#B91C1C' : '#2A3038', toggleRec: () => set({ rec: !s.rec }),
+      estop: () => set({ estop: true, run: Object.assign({}, s.run, { on: false }) }), estopOn: s.estop, clearEstop: () => set({ estop: false }),
+      runOn: s.run.on, runBadge: 'Protocol running · loop ' + (s.run.loop + 1) + '/' + s.prot.exp.repeat + ' · step ' + (s.run.idx + 1),
+      viewBF: () => set({ view: 'bf' }), viewFL: () => set({ view: 'fl' }), showBF: s.view === 'bf', showFL: s.view === 'fl',
+      bfBg: s.view === 'bf' ? '#16191D' : '#FFFFFF', bfFg: s.view === 'bf' ? '#FFFFFF' : '#16191D', flBg: s.view === 'fl' ? '#16191D' : '#FFFFFF', flFg: s.view === 'fl' ? '#FFFFFF' : '#16191D',
+      camPreset: 'Preset: ' + s.presets.camera, axisOpts, graphs, beadChips,
+      isSetup: s.step === 'setup', isExplore: s.step === 'explore', isBeads: s.step === 'beads', isCal: s.step === 'cal', isSave: s.step === 'save', isReview: s.step === 'review',
+      showEditor: s.step === 'screen' || s.step === 'exp',
+      presetRows, runCheck: () => set({ checkDone: true }), checkDone: s.checkDone, checkRows,
+      openLibrary: () => openDlg({ title: 'Lab library', folder: 'Lab library', okLabel: 'Close', isSave: false, files: libFiles.protocols.concat(libFiles.presets), kind: 'lib' }),
+      modalOpen: !!m, md, closeModal: () => set({ modal: null }),
+      magSet: s.magSet, magForce: (0.08 * Math.exp(s.magSet / 4)).toFixed(2), setMag: (e) => set({ magSet: parseFloat(e.target.value) }),
+      rotSet: s.rotSet, rotMinus: () => set({ rotSet: s.rotSet - 1 }), rotPlus: () => set({ rotSet: s.rotSet + 1 }),
+      expo: s.expo, setExpo: (e) => set({ expo: parseFloat(e.target.value) }), gain: s.gain, setGain: (e) => set({ gain: parseFloat(e.target.value) }),
+      fpsSel: s.fpsSel, setFps: (e) => set({ fpsSel: e.target.value, camMsg: '' }), expoWarn: s.expo > period, periodText: period.toFixed(2),
+      applyCam: () => set(s.expo > period ? { camMsg: '' } : { fpsApplied: s.fpsSel, camMsg: 'Acquisition paused → applied → read back ' + parseFloat(s.fpsSel).toFixed(2) + ' Hz → restarted (0.4 s). Logged as an event.' }),
+      camMsgOn: !!s.camMsg, camMsg: s.camMsg,
+      saveCamPreset: () => openDlg({ title: 'Save camera preset', folder: 'Lab library\\presets', name: 'Explore ' + s.fpsSel + ' Hz ' + s.expo + ' ms.mtpreset', files: libFiles.presets, kind: 'preset' }),
+      beadRows, runCal: () => set({ calRunning: true, calPct: 0 }), calPct: s.calPct,
+      calText: s.calPct >= 100 ? 'Done: 6 beads calibrated, 60 slices × 100 nm' : (s.calRunning ? 'Slice ' + Math.round(s.calPct * 0.6) + ' / 60' : 'Not run'),
+      ed, kindOpts, addBtns, metricOpts, ruleRows, addRule: () => commit(Object.assign({}, P, { rules: P.rules.concat([{ m: 'hatsym', op: '>=', v: 0.8 }]) })),
+      isBlocks: s.mode === 'blocks', isScript: s.mode === 'script',
+      modeBlocks: () => set({ mode: 'blocks', scriptDraft: null, parseMsg: '' }), modeScript: () => set({ mode: 'script', scriptDraft: null, parseMsg: '' }),
+      blkBg: s.mode === 'blocks' ? '#16191D' : '#FFFFFF', blkFg: s.mode === 'blocks' ? '#FFFFFF' : '#16191D', scrBg: s.mode === 'script' ? '#16191D' : '#FFFFFF', scrFg: s.mode === 'script' ? '#FFFFFF' : '#16191D',
+      scriptText, setScript: (e) => set({ scriptDraft: e.target.value, parseMsg: '' }),
+      parseScript: () => { const r = this.parse(scriptText, P); if (r.errs.length) set({ parseMsg: r.errs.join('; '), parseOk: false }); else { commit(r.P); set({ scriptDraft: null, parseMsg: 'OK: ' + r.P.steps.length + ' steps' + (isScreen ? ', ' + r.P.rules.length + ' rules' : '') + ' (shown as blocks too)', parseOk: true }); } },
+      parseMsg: s.parseMsg, parseColor: s.parseOk ? '#15803D' : '#B91C1C',
+      pvForce: fp.join(' '), pvRot: rp.join(' '), pvFmax: fmax.toFixed(1), pvRmax: String(rmax), pvTotal: tot + ' s per pass × ' + P.repeat,
+      screenRows, passCount: pass, candCount: cands.length,
+      runStart: () => set(s.run.on ? { run: Object.assign({}, s.run, { paused: !s.run.paused }) } : { run: { on: true, paused: false, loop: 0, idx: 0, ticks: 0 } }),
+      runStartLabel: s.run.on ? (s.run.paused ? 'Resume' : 'Pause') : 'Start',
+      runStop: () => set({ run: { on: false, paused: false, loop: 0, idx: 0, ticks: 0 }, draft: null }),
+      runStatus: s.run.on ? ('Loop ' + (s.run.loop + 1) + ' of ' + s.prot.exp.repeat + ', step ' + (s.run.idx + 1) + ' of ' + s.prot.exp.steps.length + (s.run.paused ? ' (paused)' : '')) : 'Not running. Edits apply directly.',
+      draftOn: !!s.draft && !draftTooHigh, draftBlocked: draftTooHigh, draftBlockText: 'Not applied: a step asks for more than ' + forceLimit + ' pN (outside the safe range).',
+      applyDraft: () => { set({ prot: Object.assign({}, s.prot, { exp: s.draft }), draft: null }); addEv('PROTOCOL EDITED (logged with old and new steps)'); },
+      discardDraft: () => set({ draft: null }),
+      nowText: nowT.toFixed(1), evZero: () => addEv('SET ZERO  all beads'), evBridge: () => addEv('BRIDGE STEP  all beads'), evExclude: () => addEv('EXCLUDE 2.0 s  B3'),
+      events: s.events, noEvents: s.events.length === 0,
+      startDir: s.startDir, setStartDir: (e) => set({ startDir: e.target.value }),
+      browseStart: () => openDlg({ title: 'Choose start folder', folder: s.startDir, okLabel: 'Use this folder', isSave: false, files: ['run01', 'run02', 'calibration'], kind: 'dir' }),
+      saveRun: () => openDlg({ title: 'Save run', folder: s.startDir, name: '2026-10-23_nucleosome_run01', files: libFiles.runs, kind: 'run' }),
+      savedOn: !!s.saved, savedText: s.saved,
+      openRun: () => openDlg({ title: 'Open run', folder: s.startDir, okLabel: 'Open', isSave: false, files: libFiles.runs, kind: 'load' }),
+      dlgOpen: !!dl, dlg: dl ? Object.assign({}, dl, { files: dl.files.map((f) => ({ name: f, pick: () => set({ dlg: Object.assign({}, dl, { name: f }) }) })) }) : { title: '', folder: '', name: '', okLabel: '', isSave: false, files: [] },
+      dlgSetFolder: (e) => set({ dlg: Object.assign({}, dl, { folder: e.target.value }) }), dlgSetName: (e) => set({ dlg: Object.assign({}, dl, { name: e.target.value }) }),
+      dlgCancel: () => set({ dlg: null }),
+      dlgOk: () => {
+        if (!dl) return;
+        if (dl.kind === 'run') set({ dlg: null, saved: dl.folder + '\\' + dl.name + '  (.tra, .cal, .h5, .json written - mock)' });
+        else if (dl.kind === 'dir') set({ dlg: null, startDir: dl.folder });
+        else { set({ dlg: null }); if (dl.kind !== 'lib') toast((dl.isSave ? 'Saved ' : 'Loaded ') + (dl.name || 'selection') + ' (mock).'); }
+      },
+      toastOn: !!s.toast, toast: s.toast
+    };
+  }
+}
+</script>
+</body>
+</html>
