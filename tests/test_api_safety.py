@@ -24,9 +24,11 @@ def config(tmp_path, monkeypatch):
     shutil.copytree(REPO_CONFIG, tmp_path / "config")
     monkeypatch.setattr(safety, "CONFIG", tmp_path / "config")
     safety.load_active()
-    estop.clear()
+    with events.as_caller("gui"):
+        estop.clear()
     yield tmp_path / "config"
-    estop.clear()
+    with events.as_caller("gui"):
+        estop.clear()
 
 
 class Motor:
@@ -108,7 +110,8 @@ def test_estop_blocks_acting_calls():
     with pytest.raises(NotReady, match="emergency stop"):
         acting("magnet_position_mm", 5.0, m.do, m.readback, tol=0.01)
     assert m.sent == []
-    estop.clear()
+    with events.as_caller("gui"):
+        estop.clear()
     assert acting("magnet_position_mm", 5.0, m.do, m.readback, tol=0.01) == 5.0
 
 
@@ -263,11 +266,17 @@ def test_shipped_profile_refuses_unverified_limits():
     assert m.sent == []
 
 
-def test_allowed_unverified_limit_logs_warning(session):
-    with events.as_caller("gui"):
-        pending = admin.propose_change(session, safety._thaw(safety.profile()["limits"]), by="admin",
-                                       reason="rotor tests on the bench", allow_unverified=True)
-        assert admin.activate(session, pending, _report())["allow_unverified"] is True
+def _allow_unverified_on_disk(config):
+    """allow_unverified true written straight to the active file (activate() refuses false -> true for now)."""
+    path = config / "safety_profile.json"
+    p = json.loads(path.read_text(encoding="utf-8"))
+    p["allow_unverified"] = True
+    path.write_text(json.dumps(p), encoding="utf-8")
+    safety.load_active()
+
+
+def test_allowed_unverified_limit_logs_warning(config):
+    _allow_unverified_on_disk(config)
     m = Motor()
     n = len(events.events())
     assert acting("rotor_turns", 1.0, m.do, m.readback, tol=0.01, origin=0.0) == 1.0
@@ -287,3 +296,92 @@ def test_load_rejects_profile_without_unverified_policy(config, edit):
     path.write_text(json.dumps(p), encoding="utf-8")
     with pytest.raises((TypeError, ValueError), match="allow_unverified|unverified"):
         safety.load_active()
+
+
+# --- review l2s-wp1-r2 ---------------------------------------------------------------------------------------------
+
+def test_failing_subscriber_isolated_and_device_error_preserved():
+    """(a) one broken subscriber: the others still get every event, the acting call's own DeviceError reaches the
+    caller, and the failure is recorded once per event as `subscriber_error` (no recursion)."""
+    def broken(ev):
+        raise RuntimeError("disk full")
+    seen = []
+    unsub = [events.subscribe(broken), events.subscribe(seen.append)]
+    m = Motor(offset=0.5)
+    n = len(events.events())
+    with pytest.raises(DeviceError, match="5.5"):
+        acting("magnet_position_mm", 5.0, m.do, m.readback, tol=0.01)
+    with pytest.raises(SafetyRefused, match="outside"):
+        acting("magnet_position_mm", 40.0, m.do, m.readback, tol=0.01)
+    for u in unsub:
+        u()
+    new = events.events()[n:]
+    assert [e.kind for e in new] == ["device_error", "subscriber_error", "refused", "subscriber_error"]
+    assert new[1].extra["event_kind"] == "device_error" and "disk full" in new[1].extra["error"]
+    assert new[1].extra["subscriber"].endswith("broken")
+    assert [e.kind for e in seen if e in new] == [e.kind for e in new]   # healthy subscriber got all four
+
+
+def test_subscriber_error_not_recursive():
+    """(a) a subscriber that also fails on `subscriber_error` events does not cause a second record or a loop."""
+    def always_broken(ev):
+        raise ValueError("bad")
+    unsub = events.subscribe(always_broken)
+    n = len(events.events())
+    try:
+        events.log("note")
+    finally:
+        unsub()
+    assert [e.kind for e in events.events()[n:]] == ["note", "subscriber_error"]
+
+
+@pytest.mark.parametrize("who", ["script:x@1", "plugin:det", "ai:autonomous", "ai:run_approved", "unknown"])
+def test_estop_clear_refused_for_untrusted_callers(who):
+    """(b) only 'gui' or 'rig-admin' may release the emergency stop."""
+    estop.engage()
+    with (events.as_caller(who) if who != "unknown" else nullcontext(),
+          pytest.raises(SafetyRefused, match="emergency stop")):
+        estop.clear()
+    assert estop.active() and events.events()[-1].kind == "refused"
+    with events.as_caller("rig-admin"):
+        estop.clear()
+    assert not estop.active()
+
+
+def test_activate_refuses_allow_unverified_false_to_true(session):
+    """(c) false -> true refused for now (owner decision pending); the active profile is unchanged."""
+    with events.as_caller("gui"):
+        pending = admin.propose_change(session, safety._thaw(safety.profile()["limits"]), by="admin",
+                                       reason="rotor tests on the bench", allow_unverified=True)
+        with pytest.raises(SafetyRefused, match="allow_unverified"):
+            admin.activate(session, pending, _report())
+    assert events.events()[-1].kind == "refused"
+    assert safety.profile()["version"] == 1 and safety.profile()["allow_unverified"] is False
+
+
+def test_activate_allows_allow_unverified_true_to_false(config, session):
+    """(c) switching unverified limits OFF is allowed."""
+    _allow_unverified_on_disk(config)
+    with events.as_caller("gui"):
+        pending = admin.propose_change(session, safety._thaw(safety.profile()["limits"]), by="admin",
+                                       reason="bench tests over", allow_unverified=False)
+        assert admin.activate(session, pending, _report())["allow_unverified"] is False
+    assert safety.profile()["version"] == 2
+
+
+def test_huge_int_is_not_finite():
+    """(d) 10**400 does not overflow: SafetyRefused with a `refused` event, nothing sent."""
+    assert not safety._is_number(10**400) and safety._is_number(10**20)
+    m = Motor()
+    for kwargs in ({"value": 10**400, "tol": 0.01}, {"value": 5.0, "tol": 10**400}):
+        n = len(events.events())
+        with pytest.raises(SafetyRefused):
+            acting("magnet_position_mm", kwargs["value"], m.do, m.readback, tol=kwargs["tol"])
+        assert [e.kind for e in events.events()[n:]] == ["refused"]
+    with pytest.raises(SafetyRefused, match="finite"):
+        safety.check("magnet_position_mm", -10**400)
+    with pytest.raises(SafetyRefused, match="not given"):
+        safety.check("stage_x_mm", 10.0, origin=10**400)
+    assert m.sent == []
+    with pytest.raises(DeviceError, match="not a finite number"):
+        acting("magnet_position_mm", 5.0, m.do, lambda: 10**400, tol=0.01)

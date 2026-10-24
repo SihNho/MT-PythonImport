@@ -137,6 +137,25 @@ function writes it (the write path lives in `mtpy.admin`, outside the public API
   (else `SafetyRefused`, nothing sent); an exception from the send or the read-back, or a read-back that is not a
   finite number, becomes `DeviceError(device, command, hint)` with a `device_error` event; only a read-back that
   passed is logged as `act`.
+- **Review l2s-wp1-r2 fixes:** `events.log` never raises because of a subscriber - a failing subscriber does not stop
+  delivery to the others or reach the acting call (its own `SafetyRefused` / `DeviceError` is preserved), and each
+  failure is recorded once as a `subscriber_error` event (not recursively). `estop.clear()` is refused
+  (`SafetyRefused` + `refused` event) for `script:`, `plugin:`, `ai:` and `unknown` callers; only `gui` (the
+  operator's release button) and `rig-admin` may clear - a guard against mistakes, not protection (phase 8).
+  `activate()` refuses a candidate that switches `allow_unverified` from false to true (temporary, until the owner
+  decides whether that needs its own re-commissioning report); true -> false is allowed. An int too large for a
+  float (e.g. `10**400`) counts as not finite: `SafetyRefused` with a `refused` event, never `OverflowError`.
+
+**Requirements for WP2 (device layer):**
+- The session-start `origin` for relative windows (`relative_to: "session_start"`, e.g. the ASI stage, the rotor) is
+  read and kept by the device layer at session start and passed to `acting()` by the device function; a caller
+  (script, plug-in, AI) never supplies it.
+- The read-back tolerance `tol` is decided by each device implementation (its own resolution and settling), bounded
+  internally by that implementation; it is not a caller argument and not a rig safety profile entry.
+- The caller context travels with each request: the device service runs every request in the caller's context
+  (`contextvars.copy_context()` taken per request and per thread, then `ctx.run(...)`), so events logged on the
+  device-service thread carry the real caller, never `unknown` or another request's caller.
+- WP2 is simulators only; it is not approval to connect real devices.
 
 ## 4. Example: the enzyme-cleavage experiment as a Python experiment script (level 3)
 ```python

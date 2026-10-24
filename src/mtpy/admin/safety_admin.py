@@ -103,7 +103,8 @@ def activate(session, pending, recommissioning_report):
     """Make a pending profile active after its re-commissioning.
 
     The candidate is re-validated and its diff against the ACTIVE profile is recomputed here; the report must show
-    every new or changed limit as checked. A candidate not based on the active version is refused. The old version
+    every new or changed limit as checked. A candidate not based on the active version is refused, and so (for now)
+    is one that switches allow_unverified from false to true; true -> false is allowed. The old version
     stays in the history folder; the new one is written there and becomes the active file.
     """
     _require_session(session, "activate")
@@ -118,6 +119,13 @@ def activate(session, pending, recommissioning_report):
         safety._validate(p)
     except (TypeError, ValueError) as e:
         raise SafetyRefused(f"the proposed profile is not valid: {e}") from e
+    if p["allow_unverified"] and not cur["allow_unverified"]:
+        # Temporary (WP1 review l2s-wp1-r2): until the owner decides whether switching unverified limits ON needs
+        # its own re-commissioning report, activate() refuses it. Switching them OFF (true -> false) is allowed.
+        events.log("refused", request={"safety_profile": "activate", "version": p["version"]},
+                   reason="allow_unverified false -> true is refused until the owner sets its re-commissioning policy")
+        raise SafetyRefused("switching allow_unverified from false to true is refused for now (owner decision "
+                            "pending on whether it needs a re-commissioning report); true -> false is allowed")
     if p.get("base_version") != cur["version"] or p["version"] != cur["version"] + 1:
         raise SafetyRefused(f"the proposal was made against profile v{p.get('base_version')}, "
                             f"but v{cur['version']} is active now; propose again")

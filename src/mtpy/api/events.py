@@ -50,14 +50,39 @@ _events = []
 _subscribers = []
 
 
-def log(kind, request=None, readback=None, **extra):
-    """Append an event (caller from the current context), hand it to every subscriber, return it."""
-    ev = Event(time.time(), kind, caller(), request, readback, extra)
+def _append(ev):
     with _lock:
         _events.append(ev)
-        subs = list(_subscribers)
+        return list(_subscribers)
+
+
+def log(kind, request=None, readback=None, **extra):
+    """Append an event (caller from the current context), hand it to every subscriber, return it.
+
+    Never raises because of a subscriber: an exception from one subscriber does not stop delivery to the others and
+    does not reach the acting call (whose own SafetyRefused / DeviceError is what the caller must see). Each failure
+    is recorded once as a `subscriber_error` event; that event is delivered to the subscribers that did not fail,
+    and a failure while delivering it is swallowed, not recorded again (no recursion).
+    """
+    ev = Event(time.time(), kind, caller(), request, readback, extra)
+    subs = _append(ev)
+    failed = []
     for fn in subs:
-        fn(ev)
+        try:
+            fn(ev)
+        except Exception as e:  # noqa: BLE001 - a broken subscriber must never break the acting call
+            failed.append((fn, e))
+    for fn, e in failed:
+        err = Event(time.time(), "subscriber_error", ev.caller, None, None,
+                    {"subscriber": getattr(fn, "__qualname__", repr(fn)), "event_kind": ev.kind,
+                     "error": f"{type(e).__name__}: {e}"})
+        _append(err)
+        for other in subs:
+            if all(other is not f for f, _ in failed):
+                try:
+                    other(err)
+                except Exception:  # noqa: BLE001, S110 - recorded once only, never recursively
+                    pass
     return ev
 
 

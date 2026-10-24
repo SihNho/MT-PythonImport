@@ -45,8 +45,14 @@ def _history(version):
 
 
 def _is_number(v):
-    """A finite real number (numpy scalars included), not a bool."""
-    return isinstance(v, numbers.Real) and not isinstance(v, bool) and math.isfinite(float(v))
+    """A finite real number (numpy scalars included), not a bool. An int too large for a float (e.g. 10**400) is
+    treated as not finite instead of raising OverflowError."""
+    if not isinstance(v, numbers.Real) or isinstance(v, bool):
+        return False
+    try:
+        return math.isfinite(float(v))
+    except (OverflowError, ValueError):
+        return False
 
 
 def unverified_of(limits):
