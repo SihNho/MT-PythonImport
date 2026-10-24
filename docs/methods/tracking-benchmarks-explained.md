@@ -145,6 +145,21 @@ images carry noise that averages the rounding out; with it the current method's 
   interpolation no slice-periodic error appeared in simulation. A slow piezo scan of a stuck bead on the rig would
   settle it before any change.
 
+## 6a. Planned rig test (later): exposure time × tracking method
+Owner 2026-10-24: "IR camera acquisition 시간(frame은 고정하더라도) 조절할 수 있는걸로 알고 있음. 지금은 말고 나중에 실제 비드
+트래킹 노이즈 한번 비교하면 좋겠음. (Reference bead, magnetic bead 둘 다) 방법론도 마찬가지로". Not started.
+- **Variable:** JAI exposure time at a fixed frame rate (e.g. 1, 2, 5, 10 ms; exposure must stay below the frame period).
+- **Beads:** the reference bead (pure tracking noise) and tethered magnetic beads (real motion; motion blur matters).
+- **Methods:** current, `polar3`, `area4` (and any later candidate), all run offline on the same recordings, so rig time
+  scales only with the number of exposure settings.
+- **Light level:** two series, (a) illumination unchanged (shorter exposure = fewer photons) and (b) mean image
+  brightness kept constant with illumination or gain, to separate "less blur" from "fewer photons".
+- **Measures:** frame-to-frame noise and Allan deviation [17] (reference bead, raw and drift-corrected); for tethered
+  beads the x / y variance against the exposure-time correction of Wong & Halvorsen [21] (this also affects force
+  calibration from fluctuations).
+- **Design:** same field and beads; exposure settings in alternating order (A-B-B-A) to cancel drift; rig rules apply
+  (assembled state, lock, camera only unless a force is needed).
+
 ## 7. Limits
 - One recording and one optical setup (50x, binning 2, nominal 200 nm/px; pixel size not yet measured).
 - Synthetic beads are perfectly round on a flat background with Gaussian noise; no neighbours, no illumination
@@ -167,6 +182,7 @@ images carry noise that averages the rounding out; with it the current method's 
 10. Parthasarathy R. Rapid, accurate particle tracking by calculation of radial symmetry centers. Nat Methods 9:724-726 (2012). https://doi.org/10.1038/nmeth.2071
 17. Lansdorp BM, Saleh OA. Power spectrum and Allan variance methods for calibrating single-molecule video-tracking instruments. Rev Sci Instrum 83:025115 (2012). https://pmc.ncbi.nlm.nih.gov/articles/PMC3306435
 20. Burov S et al. Single-pixel interior filling function (SPIFF) for pixel-locking correction. https://www.ncbi.nlm.nih.gov/pmc/articles/PMC5707392/
+21. Wong WP, Halvorsen K. The effect of integration time on fluctuation measurements: calibrating an optical trap in the presence of motion blur. Opt Express 14:12517 (2006). https://arxiv.org/abs/physics/0607156
 
 Numbering follows the literature survey's list. Project sources: decision 0003; `tools/xy_passes_bench.py`;
 `tools/radial_profile_bench.py`; [rig-facts.md](../rig-facts.md) (optics, reference bead).
