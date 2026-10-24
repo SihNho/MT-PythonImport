@@ -101,6 +101,59 @@ def test_slow_or_failing_motor_never_blocks_acquisition(cam, monkeypatch):
     api.acq.stop()
 
 
+def test_poller_reading_counts_from_its_completion_time(cam, tmp_path, monkeypatch):
+    """Review l2s-wp6-r1: a poller read held up by a signal (it returns the marker 7.777) is not used for the frames
+    received while it was outstanding: `t_read` is the completion time (`t_request` is kept apart) and /mt shows the
+    value only from that time on."""
+    armed, entered, release = threading.Event(), threading.Event(), threading.Event()
+    real = api.magnet.position
+
+    def position():
+        if armed.is_set() and threading.current_thread().name == "acq-motor-poll" and not entered.is_set():
+            entered.set()
+            assert release.wait(5)
+            real()
+            return 7.777
+        return real()
+    monkeypatch.setattr(api.magnet, "position", position)
+    api.acq.start(record=True, name="late", folder=tmp_path)
+    api.acq.wait_frames(5, 5)
+    armed.set()
+    assert entered.wait(5)
+    api.acq.wait_frames(20, 5)                                   # frames recorded while the read is outstanding
+    release.set()
+    api.acq.wait_frames(20, 5)
+    api.acq.stop()
+    run = read_run(tmp_path / "late.h5")
+    rd = run["events"]["motor_reading"]
+    i = [k for k, v in enumerate(rd["readback"]) if v == 7.777]
+    assert len(i) == 1
+    t_req, t_read = rd["data"][i[0]]["t_request"], rd["data"][i[0]]["t_read"]
+    t = run["mt"]["t_host"] + run["attrs"]["t0_unix"]
+    mag = run["mt"]["magnet_mm"]
+    during = (t >= t_req) & (t < t_read)
+    assert during.sum() >= 10 and not (mag[during] == 7.777).any()
+    assert (mag == 7.777).any() and (t[mag == 7.777] >= t_read).all()
+
+
+def test_poller_read_does_not_clear_an_error_state(cam, monkeypatch):
+    """Review l2s-wp6-r1: after a failed move the magnet shows `error`; the poller's successful reads keep it so
+    (U8); a real command that succeeds clears it."""
+    api.acq.start(record=False)
+    dev = api.devices.service("magnet").device
+    monkeypatch.setattr(dev, "move_to", lambda *a: (_ for _ in ()).throw(RuntimeError("drive fault (test)")))
+    with pytest.raises(DeviceError, match="drive fault"):
+        api.magnet.move_to(2.0).wait(5)
+    assert api.devices.status()["magnet"]["state"] == "error"
+    r0 = api.acq.status()["motor_poll"]["reads"]
+    _until(lambda: api.acq.status()["motor_poll"]["reads"] >= r0 + 6)
+    assert api.devices.status()["magnet"]["state"] == "error"
+    assert api.acq.status()["motor_poll"]["errors"] == {}       # the reads themselves succeeded
+    api.magnet.position()                                        # a real command
+    assert api.devices.status()["magnet"]["state"] == "connected"
+    api.acq.stop()
+
+
 # --- storage errors in the file -------------------------------------------------------------------------------------
 def test_sink_error_is_stored_in_the_file(cam, tmp_path, monkeypatch):
     api.acq.start(record=True, name="err", folder=tmp_path)

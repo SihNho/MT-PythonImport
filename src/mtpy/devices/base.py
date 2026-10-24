@@ -20,6 +20,7 @@ import threading
 import time
 from concurrent.futures import Future
 from concurrent.futures import TimeoutError as FutureTimeout
+from contextlib import contextmanager
 from typing import ClassVar
 
 from mtpy.api import estop, events
@@ -29,6 +30,20 @@ from mtpy.api.errors import DeviceError, NotReady, Timeout
 # {name: (kind, guarded_while_recording)}.
 IMMEDIATE = "immediate"          # applied at once (exposure, gain, motion)
 NEEDS_PAUSE = "needs_pause"      # stop acquisition, apply, read back, restart (ROI, frame rate)
+
+_passive = contextvars.ContextVar("mtpy_passive_reads", default=False)
+
+
+@contextmanager
+def passive_reads():
+    """Calls made inside this block (the acquisition's motor poller, review l2s-wp6-r1) do not CLEAR the U8 state
+    when they succeed: a device marked error (e.g. after a failed move) or slow stays so until a real command
+    succeeds. A failing passive call still marks the error, as any other call."""
+    token = _passive.set(True)
+    try:
+        yield
+    finally:
+        _passive.reset(token)
 
 
 class Device:
@@ -191,9 +206,10 @@ class DeviceService:
             raise
         except Exception as e:  # noqa: BLE001 - any device failure becomes a DeviceError with a hint
             self._fail(what, f"{type(e).__name__}: {e} - {self.device.hint}", e)
-        dt = time.monotonic() - t0
-        self.last_reply_t, self.last_reply_ms = time.time(), dt * 1000.0
-        self._failed, self._slow = False, dt > self.slow_s
+        if not _passive.get():                # a poller read never clears an error / slow state (l2s-wp6-r1)
+            dt = time.monotonic() - t0
+            self.last_reply_t, self.last_reply_ms = time.time(), dt * 1000.0
+            self._failed, self._slow = False, dt > self.slow_s
         return result
 
     def _fail(self, what, hint, cause=None):

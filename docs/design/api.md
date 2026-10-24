@@ -685,6 +685,28 @@ gain_dB]`; a late off with written rows beyond it: `test_late_off_reports_writte
   service queue with moves (interleaved, never on the frame path); the skeleton's profile v4 and force table are
   TEST ONLY and live only in its output folder.
 
+**Review l2s-wp6-r1 fixes (simulators and files only):**
+1. **Skeleton destination:** `walking_skeleton.check_destination` refuses (ValueError) BEFORE anything is written
+   when `<out>/config` is the repository's `config/`, lies inside it or contains it, or already exists; nothing is
+   ever deleted (`rmtree` removed). Tests `test_destination_overlapping_the_repository_config_is_refused_before_writing`,
+   `test_existing_config_in_the_destination_is_refused_and_kept`.
+2. **Poller time:** `t_read` is the read's COMPLETION time; `t_request` (when it was asked) is a separate field, not
+   used for `/mt`. Test `test_poller_reading_counts_from_its_completion_time` (a read held by a signal is not shown on
+   the frames received while it was outstanding).
+3. **Test filter:** `_no_poll` leaves out only `motor_reading`; `motor_reading_error` stays visible.
+4. **U8 state:** poller reads run in `mtpy.devices.base.passive_reads()`: a successful poll never clears an error or
+   slow state (a failing one still marks it). Test `test_poller_read_does_not_clear_an_error_state`.
+5. **E-stop variant:** a 20th check - at least 2 new magnet readings with distinct completion times after the stop,
+   and `/mt` after the stop shows those readings (magnet only).
+
+**Carried (agreed in l2s-wp6-r1):**
+- **Phase 6:** the MATLAB 2026 run of `matlab/read_mtpy_h5.m`, with the crash-file rule (`frames_written`) added to
+  it; the in-process `api.events` list grows without bound (soak test / bounded history); the real PI `POS?` reply
+  time and the device-queue occupancy of the poller next to moves; whether and how `t_request` is used.
+- **Minor:** the skeleton check name "10 mm at the 1 pN hold" (its test reads the ramp maximum, 11.111 mm); the
+  `move mm=3` step's position is not checked by the skeleton.
+- **Phase 8:** show the value-only mid-run edit rule in the GUI.
+
 ## 4. Example: the enzyme-cleavage experiment as a Python experiment script (level 3)
 ```python
 from mtpy import api   # api.VERSION >= 0.1

@@ -96,7 +96,9 @@ class Report:
 
 
 def _test_only_profile(r):
-    """Profile v4 in the temporary config copy, through the admin path only (open -> propose -> activate)."""
+    """Shipped version + 1 in the temporary config copy, through the admin path only (open -> propose ->
+    activate)."""
+    shipped = safety.profile()["version"]
     with events.as_caller("rig-admin"):
         s = safety_admin.open_admin_session("TEST ONLY walking skeleton on the simulators (temporary config copy)")
         lim = safety._thaw(safety.profile()["limits"])
@@ -109,12 +111,14 @@ def _test_only_profile(r):
             notes="TEST ONLY: simulators in a temporary config copy; nothing was moved or read back on the rig")
         p = safety_admin.activate(s, pending, rep)
     r.check("TEST-ONLY profile activated through the admin path in the temporary copy",
-            p["version"] == 4 and Path(safety.CONFIG).resolve() != (REPO / "config").resolve(),
+            p["version"] == shipped + 1 and Path(safety.CONFIG).resolve() != (REPO / "config").resolve(),
             f"v{p['version']} in {safety.CONFIG}")
 
 
 def _shipped_refuses(r, script):
-    """With the shipped profile (v3, unchanged copy): the protocol is refused before anything moves."""
+    """With the shipped profile (unchanged copy; v4 has no magnet force maximum): the protocol, which sets forces,
+    is refused before anything moves."""
+    shipped = json.loads((REPO / "config" / "safety_profile.json").read_text(encoding="utf-8"))["version"]
     p0, n = api.magnet.position(), len(events.events())
     try:
         api.protocol.run(script)
@@ -123,8 +127,8 @@ def _shipped_refuses(r, script):
         refused, why = True, str(e).splitlines()[1] if len(str(e).splitlines()) > 1 else str(e)
     moved = abs(api.magnet.position() - p0) > 0.005
     acts = [e for e in events.events()[n:] if e.kind == "act"]
-    r.check("shipped profile v3 refuses the protocol before anything moves",
-            refused and not moved and not acts and safety.profile()["version"] == 3, why)
+    r.check("shipped profile refuses the protocol before anything moves",
+            refused and not moved and not acts and safety.profile()["version"] == shipped, f"v{shipped}: {why}")
 
 
 def _engage_mid_move(r, target_lo=11.0, target_hi=16.0, timeout_s=20.0):
@@ -139,9 +143,24 @@ def _engage_mid_move(r, target_lo=11.0, target_hi=16.0, timeout_s=20.0):
     return None
 
 
+def check_destination(out):
+    """Review l2s-wp6-r1: refuse BEFORE anything is written when the destination config folder `<out>/config` is the
+    repository's `config/`, lies inside it or contains it, or already exists (it is never deleted or replaced)."""
+    cfg, repo_cfg = (Path(out) / "config").resolve(), (REPO / "config").resolve()
+    if cfg == repo_cfg or cfg.is_relative_to(repo_cfg) or repo_cfg.is_relative_to(cfg):
+        raise ValueError(f"refused: the skeleton's config copy {cfg} would overlap the repository's {repo_cfg}; "
+                         "choose an output folder outside the repository's config/")
+    if cfg.exists():
+        raise ValueError(f"refused: {cfg} already exists; the skeleton never deletes or replaces a config folder - "
+                         "use a new output folder")
+    return cfg
+
+
 def run(out, fixture=FIXTURE, estop_variant=False, name=None):
-    """Run the skeleton into the folder `out` (created; must not hold the run file). Returns the Report."""
+    """Run the skeleton into the folder `out` (created; must not hold the run file or a `config` folder). Returns
+    the Report. ValueError, with nothing written, when the destination is refused (check_destination)."""
     out = Path(out)
+    cfg = check_destination(out)
     out.mkdir(parents=True, exist_ok=True)
     name = name or ("skeleton_estop" if estop_variant else "skeleton")
     r = Report()
@@ -152,10 +171,7 @@ def run(out, fixture=FIXTURE, estop_variant=False, name=None):
         return r
     shipped = _sha(REPO / "config")
     saved = (safety.CONFIG, safety._active, api.beads._selected)
-    cfg = out / "config"
-    if cfg.exists():
-        shutil.rmtree(cfg)
-    shutil.copytree(REPO / "config", cfg)
+    shutil.copytree(REPO / "config", cfg)              # cfg does not exist (check_destination): never overwritten
     prot = out / f"{name}.mtprot"
     prot.write_text(PROTOCOL_ESTOP if estop_variant else PROTOCOL, encoding="utf-8")
     h5 = out / f"{name}.h5"
@@ -260,6 +276,15 @@ def _verify_file(r, h5, out, cal, estop_variant, t_estop):
                 f"steps {steps}, {int(after.sum())} rows after the stop")
         r.check("e-stop in the file: the magnet column is constant after the stop",
                 np.ptp(mag[after]) < 0.01 and mag[after].max() < 17.0, f"{mag[after].min():.4f}..{mag[after].max():.4f}")
+        # review l2s-wp6-r1: the poller kept reading the magnet after the stop (>= 2 new readings with distinct
+        # completion times, magnet only) and those readings are what /mt shows after them
+        t_reads = sorted({d["t_read"] for d in ev["motor_reading"]["data"]
+                          if d["device"] == "magnet" and not d.get("repeated") and d["t_read"] > t_estop})
+        shown = sorted({t for t in (mt["magnet_t"][after] + t0) if t > t_estop})
+        r.check("e-stop: >= 2 new magnet readings after the stop, shown in /mt",
+                len(t_reads) >= 2 and len(shown) >= 2
+                and all(np.min(np.abs(np.asarray(t_reads) - t)) < 1e-5 for t in shown),
+                f"{len(t_reads)} readings after the stop, {len(shown)} of them in /mt")
         acts_after = [e for e in ev.get("act", {}).get("t_host", []) if e + t0 > t_estop]
         r.check("e-stop in the file: no move read-back after the stop", not acts_after)
         r.check("e-stop: 'mark never' not reached", "mark" not in ev or "never" not in

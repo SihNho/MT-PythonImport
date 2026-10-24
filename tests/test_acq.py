@@ -62,9 +62,10 @@ def _offline(files, results, beads):
 
 
 def _no_poll(evs):
-    """Events without the motor poller's readings (WP6): they arrive at ~20 Hz from their own thread while
-    acquisition runs, so a test that lists event kinds leaves them out."""
-    return [e for e in evs if e.kind not in ("motor_reading", "motor_reading_error")]
+    """Events without the motor poller's normal readings (WP6): they arrive at ~20 Hz from their own thread while
+    acquisition runs, so a test that lists event kinds leaves them out. A `motor_reading_error` stays visible
+    (review l2s-wp6-r1)."""
+    return [e for e in evs if e.kind != "motor_reading"]
 
 
 def _run(n_frames, timeout_s=30, **start):

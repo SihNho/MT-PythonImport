@@ -19,7 +19,10 @@
   as a `motor_reading` event with the newest frame's segment and buffer number (decision 0005: each motor reading is
   stored with the latest JAI frame number). It is a latest-value reader on its own thread: the frame path never
   calls it and never waits for it; a slow or failed device delays only the poller. The HDF5 writer fills `/mt`
-  `magnet_mm` / `rotor_deg` from these readings (the last one before each frame's PC receive time).
+  `magnet_mm` / `rotor_deg` from these readings (the last one COMPLETED before each frame's PC receive time:
+  `t_read` = completion, `t_request` = when the read was asked, kept for reference only; review l2s-wp6-r1). A
+  successful poll does not touch the device's U8 state (`passive_reads`): an error stays shown until a real command
+  succeeds.
 """
 import contextvars
 import threading
@@ -28,6 +31,7 @@ import time
 import numpy as np
 
 from mtpy.acq import Pipeline, make_kernel
+from mtpy.devices.base import passive_reads
 
 from . import beads as _beads
 from . import events
@@ -47,7 +51,8 @@ MOTOR_POLL_S = 0.05   # 20 readings per second per motor (LabVIEW reads them eve
 class _MotorPoller:
     """Reads the magnet and rotor positions through the public API on its own thread (latest value; never on the
     frame path). Each reading is a `motor_reading` event: request {"quantity"}, readback = the position (mm, turns),
-    `t_read` = PC time of the read, plus the newest frame's segment / buffer number. A device that fails is read
+    `t_read` = PC time the read completed, `t_request` = when it was asked, plus the newest frame's segment / buffer
+    number. A device that fails is read
     again after `retry_s` (one `motor_reading_error` event per new error text, not one per poll)."""
 
     _READ = (("magnet", "magnet_position_mm", lambda: _magnet.position()),
@@ -71,29 +76,31 @@ class _MotorPoller:
             now = time.monotonic()
             if now < self._next.get(name, 0.0):
                 continue
-            t = time.time()
+            t_request = time.time()
             try:
-                v = read()
+                with passive_reads():         # a successful poll never clears an error / slow state (U8)
+                    v = read()
             except MtpyError as e:
                 msg = f"{type(e).__name__}: {e}"
                 if self.errors.get(name) != msg:
                     events.log("motor_reading_error", device=name, error=msg, **self.pipe.last_record())
                 self.errors[name], self._next[name] = msg, now + self.retry_s
                 continue
+            t = time.time()                   # review l2s-wp6-r1: the reading's time is when the read COMPLETED
             self.errors.pop(name, None)
-            self.latest[name] = (t, v)
+            self.latest[name] = (t, v, t_request)
             self.reads += 1
             events.log("motor_reading", request={"quantity": quantity}, readback=v, device=name, t_read=t,
-                       **self.pipe.last_record())
+                       t_request=t_request, **self.pipe.last_record())
 
     def relog(self):
         """Log the latest reading of each motor again (same `t_read`), e.g. right after recording is switched on,
         so the run file has a reading in force before its first recorded frame."""
         for name, quantity, _ in self._READ:
             if name in self.latest:
-                t, v = self.latest[name]
+                t, v, t_request = self.latest[name]
                 events.log("motor_reading", request={"quantity": quantity}, readback=v, device=name, t_read=t,
-                           repeated=True, **self.pipe.last_record())
+                           t_request=t_request, repeated=True, **self.pipe.last_record())
 
     def _loop(self):
         while not self._stop.wait(self.period_s):
@@ -110,7 +117,7 @@ class _MotorPoller:
 
     def status(self):
         return {"period_s": self.period_s, "reads": self.reads, "errors": dict(self.errors),
-                "latest": {n: {"t": t, "value": v} for n, (t, v) in self.latest.items()}}
+                "latest": {n: {"t": t, "value": v, "t_request": tr} for n, (t, v, tr) in self.latest.items()}}
 
 
 def running():

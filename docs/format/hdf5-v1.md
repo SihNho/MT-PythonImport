@@ -246,7 +246,7 @@ arrival order); `event_id` is the order of arrival at the writer, not event orde
 kinds as logged (`act`, `refused`, `recording`, `segment`, `acquisition`, `mark`, `guarded_change`, ...) plus the
 writer's `writer_refused` and `writer_tracking_error`; the named tables below are the target. *WP6:* `motor_reading`
 (the acquisition's magnet / rotor poller: `request.quantity`, `readback` = position in mm / turns, `data.t_read` =
-PC time of the read, `buffer_number` = newest frame at the read; `/mt` `magnet_mm` / `rotor_deg` come from these and
+PC time the read COMPLETED (used for `/mt`), `data.t_request` = when it was asked, `buffer_number` = newest frame at the read; `/mt` `magnet_mm` / `rotor_deg` come from these and
 the moves' `act` read-backs), `motor_reading_error`, `sink_error` (caller `writer`; `data`: item, error, event_kind)
 and `protocol` action `warning` (before `zero`).
 

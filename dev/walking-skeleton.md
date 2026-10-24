@@ -23,7 +23,9 @@ fixture).
 - `<name>.h5` and `<name>.meta.json` - the run file and its metadata copy;
 - `<name>-000` - the `.tra` export; `<name>.cal` - the `.cal` export (byte-identical to `cal002`).
 
-A second run into the same folder is refused (a data file is never overwritten): use a new folder.
+A second run into the same folder is refused before anything is written (`<out>/config` exists; a config folder is
+never deleted or replaced), and so is any `--out` whose `config` would be, lie inside or contain the repository's
+`config/`: use a new folder outside the repository's `config/`.
 
 ## Steps and checks
 See the module docstring of `tools/walking_skeleton.py` and "Implemented in WP6" in
