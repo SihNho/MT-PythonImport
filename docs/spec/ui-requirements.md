@@ -473,6 +473,27 @@ U34's computed dye height is used, if at all, only as a focus target.)
 - **Open:** the defocus-vs-intensity measurement (fluorescent beads or a dye sample; defocus 0, ±100, ±200, ±300,
   ±400 nm; intensity vs ROI size) decides between the default and the fallback.
 
+**U36 - flexible fluorescence measurements beyond smFRET.** Owner 2026-10-24: "실험을 하다 보면 예외적인 측정이 필요한
+경우가 많은듯. 예를 들면, 저번 승원이 실험만 봐도: FRET 측정 자체보다는, digestive enzyme이 작용하며 특정 부위의 DNA가
+뜯어져 나가는 시점을 측정하기 위해 Cy3 살아있고, 이후 Cy5가 없어지는 spot 그리고 시점을 측정 했음. 기존의 smFRET 방식과는
+다름. 일종의 유연성이 필요하다는 건데, 우리 MT-TIRF 시스템에도 그와 관련된게 필요할듯. 실험 자체를 스크립트 수정이 가능하다면
+그것도 좋고, 아니면 최대한 유연한 옵션을 제공하는 것도 때로는 필요할듯"
+- **Raw signals always**: per spot and frame, donor-excited donor, donor-excited acceptor, acceptor-excited acceptor,
+  background and bead autofluorescence. FRET is one derived value among many.
+- **Observables** chosen per experiment: FRET E, stoichiometry, single-channel intensity, ratios, **presence (on / off
+  by threshold or step detection)**, user formulas or Python functions.
+- **Spot rules and event rules**, e.g. the enzyme-cleavage case: select spots with Cy3 and Cy5 both present at start;
+  event = Cy5 disappears while Cy3 stays; output per spot: event time, force and extension at that time (MT), bead id;
+  export to MATLAB. Live event counts; events can drive conditional protocol steps (0012).
+- **Bleaching vs real events**: sparse red excitation (e.g. 1 frame in 10, U24) to probe Cy5 presence; a no-enzyme
+  control under the same illumination for the bleaching lifetime; the Cy3-survival rule separates molecule loss.
+- Two levels: UI composition with the same block / script editors as protocols (U19), saved as shared **analysis
+  recipes** (e.g. "smFRET basic", "enzyme cleavage time"); scripts in the defined grammar and Python plug-ins (0013)
+  for anything else. A whole experiment type = **protocol + illumination sequence + analysis recipe**, saved and shared
+  as one bundle.
+- **Open:** how that experiment was analysed (manual picking? scripts?), and whether it used magnetic force or TIRF
+  only (a "fluorescence only" mode may be needed).
+
 **U11 - UI language.** Owner 2026-10-22: "글자는 무조건 영어." All UI text in English only.
 
 **Note - local AI model.** Owner 2026-10-22: "Laya 내장하는거는 염두에 두고 있음. 로컬로 트레이닝한다면 내 계정이
