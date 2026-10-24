@@ -17,11 +17,15 @@ thread, ONLY through the public function layer `mtpy.api` - it never calls a dev
   finishes; the next step does not start until resume. The magnet stays where it is.
 - **Waits:** every move is waited for with `Motion.wait` in short slices (so stop and the emergency stop are seen)
   up to `motion_timeout_s`; past it the move is cancelled and the run fails with Timeout.
-- **Mid-run edits (U18, minimal):** an edit checked by `api.protocol.edit` is applied at the next step boundary (or
-  loop-iteration boundary); steps not started take it at once, steps already done in this loop pass take it in the
-  next pass (each statement is looked up in the version in force when it starts). The running step is locked. An
-  edit that changes the kind of any statement already started on the current path (or the loops around it) is
-  refused at the boundary with a `protocol_edit` event and the run continues unchanged.
+- **Mid-run edits (U18, minimal; review l2s-wp5-r1):** only in-place VALUE edits: the new version must keep the
+  count, kind, form and nesting of every statement. It is applied at the next step boundary (or loop-pass
+  boundary); steps not started take it at once, steps already done in this loop pass take it in the next pass (each
+  statement is looked up in the version in force when it starts). The running step is locked. Any structural
+  change (a statement inserted, deleted or moved, anywhere - also an identical repeated line, also after the running
+  position) is refused with a `protocol_edit` event and the run continues unchanged.
+- **Run scope (review l2s-wp5-r1):** the whole run runs inside `api.estop.run_scope(generation at start)`, so every
+  request of the run is void - nothing is sent - once an emergency stop was engaged after the run started, even when
+  the request itself was made after the release (e.g. during a step-start event or a device pre-read).
 """
 import math
 import threading
@@ -29,7 +33,7 @@ import time
 
 from mtpy import api
 
-from .check import walk
+from .check import structure_diff, walk
 
 FINAL = ("completed", "stopped", "refused", "failed", "aborted")
 
@@ -63,6 +67,10 @@ class Engine:
     # --- control (any thread) -------------------------------------------------------------------------------------
     def start(self):
         self._gen = api.estop.generation()           # an emergency stop from here on aborts the run for good
+        if any(x.kind == "focus" for x in walk(self.script.body)):
+            # `focus um=` is relative to this; read before the thread starts, so a mid-run edit is always checked
+            # against the same reference the engine uses (review l2s-wp5-r1). None = this run has no reference.
+            self.focus_z0 = api.focus.position()
         self.state, self.t_start = "running", time.time()
         threading.Thread(target=self._main, name="protocol-engine", daemon=True).start()
 
@@ -98,15 +106,15 @@ class Engine:
 
     # --- engine thread --------------------------------------------------------------------------------------------
     def _main(self):
-        with api.events.as_caller(self.caller):
+        # run_scope: every acting call of this run (moves, their pre-reads and the device sends) is void once the
+        # run's generation is no longer current, composed with each request's own generation (review l2s-wp5-r1)
+        with api.events.as_caller(self.caller), api.estop.run_scope(self._gen):
             s = self.script
             api.events.log("protocol", action="start", name=s.name, file=s.file, sha256=s.sha256, grammar=s.grammar,
                            type=s.meta.get("type"), text=s.text, rules=len(s.rules),
-                           rules_evaluated=False if s.rules else None)
+                           rules_evaluated=False if s.rules else None, focus_z0=self.focus_z0)
             state, reason = "completed", None
             try:
-                if any(x.kind == "focus" for x in walk(s.body)):
-                    self.focus_z0 = api.focus.position()          # `focus um=` is relative to this
                 self._block(0, ())
             except _End as e:
                 state, reason = e.state, e.reason
@@ -139,15 +147,15 @@ class Engine:
             body = body[idx].body
         return body
 
-    def _boundary(self, running_innermost=False):
+    def _boundary(self):
         """Between steps (or loop passes): stop / emergency stop, a pending edit, pause."""
         self._check()
-        self._apply_edit(running_innermost)
+        self._apply_edit()
         while self._pause.is_set():
             self._set_state("paused")
             time.sleep(0.02)
             self._check()
-            self._apply_edit(running_innermost)
+            self._apply_edit()
         self._set_state("running")
 
     def _block(self, depth, loops):
@@ -165,7 +173,7 @@ class Engine:
                     k = 0
                     while True:
                         if k:
-                            self._boundary(running_innermost=True)
+                            self._boundary()
                         st = self._body_at(depth)[i]            # the version in force at each pass
                         if k >= st.args["n"].value:
                             break
@@ -178,26 +186,16 @@ class Engine:
             self._pos.pop()
 
     # --- mid-run edits ----------------------------------------------------------------------------------------------
-    def _incompatible(self, new, running_innermost):
-        ob, nb = self.script.body, new.body
-        for d, idx in enumerate(self._pos):
-            last = d == len(self._pos) - 1
-            upto = idx + 1 if (not last or running_innermost) else idx
-            if [s.kind for s in ob[:upto]] != [s.kind for s in nb[:upto]]:
-                where = ob[min(idx, len(ob) - 1)].line if ob else 1
-                return (f"the edit changes statements already started on the running path (around line {where}); "
-                        "only steps not started yet, values, and statements after the running one may change")
-            if last:
-                break
-            ob, nb = ob[idx].body, nb[idx].body
-        return None
-
-    def _apply_edit(self, running_innermost):
+    def _apply_edit(self):
+        """Review l2s-wp5-r1: only in-place value edits are applied. The structure (count, kind, form and nesting
+        of every statement) must be the same as the version in force - api.protocol.edit refuses a structural change
+        first; this re-check at the boundary keeps the rule if a draft reaches the engine another way."""
         with self._lock:
             new, self._pending = self._pending, None
         if new is None:
             return
-        why = self._incompatible(new, running_innermost)
+        diff = structure_diff(self.script, new)
+        why = None if diff is None else f"structural change refused: {diff[1]}"
         old = self.script
         if why:
             rec = {"result": "refused", "reason": why, "sha256": new.sha256}
@@ -326,6 +324,7 @@ class Engine:
         self._motion(lambda: api.magnet.set_force(self._a(st, "f")))
         origin = api.devices.info("rotor")["origin"]
         rel = api.rotor.position() - origin
+        self._check()          # an emergency stop during the pre-read; the run scope also voids the move itself
         if abs(f0 - rel) > 1e-9:
             self._motion(lambda: api.rotor.rotate(f0 - rel, speed_turns_s=speed))
         self._check()

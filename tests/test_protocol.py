@@ -2,6 +2,7 @@
 runs) and the protocol engine on the simulated rig (event sequence, pause / resume, stop, emergency stop, refusal,
 mid-run edits, HDF5 events). No hardware; the G: fixture is not needed."""
 import re
+import threading
 import time
 from pathlib import Path
 
@@ -317,12 +318,13 @@ def test_api_refusal_mid_run_stops_the_run(rig):
 
 
 def test_mid_run_edit_applies_at_next_step_boundary(rig):
+    """Loop value edits (n, a force, a text) still apply at the next boundary (regression for review l2s-wp5-r1)."""
     n = len(events.events())
-    api.protocol.run(parse(HEAD + 'loop n=3\n  wait t=0.3\n  mark "a"\nend\n'))
-    time.sleep(0.1)                                    # inside the first wait
+    api.protocol.run(parse(HEAD + 'loop n=3\n  hold f=1 t=0.3\n  mark "a"\nend\n'))
+    time.sleep(0.1)                                    # inside the first hold
     with pytest.raises(ScriptError, match="25 pN"):
         api.protocol.edit(HEAD + 'loop n=3\n  hold f=25 t=0.3\n  mark "a"\nend\n')
-    api.protocol.edit(HEAD + 'loop n=2\n  wait t=0.3\n  mark "b"\nend\n')
+    api.protocol.edit(HEAD + 'loop n=2\n  hold f=2 t=0.3\n  mark "b"\nend\n')
     api.protocol.apply_edits()
     st = api.protocol.wait(10)
     assert st["state"] == "completed" and st["protocol_version"] == 1
@@ -331,15 +333,168 @@ def test_mid_run_edit_applies_at_next_step_boundary(rig):
     assert [e.extra["action"] for e in ed] == ["refused", "applied"] and 'mark "b"' in ed[1].extra["new_text"]
 
 
-def test_mid_run_edit_changing_the_running_path_is_refused(rig):
+def _edit_refused(draft, match):
     n = len(events.events())
-    api.protocol.run(parse(HEAD + 'loop n=2\n  wait t=0.3\n  mark "a"\nend\n'))
-    time.sleep(0.1)
-    api.protocol.edit(HEAD + 'wait t=0.3\nmark "z"\n')       # removes the loop the run is inside
+    with pytest.raises(ScriptError, match=match):
+        api.protocol.edit(draft)
+    ev = [e for e in events.events()[n:] if e.kind == "protocol_edit"]
+    assert [e.extra["action"] for e in ev] == ["refused"], ev
+
+
+def test_mid_run_structural_edits_are_refused_with_an_event(rig):
+    """Review l2s-wp5-r1 fix 4: only in-place value edits; deleting / inserting an earlier statement of the same kind
+    (identical repeated text), removing or adding the enclosing loop and adding a step after the running position are
+    each refused with a `protocol_edit` event - never applied, never silently ignored - and the run goes on."""
+    n = len(events.events())
+    three = 'wait t=0.4\nwait t=0.4\nwait t=0.4\nmark "end"\n'
+    api.protocol.run(parse(HEAD + three))
+    _until(lambda: (api.protocol.status()["current"] or {}).get("line") == 4)       # the second wait runs
+    _edit_refused(HEAD + 'wait t=0.4\nwait t=0.4\nmark "end"\n', "where the running version has 'wait'")  # deleted
+    _edit_refused(HEAD + "wait t=0.4\n" + three, "where the running version has 'mark'")                 # inserted
+    _edit_refused(HEAD + three + 'mark "added after"\n', "inserted or deleted")                         # added after
+    _edit_refused(HEAD + 'loop n=1\n  wait t=0.4\n  wait t=0.4\n  wait t=0.4\n  mark "end"\nend\n', "'loop'")
+    st = api.protocol.wait(10)
+    assert st["state"] == "completed" and st["protocol_version"] == 0 and st["edits"] == []
+    assert [x for x in _steps(n) if x[1] == "end"] == [(3, "end", -1), (4, "end", -1), (5, "end", -1),
+                                                       (6, "end", -1)]
+    assert _marks(n) == ["end"]
+
+
+def test_engine_refuses_a_structural_draft_at_the_boundary(rig):
+    """A draft that reaches the engine without api.protocol.edit is still refused (with an event) at the boundary."""
+    n = len(events.events())
+    api.protocol.run(parse(HEAD + 'wait t=0.3\nmark "a"\n'))
+    api.protocol._engine.offer_edit(parse(HEAD + 'wait t=0.3\nmark "a"\nmark "b"\n'))
+    st = api.protocol.wait(10)
+    assert st["state"] == "completed" and st["edits"][0]["result"] == "refused" and _marks(n) == ["a"]
+    ev = [e for e in events.events()[n:] if e.kind == "protocol_edit"]
+    assert ev[0].extra["action"] == "refused" and "structural change refused" in ev[0].extra["reason"]
+
+
+def test_mid_run_edit_focus_uses_the_run_start_reference(rig):
+    """Review l2s-wp5-r1 fix 3: an edit's focus check uses the focus position read when the run started (the
+    engine's reference), not the position now. The first step moved the focus +45 um; a later step edited to +48 um
+    from the start is inside the +-50 um window (from the position now it would be +93 and refused)."""
+    z0 = api.focus.position()
+    api.protocol.run(parse(HEAD + "focus um=45\nwait t=0.6\nfocus um=40\n"))
+    _until(lambda: (api.protocol.status()["current"] or {}).get("line") == 4)
+    api.protocol.edit(HEAD + "focus um=45\nwait t=0.6\nfocus um=48\n")
     api.protocol.apply_edits()
     st = api.protocol.wait(10)
-    assert st["state"] == "completed" and st["protocol_version"] == 0 and _marks(n) == ["a", "a"]
-    assert st["edits"][0]["result"] == "refused"
+    assert st["state"] == "completed" and st["protocol_version"] == 1
+    assert api.focus.position() == pytest.approx(z0 + 48.0, abs=0.2)
+
+
+def test_focus_step_without_run_reference_is_refused(rig):
+    """Review l2s-wp5-r1 fix 3: a run that started without a focus step has no focus reference; a focus step offered
+    by an edit is refused - by the checker (run_focus_z0=None) and, through api.protocol.edit, with an event."""
+    from mtpy.protocol.check import check
+    rep = check(parse(HEAD + "wait t=0.5\nfocus um=5\n", "f.mtprot"), devices=True, run_focus_z0=None)
+    assert [str(d) for d in rep["errors"]] == [
+        ("f.mtprot:4:1: a focus step cannot be added by a mid-run edit: the running protocol has no focus reference "
+         "(it had no focus step when it started); stop and start it again")]
+    api.protocol.run(parse(HEAD + "wait t=0.5\nwait t=0.3\n"))
+    assert api.protocol._engine.focus_z0 is None
+    _edit_refused(HEAD + "wait t=0.5\nfocus um=5\n", "where the running version has 'wait'")
+    assert api.protocol.wait(10)["state"] == "completed"
+
+
+# --- review l2s-wp5-r1 fixes 1 and 2: e-stop barriers, one run at a time ------------------------------------------------
+def _count_sends(monkeypatch, name):
+    dev = api.devices.service(name).device
+    sent, real = [], dev.move_to
+    monkeypatch.setattr(dev, "move_to", lambda *a, **k: (sent.append(a), real(*a, **k))[1])
+    return sent
+
+
+def _engage_and_release(reason):
+    estop.engage(reason)
+    with events.as_caller("gui"):
+        estop.clear()
+
+
+def test_estop_engaged_and_released_during_step_start_event_sends_nothing(rig, monkeypatch):
+    """Fix 1: an emergency stop engaged and released while the step-start event is delivered (a subscriber) voids
+    every later request of the run: zero magnet sends, run aborted."""
+    sent = _count_sends(monkeypatch, "magnet")
+    fired = []
+
+    def on_event(ev):
+        if ev.kind == "protocol_step" and ev.extra.get("phase") == "start" and not fired:
+            fired.append(ev)
+            _engage_and_release("test: during the step-start event")
+    unsubscribe = events.subscribe(on_event)
+    try:
+        api.protocol.run(parse(HEAD + "hold f=1 t=0.2\n"))
+        st = api.protocol.wait(10)
+    finally:
+        unsubscribe()
+    assert fired and not estop.active()
+    assert st["state"] == "aborted" and sent == []
+
+
+def test_estop_engaged_and_released_during_rotor_pre_read_sends_nothing(rig, monkeypatch):
+    """Fix 1: an emergency stop engaged and released while the rotor is read before a rotate: zero rotor sends, run
+    aborted (the magnet force step before it ran)."""
+    sent = _count_sends(monkeypatch, "rotor")
+    dev = api.devices.service("rotor").device
+    armed, fired, real = [], [], dev.position
+
+    def position():
+        if armed and not fired:
+            fired.append(1)
+            _engage_and_release("test: during the rotor pre-read")
+        return real()
+    monkeypatch.setattr(dev, "position", position)
+
+    def arm(ev):
+        if ev.kind == "act" and isinstance(ev.request, dict) and ev.request.get("quantity") == "magnet_position_mm":
+            armed.append(1)
+    unsubscribe = events.subscribe(arm)
+    try:
+        api.protocol.run(parse(HEAD + "rotate from=-1 to=1 f=1 t=0.4\n"))
+        st = api.protocol.wait(10)
+    finally:
+        unsubscribe()
+    assert armed and fired and not estop.active()
+    assert st["state"] == "aborted" and sent == []
+
+
+def test_only_one_run_starts_and_the_running_one_is_never_overwritten(rig, monkeypatch):
+    """Fix 2: two overlapping run() calls (the first one's check made slow): exactly one starts, the other is refused
+    with NotReady and a `refused` event, and the running engine stays the first one."""
+    import mtpy.protocol.check as chk
+    real, calls = chk.check, []
+
+    def slow_check(*a, **k):
+        calls.append(1)
+        if len(calls) == 1:
+            time.sleep(0.3)
+        return real(*a, **k)
+    monkeypatch.setattr(chk, "check", slow_check)
+    n = len(events.events())
+    results = {}
+
+    def go(name):
+        try:
+            api.protocol.run(parse(f'grammar 0.1\nprotocol "{name}"\nwait t=1\n'))
+            results[name] = "started"
+        except NotReady as e:
+            results[name] = f"refused: {e}"
+    a = threading.Thread(target=go, args=("A",))
+    b = threading.Thread(target=go, args=("B",))
+    a.start()
+    time.sleep(0.05)
+    b.start()
+    a.join(5)
+    b.join(5)
+    assert results["A"] == "started" and results["B"].startswith("refused: a protocol is already running")
+    assert api.protocol.status()["name"] == "A"
+    starts = [e for e in events.events()[n:] if e.kind == "protocol" and e.extra["action"] == "start"]
+    assert [e.extra["name"] for e in starts] == ["A"]
+    assert [e.request["protocol"] for e in events.events()[n:] if e.kind == "refused"] == ["B"]
+    api.protocol.stop()
+    assert api.protocol.wait(5)["state"] == "stopped"
 
 
 def test_engine_calls_only_the_public_api():

@@ -9,6 +9,7 @@
 The engine (`mtpy.protocol.engine`) calls only this public layer, so every step passes the rig safety profile, the
 emergency stop and the read-back checks exactly like a manual action. One protocol runs at a time.
 """
+import threading
 from pathlib import Path
 
 from . import estop, events
@@ -17,6 +18,9 @@ from .errors import NotReady, ScriptError, Timeout
 EXTENSIONS = (".mtprot", ".mtseq", ".mtrec")
 _engine = None
 _draft = None
+# One run at a time (review l2s-wp5-r1): the running() check, the check and the engine start happen under this lock,
+# so two concurrent run() calls never both start and a running engine is never overwritten.
+_run_lock = threading.Lock()
 
 
 def load(script_or_path, file=None):
@@ -63,20 +67,23 @@ def run(script, motion_timeout_s=120.0, ramp_step_s=0.5):
     global _engine, _draft
     from mtpy.protocol.check import require_ok
     from mtpy.protocol.engine import Engine
-    if running():
-        raise NotReady("a protocol is already running; api.protocol.stop() first")
     script = _script(script)
     request = {"protocol": script.name, "file": script.file, "sha256": script.sha256}
-    if estop.active():
-        events.log("refused", request=request, reason="emergency stop engaged")
-        raise NotReady("the emergency stop is engaged; release it before starting a protocol")
-    report = check(script, devices=True)
-    if not report["ok"]:
-        events.log("refused", request=request, reason="protocol check failed",
-                   errors=[str(d) for d in report["errors"]])
-        require_ok(report)
-    _engine, _draft = Engine(script, motion_timeout_s, ramp_step_s), None
-    _engine.start()
+    with _run_lock:                      # review l2s-wp5-r1: one run at a time, never overwritten
+        if running():
+            events.log("refused", request=request, reason=f"protocol {_engine.script.name!r} is already running")
+            raise NotReady("a protocol is already running; api.protocol.stop() first")
+        if estop.active():
+            events.log("refused", request=request, reason="emergency stop engaged")
+            raise NotReady("the emergency stop is engaged; release it before starting a protocol")
+        report = check(script, devices=True)
+        if not report["ok"]:
+            events.log("refused", request=request, reason="protocol check failed",
+                       errors=[str(d) for d in report["errors"]])
+            require_ok(report)
+        eng = Engine(script, motion_timeout_s, ramp_step_s)
+        eng.start()
+        _engine, _draft = eng, None
     return status()
 
 
@@ -139,14 +146,29 @@ def status():
 
 def edit(draft):
     """Check a new version of the running protocol (U18) and keep it as the draft; it changes nothing until
-    apply_edits(). Raises ScriptError when the draft has errors (e.g. a force above the profile). Returns the
-    check report."""
+    apply_edits(). Returns the check report.
+
+    Refused (ScriptError, with a `protocol_edit` refused event), review l2s-wp5-r1:
+    - a structural change against the version in force: only in-place value edits are allowed (same count, kind,
+      form and nesting of every statement); inserting, deleting or moving a statement - also an identical repeated
+      line, also after the running position - is refused, never ignored;
+    - a check error (e.g. a force above the profile); the focus check uses the running protocol's own reference (the
+      focus position read when it started), and a focus step in a run without that reference is refused."""
     global _draft
+    from mtpy.protocol.check import check as _check
+    from mtpy.protocol.check import structure_diff
+    from mtpy.protocol.grammar import Diagnostic
+
+    from . import devices as _devices
     eng = _require_engine()
     if eng.done:
         raise NotReady(f"the protocol is not running ({eng.state}); nothing to edit")
     script = _script(draft)
-    report = check(script, devices=True)
+    diff = structure_diff(eng.script, script)
+    if diff is not None:
+        events.log("protocol_edit", action="refused", reason=diff[1], new_sha256=script.sha256)
+        raise ScriptError([Diagnostic(script.file, diff[0], 1, diff[1])])
+    report = _check(script, devices=bool(_devices.status()), run_focus_z0=eng.focus_z0)
     if not report["ok"]:
         events.log("protocol_edit", action="refused", reason="check failed", errors=[str(d) for d in report["errors"]])
         raise ScriptError(report["errors"], report["warnings"])
@@ -157,7 +179,7 @@ def edit(draft):
 def apply_edits():
     """Commit the checked draft: the engine takes it at the next step boundary (steps not started take it now, steps
     done in this loop pass from the next pass; the running step is locked). The engine logs `protocol_edit`
-    applied - or refused, when the draft changes a statement already started on the running path. Returns status()."""
+    applied - or refused, when the draft's structure differs from the version in force. Returns status()."""
     global _draft
     eng = _require_engine()
     if _draft is None:

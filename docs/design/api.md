@@ -531,6 +531,33 @@ gain_dB]`; a late off with written rows beyond it: `test_late_off_reports_writte
 - **Still open from earlier (unchanged):** the rotor's omitted-speed check (the engine always passes a speed);
   `Motion.wait_arrival` generation check (the engine itself ends the run when the generation changes).
 
+**Review l2s-wp5-r1 fixes (simulators only; unit tests with barriers, not the real devices):**
+1. **Run generation through to the send:** `api.estop.run_scope(gen)` (ContextVar) wraps the whole protocol run.
+   `guarded_send` now records `(request generation, cancel, run generation)` instead of overwriting the context
+   (`_act.py` `acting` -> `estop.guarded_send`), `estop.invalid(guard)` requires BOTH generations current, and the
+   device service checks it right before and right after each send; `_act.precheck` also refuses inside a void run
+   scope (`estop.run_scope_void()`). The engine also re-checks after the rotor pre-read. Tests:
+   `test_estop_engaged_and_released_during_step_start_event_sends_nothing`,
+   `test_estop_engaged_and_released_during_rotor_pre_read_sends_nothing` (zero sends, run aborted; with the run scope
+   disabled the first one fails with one magnet send - checked once as a negative control, not kept as a test).
+2. **One run at a time:** `api.protocol.run` does the running() check, the check and the engine start under one lock;
+   the engine is registered only after it started. Test: `test_only_one_run_starts_and_the_running_one_is_never_overwritten`.
+3. **Focus reference:** the engine reads `focus_z0` in `start()` (before its thread), and `edit()` checks against
+   it (`check(..., run_focus_z0=)`); a focus step without a run reference is refused. Tests:
+   `test_mid_run_edit_focus_uses_the_run_start_reference`, `test_focus_step_without_run_reference_is_refused`.
+4. **Edits are value-only:** `check.structure_diff(old, new)`; `edit()` refuses any structural change with
+   `ScriptError` (line named) and a `protocol_edit` refused event; the engine re-checks at the boundary. Tests:
+   `test_mid_run_structural_edits_are_refused_with_an_event`, `test_engine_refuses_a_structural_draft_at_the_boundary`,
+   regression `test_mid_run_edit_applies_at_next_step_boundary` (loop n, force and text edits still applied).
+
+**Carried (agreed in l2s-wp5-r1):**
+- **WP6:** `Engine.offer_edit` replaces a pending, not yet applied draft without an event (log the overwrite);
+  re-check the stop -> release gap between `run()`'s check and the generation the engine records at `start()` (fix 1
+  covers requests made inside the run, not that gap); a warning before `zero` runs; `zero` is NOT accepted as meeting
+  U12 (no tracking zero; owner to confirm what it means).
+- **WP6:** show the value-only edit restriction in the GUI.
+- **Phase 8 editor:** structural mid-run edits and statement identity (so inserts / deletes can be told apart).
+
 ## 4. Example: the enzyme-cleavage experiment as a Python experiment script (level 3)
 ```python
 from mtpy import api   # api.VERSION >= 0.1

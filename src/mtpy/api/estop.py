@@ -21,6 +21,7 @@ _stoppers = []
 _gen_lock = threading.Lock()
 _generation = 0
 _send_guard = ContextVar("mtpy_send_guard", default=None)
+_run_gen = ContextVar("mtpy_run_generation", default=None)     # set by run_scope (a protocol run)
 
 
 def add_stopper(fn):
@@ -83,9 +84,28 @@ def generation():
 
 
 @contextmanager
+def run_scope(gen):
+    """Run a block (a protocol run, WP5 review l2s-wp5-r1) whose every acting call is also void once generation `gen`
+    is no longer current: an emergency stop engaged after the run started voids every later request of the run, even
+    a request made after the stop was released. A scope can only make requests stricter, never looser."""
+    token = _run_gen.set(gen)
+    try:
+        yield
+    finally:
+        _run_gen.reset(token)
+
+
+def run_scope_void():
+    """True inside a run scope whose generation is no longer current (an emergency stop since the run started)."""
+    g = _run_gen.get()
+    return g is not None and g != _generation
+
+
+@contextmanager
 def guarded_send(gen, cancel=None):
-    """Run a block whose device sends are checked against generation `gen` and the threading.Event `cancel`."""
-    token = _send_guard.set((gen, cancel))
+    """Run a block whose device sends are checked against generation `gen`, the threading.Event `cancel` and the
+    generation of the enclosing run scope, if any (composed, never overwritten: review l2s-wp5-r1)."""
+    token = _send_guard.set((gen, cancel, _run_gen.get()))
     try:
         yield
     finally:
@@ -93,14 +113,18 @@ def guarded_send(gen, cancel=None):
 
 
 def send_guard():
-    """The (generation, cancel) guard of the current context, or None outside an acting call's send."""
+    """The (generation, cancel, run generation) guard of the current context, or None outside an acting call's
+    send."""
     return _send_guard.get()
 
 
 def invalid(guard):
-    """Why a send made under `guard` must not happen or must be undone, or None while it is still valid."""
-    gen, cancel = guard
-    if _engaged.is_set() or _generation != gen:
+    """Why a send made under `guard` must not happen or must be undone, or None while it is still valid. guard:
+    (generation, cancel) - the run generation is then the current context's - or (generation, cancel, run
+    generation). Both the request's and the run's generation must still be current."""
+    gen, cancel = guard[0], guard[1]
+    run_gen = guard[2] if len(guard) > 2 else _run_gen.get()
+    if _engaged.is_set() or _generation != gen or (run_gen is not None and _generation != run_gen):
         return "emergency stop engaged since the request was made"
     if cancel is not None and cancel.is_set():
         return "cancelled"

@@ -241,13 +241,20 @@ Where the draft left a point open, WP5 chose the simplest safe option. Each is m
     or other API error ends it (`failed`); nothing is skipped. Each move is waited for up to 120 s
     (`motion_timeout_s`). **Pause** stops the protocol clock in holds, waits and ramp intervals (within ~20 ms); a
     move already sent finishes. **Stop** cancels the running move in place and changes nothing else (0007). The
-    **emergency stop** ends the run as `aborted`; it is never resumed, also not after the release.
-16. **Mid-run edits (section 3.5, minimal):** `api.protocol.edit(draft)` checks the new version fully (with the rig
-    state); `apply_edits()` hands it to the engine, which applies it at the next step or loop-pass boundary: steps not
-    started take it now, steps done in this loop pass from the next pass, the running step is locked (each statement
-    is read from the version in force when it starts). An edit that changes the kind of a statement already started
-    on the running path (or the loops around it) is refused at the boundary and the run continues unchanged. Both
-    texts are in the `protocol_edit` event; the version number counts applied edits.
+    **emergency stop** ends the run as `aborted`; it is never resumed, also not after the release. Review
+    l2s-wp5-r1: the whole run is inside `api.estop.run_scope`, so after an emergency stop no request of the run is
+    sent, even one made after the release (both the run's and the request's generation must be current, before and
+    after each send); a second `run()` while one runs is refused (NotReady + `refused` event) and never replaces it.
+16. **Mid-run edits (section 3.5, minimal; restricted by review l2s-wp5-r1):** only **in-place value edits** are
+    allowed: the new version must keep the count, kind, form and nesting of every statement (values such as `n=`,
+    `f=`, `t=`, a mark text may change). `api.protocol.edit(draft)` refuses any structural change - a statement
+    inserted, deleted or moved anywhere, also an identical repeated line and also a step added after the running
+    position - with a `ScriptError` naming the line and a `protocol_edit` refused event; it then checks the new
+    version fully (rig state; the focus reference is the one the run started with, and a focus step in a run that had
+    none is refused). `apply_edits()` hands it to the engine, which applies it at the next step or loop-pass boundary
+    (re-checking the structure): steps not started take it now, steps done in this loop pass from the next pass, the
+    running step is locked. Both texts are in the `protocol_edit` event; the version number counts applied edits.
+    Structural edits and statement identity are for the phase 8 editor.
 17. **Events:** `protocol` (start with the text and sha256, pause, resume, stop_requested, end with the state),
     `protocol_step` (phase start / end / refused / failed / stopped / aborted / completed, with step number, line,
     statement, loop pass, protocol version and target) and `protocol_edit` (applied / refused). While recording they
@@ -261,4 +268,6 @@ Where the draft left a point open, WP5 chose the simplest safe option. Each is m
 - smCamera's FRET formula for `fret()`.
 - (WP5) What `zero` means as a magnet target (0 mm or the table's lowest force), and when the tracking zero is set.
 - (WP5) Whether `stop` / the end of a protocol should switch recording off (today: left as it is, 0007).
-- (WP5) Whether a mid-run edit may insert or remove statements before the running one (today: refused).
+- (WP5) Structural mid-run edits (insert / delete / move a step, also adding steps after the running one) are
+  refused today, so U18 is only partly met (values only); owner to confirm that this is enough until phase 8.
+- (WP5) `zero` is not accepted as meeting U12 (it sets no tracking zero); owner to confirm its meaning.

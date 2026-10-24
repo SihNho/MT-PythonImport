@@ -182,18 +182,30 @@ def _state_layer(rep, st, focus_z0):
         rep.err(st, st.col, "'record' needs acquisition running: api.acq.start() before the protocol")
 
 
-def check(script, devices=False):
+_NO_RUN = object()
+
+
+def check(script, devices=False, run_focus_z0=_NO_RUN):
     """Validate a parsed protocol. Returns {"ok", "errors", "warnings" (Diagnostics), "min_duration_s"}.
 
     devices=True adds the rig-state layer (connected devices, force table, focus position, acquisition running); it
-    only reads. min_duration_s: the sum of every hold / wait / ramp / record time with the loops expanded (moves not
-    counted)."""
+    only reads. run_focus_z0 (a mid-run edit, review l2s-wp5-r1): the focus reference of the RUNNING protocol (the
+    position read when it started, the one the engine uses), or None when that run has no reference - then a focus
+    statement is refused. Without it the focus position read now is the reference (a new run).
+    min_duration_s: the sum of every hold / wait / ramp / record time with the loops expanded (moves not counted)."""
     if script.kind != "protocol":
         raise ScriptError([Diagnostic(script.file, 1, 1, f"a {script.kind} cannot run as a protocol")])
     rep = _Report(script)
     focus_z0 = None
-    if devices and any(s.kind == "focus" for s in walk(script.body)) and _connected("focus"):
-        focus_z0 = (api.focus.position(), api.devices.info("focus")["origin"])
+    has_focus = any(s.kind == "focus" for s in walk(script.body))
+    if run_focus_z0 is not _NO_RUN and run_focus_z0 is None:
+        for st in walk(script.body):
+            if st.kind == "focus":
+                rep.err(st, st.col, "a focus step cannot be added by a mid-run edit: the running protocol has no "
+                                    "focus reference (it had no focus step when it started); stop and start it again")
+    elif devices and has_focus and _connected("focus"):
+        z0 = api.focus.position() if run_focus_z0 is _NO_RUN else run_focus_z0
+        focus_z0 = (z0, api.devices.info("focus")["origin"])
     for st in list(walk(script.body)) + list(script.rules):
         if not _api_layer(rep, st) or st.kind == "rule":
             continue
@@ -202,6 +214,35 @@ def check(script, devices=False):
             _state_layer(rep, st, focus_z0)
     return {"ok": not rep.errors, "errors": rep.errors, "warnings": rep.warnings,
             "min_duration_s": duration(script.body)}
+
+
+def structure_diff(old, new):
+    """None when `new` has the same structure as `old` (count, kind, form and nesting of every statement; values may
+    differ), else (line in new, reason). Review l2s-wp5-r1: a mid-run edit may change values only - a statement
+    inserted, deleted or moved (also an identical repeated line) cannot be told apart reliably by position or text."""
+    def name(s):
+        return f"{s.kind} {s.form}" if s.form in ("until", "seq", "off", "on") else s.kind
+
+    def cmp(ob, nb, where):
+        for a, b in zip(ob, nb):
+            if (a.kind, a.form) != (b.kind, b.form):
+                return b.line, f"line {b.line} is '{name(b)}' where the running version has '{name(a)}' (line {a.line})"
+            if (a.orelse is None) != (b.orelse is None):
+                return b.line, f"the 'else' of line {b.line} was added or removed"
+            r = cmp(a.body, b.body, f"the block at line {b.line}") or cmp(a.orelse or [], b.orelse or [],
+                                                                          f"the 'else' of line {b.line}")
+            if r:
+                return r
+        if len(ob) != len(nb):
+            line = nb[min(len(ob), len(nb)) - 1].line if nb else 1
+            return line, (f"{where} has {len(nb)} statements where the running version has {len(ob)}: a statement was "
+                          "inserted or deleted")
+        return None
+    r = cmp(old.body, new.body, "the protocol")
+    if r is None:
+        return None
+    return r[0], (f"{r[1]}; a mid-run edit may change values only (same statements, same order, same blocks) - stop "
+                  "and start the protocol again for a structural change")
 
 
 def duration(body):

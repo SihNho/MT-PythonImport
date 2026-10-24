@@ -17,11 +17,12 @@ def precheck(quantity, value, tol=0.0, origin=None, check=None, gen=None):
     """Steps 5 and 1 of acting() alone: NotReady while the emergency stop is active (or, with `gen`, when it was
     engaged since generation `gen`), SafetyRefused (with a `refused` event) for a bad tol or a value outside the
     profile / check(). Returns (request, verified). A Motion calls it on the caller's thread so a refusal reaches the
-    caller at once, not only at wait()."""
+    caller at once, not only at wait(). Inside a run scope (a protocol run, `estop.run_scope`) the request is also
+    refused once the run's generation is no longer current (review l2s-wp5-r1)."""
     request = {"quantity": quantity, "value": value}
     if origin is not None:
         request["origin"] = origin
-    if estop.active() or (gen is not None and gen != estop.generation()):
+    if estop.active() or (gen is not None and gen != estop.generation()) or estop.run_scope_void():
         events.log("refused", request=request, reason="emergency stop active or engaged since the request was made")
         raise NotReady(f"emergency stop is active or was engaged since the request was made; {quantity} {value!r} "
                        "not sent")
