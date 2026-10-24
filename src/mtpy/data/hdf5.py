@@ -11,16 +11,25 @@ Rules the writer keeps (review l2s-wp3-r1 / r2 carries):
   time); segment rows, recording rows and motor positions are rebuilt from everything received at every flush.
 - **A recording-on event without the four settings read back (roi, rate_Hz, exposure_ms, gain_dB) is refused**:
   `RecordingRefused` is raised (the pipeline shows it as `sink_error` in `api.acq.status()`), nothing is opened and no
-  recording or segment is started from it. Frames that arrive before an accepted recording-on are held in memory
-  (bounded) and written once one arrives; frames never covered by an accepted recording-on are counted and reported
-  at close, never silently dropped.
+  recording or segment is started from it. A frame is written only inside an accepted recording interval, by
+  (segment, buffer number): after the on event's position up to and including the off event's (review l2s-wp4-r1).
+  Frames not yet placed are held in memory (bounded) until an on / off event places them; frames still outside every
+  interval at close are counted (root attribute `frames_not_written`) and reported (RecordingRefused), never dropped
+  or kept silently.
 - **Dropped frames and camera gaps are rows / counts, never absent**: a pipeline drop is a row with `dropped = 1`
   and NaN positions; a camera gap is `lost_before` on the next row and a count per segment; an unconfirmed loss at a
   segment end is -1 (unknown), never 0.
-- **Crash bound**: rows are buffered and written at a flush; a flush runs when `flush_frames` rows are waiting or
-  `flush_s` seconds passed since the last flush (checked at every write), and at close. A crash loses at most the
-  rows received since the last flush: at most `flush_frames` frames (default 150, 1 s at 150 Hz) and, while frames
-  keep coming, at most about `flush_s` seconds (default 1 s). The root attribute `closed_cleanly` is 0 until close.
+- **Crash behaviour (tested points only)**: rows are buffered in memory and written at a flush (when
+  `flush_frames` rows wait or `flush_s` seconds passed, checked at every write, and at close). Two crash points are
+  tested (a subprocess ended with `os._exit`): after a flush with rows still waiting in memory, and right after a new
+  event-kind group was created; in both the file opened and held exactly the rows of the last flush, with
+  `closed_cleanly = 0`. For those points the loss is the rows since the last flush (at most `flush_frames`, default
+  150). A crash during a flush (including the motor back-fill rewrite) is NOT tested (WP6); nothing is promised for
+  it.
+- **Late information is applied at the next flush**: a motor reading that arrives after rows with later PC times
+  were flushed rewrites those rows' magnet / rotor columns; a .cal path that arrives late is stored and /beads is
+  rebuilt from it (user roles kept).
+- The file is opened with `libver=("earliest", "v108")`: HDF5 1.8 object formats at most, for older MATLAB builds.
 """
 import datetime
 import hashlib
@@ -259,6 +268,9 @@ class HDF5Writer(ResultSink):
         self._mt_rows = []            # waiting /mt rows (filled with motor positions at flush)
         self._ids = {}                # id(event) -> event_id
         self._cal = None
+        self._beads_tab = None
+        self._iv = None               # cached recording intervals (rebuilt when an on / off event arrives)
+        self._motor_dirty = None      # earliest PC time of a motor reading that arrived after rows were flushed
         self._last_flush = time.monotonic()
 
     # --- ResultSink -------------------------------------------------------------------------------------------------
@@ -276,6 +288,7 @@ class HDF5Writer(ResultSink):
                 raise RecordingRefused(f"recording-on event {x.get('name')!r} lacks the settings read back {missing} "
                                        "(roi, rate_Hz, exposure_ms, gain_dB are required, U15); recording not started")
             self.accepted.append(ev)
+            self._iv = None
             for k in SETTINGS:
                 self._hist.append((ev.t, k, s[k], "recording on"))
             info = x.get("segment_info")
@@ -283,6 +296,7 @@ class HDF5Writer(ResultSink):
                 self._merge_segment(info.get("number"), info, "recording-on snapshot")
         elif ev.kind == "recording" and x.get("action") == "off":
             self.offs.append(ev)
+            self._iv = None
         self._absorb(ev)
         if self.f is None:
             if self.accepted:
@@ -291,27 +305,33 @@ class HDF5Writer(ResultSink):
                 self._pending_events.append(ev)
                 return
         self._write_event(ev)
+        if self._iv is None:
+            self._release_pending()
         self._maybe_flush()
 
     def write_frame(self, result):
+        """A frame is written only when it lies inside an accepted recording interval (by segment and buffer number,
+        see `_intervals`); otherwise it is held (bounded by max_pending) until an on / off event places it, and
+        frames still outside every interval at close are reported there (RecordingRefused), never kept silently."""
         rec = result.record
-        self._frame_stats(result)
-        if self.f is None and not self.accepted:
-            if len(self._pending_frames) >= self.max_pending:
-                self.unwritten_frames += 1
-                raise RecordingRefused(f"{self.max_pending} recorded frames wait for a recording-on event with the "
-                                       f"four settings; frame (segment {rec.segment}, buffer {rec.buffer_number}) "
-                                       "not written")
-            self._pending_frames.append(result)
+        if self.accepted and self._covered((rec.segment, rec.buffer_number)):
+            if self.f is None:
+                self._open()
+            self._add_frame(result)
+            self._maybe_flush()
             return
-        if self.f is None:
-            self._open()
-        self._add_frame(result)
-        self._maybe_flush()
+        if len(self._pending_frames) >= self.max_pending:
+            self.unwritten_frames += 1
+            raise RecordingRefused(f"{self.max_pending} recorded frames wait for an accepted recording-on interval; "
+                                   f"frame (segment {rec.segment}, buffer {rec.buffer_number}) not written")
+        self._pending_frames.append(result)
 
     def close(self):
-        """Flush everything, write the end time and the frame-rate triple, set closed_cleanly = 1 and close. Without
-        an accepted recording-on no file exists; recorded frames then raise RecordingRefused (never silent)."""
+        """Flush everything, write the end time and the frame-rate triple, set closed_cleanly = 1 and close. Then
+        raise RecordingRefused if any recorded frame was not written (no accepted recording-on interval covers it)
+        or a written row lies outside the final intervals (an off event that arrived after its frames); the counts
+        are also stored as root attributes `frames_not_written` / `frames_outside_recordings`. Without an accepted
+        recording-on no file exists."""
         if self.closed:
             return
         self.closed = True
@@ -322,12 +342,18 @@ class HDF5Writer(ResultSink):
                 raise RecordingRefused(f"{n} recorded frames not written: no recording-on event with the four settings "
                                        f"arrived ({len(self.refused)} refused); no file created")
             return
+        not_written = outside = 0
         try:
+            self._release_pending()
             self.flush()
+            not_written = self.unwritten_frames = self.unwritten_frames + len(self._pending_frames)
+            outside = self._rows_outside()
             run = self.f["metadata/run"]
             _put_str(run, "end_utc", _utc(time.time()))
             self._frame_rate_triple(run)
             self.f.attrs["frames_written"] = self._mt.n if self._mt is not None else 0
+            self.f.attrs["frames_not_written"] = not_written
+            self.f.attrs["frames_outside_recordings"] = outside
             self.f.attrs["closed_cleanly"] = np.uint8(1)
             self.f.flush()
             if self.json_copy:
@@ -335,6 +361,59 @@ class HDF5Writer(ResultSink):
                     to_json(_read_group(self.f["metadata"])), encoding="utf-8")
         finally:
             self.f.close()
+        if not_written or outside:
+            raise RecordingRefused(f"{not_written} recorded frames not written (outside every accepted recording-on "
+                                   f"interval) and {outside} written rows outside the final intervals; see the root "
+                                   f"attributes of {self.path.name}")
+
+    # --- recording intervals (segment, buffer number), never arrival order -------------------------------------------
+    @staticmethod
+    def _pos(x):
+        """(segment, buffer) of an on / off event: the last frame received before the flag changed; no segment ->
+        before everything, no buffer -> before the segment's first frame."""
+        seg, buf = x.get("segment"), x.get("buffer_number")
+        return (-1, -1) if seg is None else (int(seg), -1 if buf is None else int(buf))
+
+    def _intervals(self):
+        """Accepted recording intervals: after the on event's position up to and including the off event's
+        position (the first off after that on and before the next on, by event time); with no off, up to the next
+        on's position, or open-ended (api.acq contract: on -> frames after its buffer, off -> frames up to it)."""
+        if self._iv is None:
+            ons, offs = sorted(self.accepted, key=lambda e: e.t), sorted(self.offs, key=lambda e: e.t)
+            iv = []
+            for i, on in enumerate(ons):
+                nxt = ons[i + 1] if i + 1 < len(ons) else None
+                off = next((o for o in offs if on.t <= o.t and (nxt is None or o.t < nxt.t)), None)
+                end = self._pos(off.extra) if off is not None else (self._pos(nxt.extra) if nxt is not None else None)
+                iv.append((self._pos(on.extra), end))
+            self._iv = iv
+        return self._iv
+
+    def _covered(self, pos):
+        return any(start < pos and (end is None or pos <= end) for start, end in self._intervals())
+
+    def _release_pending(self):
+        """Write the held frames that an accepted interval now covers (file open)."""
+        if self.f is None or not self._pending_frames:
+            return
+        keep = []
+        for r in self._pending_frames:
+            if self._covered((r.record.segment, r.record.buffer_number)):
+                self._add_frame(r)
+            else:
+                keep.append(r)
+        self._pending_frames = keep
+
+    def _rows_outside(self):
+        if self._mt is None or not self._mt.n:
+            return 0
+        seg, buf = self._mt.g["segment"][()], self._mt.g["buffer_number"][()].astype(np.int64)
+        inside = np.zeros(len(seg), dtype=bool)
+        for start, end in self._intervals():
+            after = (seg > start[0]) | ((seg == start[0]) & (buf > start[1]))
+            before = True if end is None else (seg < end[0]) | ((seg == end[0]) & (buf <= end[1]))
+            inside |= after & before
+        return int((~inside).sum())
 
     # --- state from events and frames (independent of arrival order) ------------------------------------------------
     def _absorb(self, ev):
@@ -356,13 +435,14 @@ class HDF5Writer(ResultSink):
                 info["ended"] = True
             self._merge_segment(n, info, f"segment {x.get('action')} event")
         elif ev.kind == "acquisition" and x.get("action") == "start" and not self.cal_path and x.get("cal"):
-            self.cal_path = x.get("cal")
+            self.cal_path = x.get("cal")            # applied at the next flush, whenever it arrives
         elif ev.kind == "act" and isinstance(ev.request, dict):
             q = ev.request.get("quantity")
-            if q == "magnet_position_mm" and _num(ev.readback) == _num(ev.readback):
-                self._insert(self._motor["magnet"], ev.t, float(ev.readback))
-            elif q == "rotor_turns" and _num(ev.readback) == _num(ev.readback):
-                self._insert(self._motor["rotor"], ev.t, float(ev.readback) * 360.0)
+            motor = {"magnet_position_mm": ("magnet", 1.0), "rotor_turns": ("rotor", 360.0)}.get(q)
+            if motor is not None and _num(ev.readback) == _num(ev.readback):
+                self._insert(self._motor[motor[0]], ev.t, float(ev.readback) * motor[1])
+                if self._mt is not None and self._mt.n:      # rows already on disk may need it: back-fill at flush
+                    self._motor_dirty = ev.t if self._motor_dirty is None else min(self._motor_dirty, ev.t)
             elif q in _CAMERA_QUANTITIES:
                 self._hist.append((ev.t, _CAMERA_QUANTITIES[q], ev.readback, "act read-back"))
             elif q == "camera_preset" and isinstance(ev.readback, dict):
@@ -421,7 +501,9 @@ class HDF5Writer(ResultSink):
     # --- file ------------------------------------------------------------------------------------------------------
     def _open(self):
         self.path.parent.mkdir(parents=True, exist_ok=True)
-        f = self.f = h5py.File(self.path, "w-", libver="latest")
+        # upper bound v108 (HDF5 1.8 object formats): a feature older MATLAB HDF5 builds cannot read raises here
+        # instead of silently producing an unreadable file (review l2s-wp4-r1; real MATLAB check is WP6)
+        f = self.f = h5py.File(self.path, "w-", libver=("earliest", "v108"))
         f.attrs.update({"schema_version": SCHEMA_VERSION, "file_kind": FILE_KIND, "created_utc": _utc(self.t0),
                         "closed_cleanly": np.uint8(0), "run_id": self.run_id, "t0_unix": self.t0,
                         "legacy_cal_file": self.cal_path or "", "flush_frames": self.flush_frames,
@@ -449,7 +531,8 @@ class HDF5Writer(ResultSink):
         for k, v in (self.metadata.get("run") or {}).items():
             if k not in run:
                 _put_str(run, k, v if isinstance(v, str) else to_json(v), json_=not isinstance(v, str))
-        self._write_calibration(meta)
+        meta.create_group("calibration")
+        self._fill_calibration()
         ev = f.create_group("events")
         ev.attrs["description"] = ("one table per event kind; own columns are in `data` (JSON); arrival order is not "
                                    "event order: use t_host / buffer_number")
@@ -462,13 +545,17 @@ class HDF5Writer(ResultSink):
                                                              "event": {"kind": e.kind, "extra": e.extra}})
         for e in pending_e:
             self._write_event(e)
-        for r in pending_f:
-            self._add_frame(r)
+        self._pending_frames = pending_f
+        self._release_pending()
         self.flush()
 
-    def _write_calibration(self, meta):
-        g = meta.create_group("calibration")
+    def _fill_calibration(self):
+        """Store the .cal content once its path is known (at open, or at a later flush when the acquisition-start
+        event carrying it arrives late); /beads is rebuilt from it at every flush."""
+        g = self.f["metadata/calibration"]
         p = Path(self.cal_path) if self.cal_path else None
+        if self._cal is not None:
+            return
         if p is None or not p.is_file():
             g.attrs["note"] = f"no .cal file read ({self.cal_path!r})"
             return
@@ -476,6 +563,9 @@ class HDF5Writer(ResultSink):
         raw = p.read_bytes()
         cal = read_cal(p)
         self._cal = cal
+        if "note" in g.attrs:
+            del g.attrs["note"]
+        self.f.attrs["legacy_cal_file"] = str(p)
         for name, val, unit, desc in (
                 ("xy_px", cal["xy"], "px", ".cal x,y pos array"),
                 ("stack", cal["stack"], "a.u.", ".cal cal image array (radial-profile stack)"),
@@ -497,9 +587,18 @@ class HDF5Writer(ResultSink):
 
     def _create_beads_and_mt(self, ids):
         self._bead_ids = tuple(ids)
-        f, n, cal = self.f, len(ids), self._cal
-        rows = []
-        for col, b in enumerate(ids):
+        f, n = self.f, len(ids)
+        self._beads_tab = _Table(f.create_group("beads"), _BEAD_COLUMNS)
+        self._beads_tab.rewrite(self._bead_rows())
+        mt = f.create_group("mt")
+        mt.attrs["n_beads"] = n
+        self._mt = _Table(mt, _mt_columns(n))
+
+    def _bead_rows(self):
+        """/beads from the user roles, the .cal (exp/ref flags, pick positions) and the tracked beads; rebuilt at
+        every flush so a .cal that arrives late is reflected (user roles always win)."""
+        cal, rows = self._cal, []
+        for col, b in enumerate(self._bead_ids):
             in_cal = cal is not None and 1 <= b <= len(cal["bead_flags"])
             if b in self.roles:
                 role, src = self.roles[b], "user"
@@ -516,14 +615,12 @@ class HDF5Writer(ResultSink):
                 xy = (math.nan, math.nan)
             rows.append({"bead_id": int(b), "tra_column": col, "role": role, "role_source": src,
                          "pick_xy_px": np.asarray(xy, dtype=float)})
-        _Table(f.create_group("beads"), _BEAD_COLUMNS).rewrite(rows)
-        mt = f.create_group("mt")
-        mt.attrs["n_beads"] = n
-        self._mt = _Table(mt, _mt_columns(n))
+        return rows
 
     def _add_frame(self, res):
         if self._mt is None:
             self._create_beads_and_mt(self._bead_ids if self._bead_ids is not None else res.bead_ids)
+        self._frame_stats(res)
         rec, n = res.record, len(self._bead_ids)
         err = bool(res.extra.get("error")) if res.extra else False
         if res.xyz is None or res.dropped or err or n == 0:
@@ -543,12 +640,41 @@ class HDF5Writer(ResultSink):
         self._mt_rows.append(row)
 
     def _motor_at(self, name, t_pc):
+        """(values, reading times from t0) of the last reading at or before each PC time in t_pc (array); NaN
+        before the first reading."""
+        t_pc = np.asarray(t_pc, dtype=np.float64)
         lst = self._motor[name]
-        i = bisect_right([a for a, _ in lst], t_pc)
-        if i == 0:
-            return math.nan, math.nan
-        t, v = lst[i - 1]
-        return v, t - self.t0
+        if not lst:
+            return np.full(t_pc.shape, math.nan), np.full(t_pc.shape, math.nan)
+        ts = np.array([a for a, _ in lst])
+        vs = np.array([v for _, v in lst])
+        i = np.searchsorted(ts, t_pc, side="right")
+        ok = i > 0
+        j = np.maximum(i - 1, 0)
+        return np.where(ok, vs[j], math.nan), np.where(ok, ts[j] - self.t0, math.nan)
+
+    def _backfill_motors(self):
+        """A motor reading that arrived after rows with later PC times were flushed: rewrite magnet / rotor of
+        those rows (review l2s-wp4-r1). Rows are in arrival order, roughly PC-time order, so the file is scanned
+        back from the end until a whole block lies before the reading."""
+        t_dirty, self._motor_dirty = self._motor_dirty, None
+        if t_dirty is None or self._mt is None or not self._mt.n:
+            return
+        g, n, block = self._mt.g, self._mt.n, 4096
+        first, hi = None, n
+        while hi > 0:
+            lo = max(0, hi - block)
+            late = np.nonzero(g["t_host"][lo:hi] + self.t0 >= t_dirty)[0]
+            if not len(late):
+                break
+            first, hi = lo + int(late[0]), lo
+        if first is None:
+            return
+        t_pc = g["t_host"][first:n] + self.t0
+        for name, col, tcol in (("magnet", "magnet_mm", "magnet_t"), ("rotor", "rotor_deg", "rotor_t")):
+            v, t = self._motor_at(name, t_pc)
+            g[col][first:n] = v
+            g[tcol][first:n] = t
 
     def _write_event(self, ev):
         self._ids[id(ev)] = self._write_event_row(ev.kind, ev, data=dict(ev.extra or {}))
@@ -577,15 +703,22 @@ class HDF5Writer(ResultSink):
         """Write every waiting row, rebuild /segments and /recordings, flush the file to disk."""
         if self.f is None:
             return
+        self._release_pending()
+        self._backfill_motors()
         if self._mt_rows:
             src = {r["_t_source"] for r in self._mt_rows}
-            for r in self._mt_rows:
-                r["magnet_mm"], r["magnet_t"] = self._motor_at("magnet", r["_t_pc"])
-                r["rotor_deg"], r["rotor_t"] = self._motor_at("rotor", r["_t_pc"])
+            t_pc = [r["_t_pc"] for r in self._mt_rows]
+            mag, mag_t = self._motor_at("magnet", t_pc)
+            rot, rot_t = self._motor_at("rotor", t_pc)
+            for i, r in enumerate(self._mt_rows):
+                r["magnet_mm"], r["magnet_t"], r["rotor_deg"], r["rotor_t"] = mag[i], mag_t[i], rot[i], rot_t[i]
                 self._mt.append(r)
             self._mt.g["t_camera"].attrs["source"] = "; ".join(sorted(src))
             self._mt_rows = []
             self._mt.flush()
+        self._fill_calibration()
+        if self._beads_tab is not None:
+            self._beads_tab.rewrite(self._bead_rows())
         for tab in self._ev_tables.values():
             tab.flush()
         self._segs.rewrite(self._segment_rows())

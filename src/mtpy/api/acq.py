@@ -155,7 +155,8 @@ def stop(timeout_s=10.0):
 def _settings_snapshot(name, settings=None):
     """The camera settings read back now (roi, rate_Hz, exposure_ms, gain_dB) for a recording-on event. A failed
     read refuses the recording (U15 / 0006: settings are stored as read back, never missing): a `refused` event and
-    NotReady; acquisition and display keep running."""
+    NotReady; acquisition and display keep running. A read that lacks any of the four values (or gives None) is
+    refused the same way, before the recording flag changes (review l2s-wp4-r1)."""
     if settings is None:
         try:
             settings = _svc.call(_svc.device.settings, what="read settings")
@@ -163,7 +164,12 @@ def _settings_snapshot(name, settings=None):
             reason = f"camera settings could not be read back ({type(e).__name__}: {e}); recording not started"
             events.log("refused", request={"recording": "on", "name": name}, reason=reason)
             raise NotReady(f"{reason}; acquisition keeps running, try again") from e
-    return {k: tuple(settings[k]) if k == "roi" else settings[k] for k in SNAPSHOT_FIELDS if k in settings}
+    missing = [k for k in SNAPSHOT_FIELDS if not isinstance(settings, dict) or settings.get(k) is None]
+    if missing:
+        reason = f"camera settings read back lack {missing}; recording not started"
+        events.log("refused", request={"recording": "on", "name": name}, reason=reason)
+        raise NotReady(f"{reason} (U15: roi, rate_Hz, exposure_ms, gain_dB are stored with every recording)")
+    return {k: tuple(settings[k]) if k == "roi" else settings[k] for k in SNAPSHOT_FIELDS}
 
 
 def set_recording(on, name=None, _settings=None):

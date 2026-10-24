@@ -241,22 +241,127 @@ w.write_event(rec_on(0.0))
 for b in range(100):
     w.write_frame(frame(1, b, 0.1 + b / 90))
 w.flush()
-for b in range(100, 140):
-    w.write_frame(frame(1, b, 0.1 + b / 90))
-os._exit(1)                       # a crash: no close, no flush of the last 40 frames
+if sys.argv[3] == "new group":    # an event of a kind not seen before: its group is created at once, then a crash
+    from test_data import ev
+    w.write_event(ev(2.0, "never_seen_kind", text="x"))
+else:
+    for b in range(100, 140):
+        w.write_frame(frame(1, b, 0.1 + b / 90))
+os._exit(1)                       # a crash: no close, nothing flushed after the 100 rows
 """
 
 
-def test_crash_keeps_everything_up_to_the_last_flush(tmp_path):
+@pytest.mark.parametrize("mode", ["unflushed rows", "new group"])
+def test_crash_keeps_everything_up_to_the_last_flush(tmp_path, mode):
+    """Tested crash points only: after a flush with 40 rows waiting in memory, and right after a new event-kind
+    group was created in the file. A crash during a flush itself is not tested (WP6 carry)."""
     script = tmp_path / "crash.py"
     script.write_text(_CRASH, encoding="utf-8")
-    p = subprocess.run([sys.executable, str(script), str(tmp_path / "c.h5"), str(Path(__file__).parent)],
+    p = subprocess.run([sys.executable, str(script), str(tmp_path / "c.h5"), str(Path(__file__).parent), mode],
                        check=False, capture_output=True, text=True, timeout=60, cwd=str(REPO))
     assert p.returncode == 1, p.stderr
     with h5py.File(tmp_path / "c.h5", "r") as f:
         assert f.attrs["closed_cleanly"] == 0 and f.attrs["frames_written"] == 100
         assert f["mt/buffer_number"][()].tolist() == list(range(100))
         assert f["segments/frames_recorded"][0] == 100
+        assert f["events/recording/event_id"].shape == (1,)
+
+
+def test_frames_outside_accepted_intervals_reported_at_close(tmp_path):
+    """Review l2s-wp4-r1 fix 2: refused on -> frames -> accepted on (at buffer 4) -> frames -> off (at 7) ->
+    a frame after the off. Only frames inside (on, off] are written; the others are reported at close."""
+    w = HDF5Writer(tmp_path / "i.h5")
+    with pytest.raises(RecordingRefused):
+        w.write_event(rec_on(0.0, name="bad", settings={"roi": ROI}))
+    for b in range(5):
+        w.write_frame(frame(1, b, 0.1 + b / 90))               # covered by no accepted recording
+    w.write_event(rec_on(0.2, buf=4, name="good"))
+    for b in range(5, 8):
+        w.write_frame(frame(1, b, 0.1 + b / 90))
+    w.write_event(ev(0.3, "recording", action="off", name="good", segment=1, buffer_number=7))
+    w.write_frame(frame(1, 9, 0.4))                             # after the off, no later on
+    with pytest.raises(RecordingRefused, match="6 recorded frames not written"):
+        w.close()
+    with h5py.File(tmp_path / "i.h5", "r") as f:
+        assert f["mt/buffer_number"][()].tolist() == [5, 6, 7]
+        assert f.attrs["frames_not_written"] == 6 and f.attrs["frames_outside_recordings"] == 0
+        assert f.attrs["closed_cleanly"] == 1 and f["segments/frames_recorded"][0] == 3
+
+
+def test_frames_held_until_their_interval_arrives(tmp_path):
+    """A frame that arrives before the on event placing it is held, then written (no order assumed)."""
+    w = HDF5Writer(tmp_path / "h.h5")
+    w.write_event(rec_on(0.0, name="r1"))
+    w.write_frame(frame(1, 0, 0.1))
+    w.write_event(ev(0.15, "recording", action="off", name="r1", segment=1, buffer_number=0))
+    w.write_frame(frame(1, 3, 0.3))                             # belongs to r2, whose on has not arrived yet
+    assert len(w._pending_frames) == 1
+    w.write_event(rec_on(0.25, buf=2, name="r2"))
+    w.close()
+    assert read_run(tmp_path / "h.h5")["mt"]["buffer_number"].tolist() == [0, 3]
+
+
+def _late_cal_file(path, cal_first):
+    w = HDF5Writer(path, flush_frames=1)
+    start = ev(0.0, "acquisition", action="start", cal=str(FIXTURE / "cal002"))
+    if cal_first:
+        w.write_event(start)
+    w.write_event(rec_on(0.01))
+    for b in range(3):
+        w.write_frame(frame(1, b, 0.1 + b / 90, nb=5))          # flush_frames=1: /beads written without a .cal
+    if not cal_first:
+        assert w._mt.n >= 1 and w._cal is None
+        w.write_event(start)
+    w.close()
+    return read_run(path)
+
+
+def test_late_cal_applied_and_beads_rebuilt_order_independent(tmp_path):
+    need(FIXTURE / "cal002")
+    a = _late_cal_file(tmp_path / "a.h5", True)
+    b = _late_cal_file(tmp_path / "b.h5", False)
+    for k in a["beads"]:
+        np.testing.assert_array_equal(a["beads"][k], b["beads"][k], err_msg=k)
+    assert b["beads"]["role"].tolist() == ["reference"] + ["tethered"] * 4
+    assert np.isfinite(b["beads"]["pick_xy_px"]).all()
+    for k in ("xy_px", "stack", "exp_ref", "bandpass_forget", "cal_bytes", "sha256", "date"):
+        np.testing.assert_array_equal(a["metadata"]["calibration"][k], b["metadata"]["calibration"][k], err_msg=k)
+    assert a["attrs"]["legacy_cal_file"] == b["attrs"]["legacy_cal_file"] == str(FIXTURE / "cal002")
+    assert (export_cal(tmp_path / "a.h5", tmp_path / "a.cal").read_bytes()
+            == export_cal(tmp_path / "b.h5", tmp_path / "b.cal").read_bytes() == (FIXTURE / "cal002").read_bytes())
+
+
+def _motor_file(path, event_first):
+    w = HDF5Writer(path, flush_frames=2, flush_s=1000)
+    move = ev(0.55, "act", {"quantity": "magnet_position_mm", "value": 7.0}, 7.0)
+    w.write_event(rec_on(0.0))
+    if event_first:
+        w.write_event(move)
+    for b, t in enumerate((0.5, 0.6, 0.7, 0.8, 0.9)):
+        w.write_frame(frame(1, b, t))
+    if not event_first:
+        assert w._mt.n == 4                                      # rows at 0.6 .. 0.8 s already flushed
+        w.write_event(move)
+    w.close()
+    return read_run(path)
+
+
+def test_late_motor_reading_backfills_flushed_rows(tmp_path):
+    a = _motor_file(tmp_path / "a.h5", True)
+    b = _motor_file(tmp_path / "b.h5", False)
+    assert np.isnan(b["mt"]["magnet_mm"][0]) and b["mt"]["magnet_mm"][1:].tolist() == [7.0] * 4
+    np.testing.assert_array_equal(a["mt"]["magnet_mm"], b["mt"]["magnet_mm"])
+    np.testing.assert_allclose(a["mt"]["magnet_t"] + a["attrs"]["t0_unix"], b["mt"]["magnet_t"] + b["attrs"]["t0_unix"],
+                               rtol=0, atol=1e-6)
+
+
+def test_file_written_with_hdf5_1_8_upper_bound(tmp_path):
+    w = HDF5Writer(tmp_path / "y.h5")
+    w.write_event(rec_on(0.0))
+    assert w.f.libver == ("earliest", "v108")
+    w.write_frame(frame(1, 0, 0.1))
+    w.close()
+    assert read_run(tmp_path / "y.h5")["attrs"]["closed_cleanly"] == 1
 
 
 def test_matlab_reader_reads_existing_datasets(tmp_path):
@@ -323,6 +428,30 @@ def test_api_drops_and_gaps_visible_in_file(cam, tmp_path, monkeypatch):
     assert int(mt["lost_before"].sum()) == st["camera_gaps"] == seg["camera_gaps"][0]
     assert np.isnan(mt["x_px"][mt["dropped"] == 1]).all()
     assert len(mt["buffer_number"]) == st["frames_received"]                # every received frame is a row
+
+
+def test_api_recording_on_missing_setting_refused_before_flag(cam, tmp_path, monkeypatch):
+    """Review l2s-wp4-r1 fix 1: a settings read without gain refuses the second recording before the flag
+    changes; no frame of it reaches the file."""
+    api.acq.start(record=True, name="two", folder=tmp_path)
+    api.acq.wait_frames(10, 5)
+    api.acq.set_recording(False)
+    real = cam.device.settings
+    monkeypatch.setattr(cam.device, "settings", lambda: {k: v for k, v in real().items() if k != "gain_dB"})
+    n = len(api.events.events())
+    with pytest.raises(api.NotReady, match="lack"):
+        api.acq.set_recording(True, name="second")
+    st = api.acq.status()
+    assert not st["recording"] and not cam.recording
+    assert [e.kind for e in api.events.events()[n:]] == ["refused"]
+    api.acq.wait_frames(10, 5)
+    monkeypatch.setattr(cam.device, "settings", real)
+    st = api.acq.stop()
+    assert st["sink_failures"] == 0, st["sink_error"]
+    with h5py.File(tmp_path / "two.h5", "r") as f:
+        assert f.attrs["frames_not_written"] == 0 and f.attrs["frames_outside_recordings"] == 0
+        assert f["recordings/name"].asstr()[()].tolist() == ["two"]
+        assert f["mt/buffer_number"][-1] == f["recordings/off_buffer"][0]
 
 
 def test_api_existing_file_refused(cam, tmp_path):

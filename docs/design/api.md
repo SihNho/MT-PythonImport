@@ -394,16 +394,18 @@ checked separately in phases 6/7):**
   it); `end_loss = -1` (unknown). A frame whose tracking raised has `track_error = 1` and a
   `/events/writer_tracking_error` row.
 - **Magnet / rotor:** `magnet_mm` / `rotor_deg` per frame are the last `act` read-back of `magnet_position_mm` /
-  `rotor_turns` (x 360) logged before the frame's PC receive time, filled at flush (so a reading that arrives late,
-  but before the flush, is still used), with its time in `magnet_t` / `rotor_t`. NaN before the first reading: there
+  `rotor_turns` (x 360) logged before the frame's PC receive time, filled at flush (a reading that arrives after
+  its rows were flushed is back-filled at the next flush: review fix 4 below), with its time in `magnet_t` /
+  `rotor_t`. NaN before the first reading: there
   is no motor polling thread yet (WP6), so between moves the value is the last move's read-back.
-- **Crash bound:** rows are buffered in memory and written only at a flush (every `flush_frames` rows or `flush_s`
-  seconds, checked at each write, and at close); between flushes the HDF5 file is not touched. A crash loses at most
-  the rows since the last flush: at most 150 frames (1 s at 150 Hz) and, while frames arrive, about 1 s. Tested by a
-  subprocess killed with `os._exit` after a flush plus 40 unflushed frames: the file opens, holds exactly the flushed
-  100 rows, `closed_cleanly = 0`. Not tested: a crash during a flush itself (the file may then need repair; open
-  item 1 of hdf5-v1.md - plain chunked HDF5 with periodic flush, option (c), is what is implemented, without a repair
-  tool). No SWMR (event tables are created when a kind first appears, which SWMR does not allow).
+- **Crash behaviour (tested points only, wording per review l2s-wp4-r1):** rows are buffered in memory and written
+  at a flush (every `flush_frames` rows or `flush_s` seconds, checked at each write, and at close). Two crash points
+  are tested, each a subprocess ended with `os._exit` after a flush of 100 rows: (1) with 40 more rows waiting in
+  memory, (2) right after an event of a new kind created its group in the file. In both the file opens, holds exactly
+  the 100 flushed rows and `closed_cleanly = 0`. For those points the loss is the rows since the last flush (at most
+  `flush_frames`, default 150). **Not tested and not promised:** a crash during a flush, including the motor
+  back-fill rewrite (WP6 carry below). Option (c) of hdf5-v1.md open item 1, without a repair tool; no SWMR (event
+  tables are created when a kind first appears, which SWMR does not allow).
 - **Readers / export:** `mtpy.data.read_run(path)` (nested dicts, JSON columns parsed), `legacy_matrix(path)`
   (`.tra` columns per segment), `export_tra(path, base=None, nominal=2_000_000)` (tracked rows only; frame =
   buffer - segment first buffer; one series per segment when there are several: `<base>-s<k>-000`; header by
@@ -432,6 +434,47 @@ checked separately in phases 6/7):**
   file with a running frame number); whether magnet / rotor need a polling thread (LabVIEW reads them every frame)
   before `.tra` column 1-2 match LabVIEW's meaning; how storage errors during recording are stored (now: only
   `api.acq.status()` `sink_error`, the file may not be writable).
+
+**Review l2s-wp4-r1 fixes (simulators and files only; unit tests, not a real MATLAB or rig):**
+1. **Four settings checked before the flag:** `api.acq.set_recording(True)` (and `start(record=True)`) refuses a
+   settings read that lacks any of roi, rate_Hz, exposure_ms, gain_dB (or gives None) with one `refused` event and
+   `NotReady`, before the recording flag or the services' `recording` flags change.
+2. **Recording intervals by position:** the writer writes a frame only inside an accepted interval: after the on
+   event's (segment, buffer) up to and including the off event's (the first off after that on and before the next
+   on, by event time; without an off, up to the next on, or open-ended); an on without a buffer number starts before
+   the segment's first frame. Frames not yet placed are held (bounded by `max_pending`) until an on / off event
+   places them. At close, frames still outside are counted in the root attribute `frames_not_written`, written rows
+   outside the final intervals (an off that arrived after its frames) in `frames_outside_recordings`, and either
+   raises `RecordingRefused` after the file is closed cleanly. Segment counts cover written rows only.
+3. **Late .cal:** a `.cal` path that arrives after the file was opened (acquisition-start event late) is stored at
+   the next flush (`/metadata/calibration`, root `legacy_cal_file`), and `/beads` is rebuilt from it at every flush
+   (roles from the exp/ref flags, pick positions; user roles kept).
+4. **Late motor reading:** a magnet / rotor read-back that arrives after rows with later PC times were flushed
+   rewrites those rows' `magnet_mm` / `magnet_t` / `rotor_deg` / `rotor_t` at the next flush (the file is scanned
+   back from the end in 4096-row blocks to the first row at or after the reading).
+5. **Crash right after a new group** is tested (see "Crash behaviour" above).
+6. **libver:** the file is opened with `libver=("earliest", "v108")` (upper bound HDF5 1.8 object formats, so a newer
+   format raises at write time instead of silently making a file older MATLAB HDF5 builds cannot read). h5py 3.16
+   (HDF5 2.0.0 here) accepts it; the real MATLAB check is WP6.
+7. **Crash wording** limited to the tested points (above and in `mtpy.data.hdf5`).
+- Tests (tests/test_data.py): `test_api_recording_on_missing_setting_refused_before_flag` (1),
+  `test_frames_outside_accepted_intervals_reported_at_close`, `test_frames_held_until_their_interval_arrives` (2),
+  `test_late_cal_applied_and_beads_rebuilt_order_independent` (3, needs the G: fixture),
+  `test_late_motor_reading_backfills_flushed_rows` (4, flush every 2 rows),
+  `test_crash_keeps_everything_up_to_the_last_flush[new group]` (5), `test_file_written_with_hdf5_1_8_upper_bound`
+  (6).
+- **Not changed (owner question pending):** the `.tra` column-0 origin (segment's first received buffer).
+
+**Carried (agreed in l2s-wp4-r1), WP6:**
+- a crash during a flush, including the motor back-fill rewrite path (not tested, nothing promised);
+- a real MATLAB run of `matlab/read_mtpy_h5.m` and of the owner's analysis scripts on an exported `.tra` (owner's
+  MATLAB version needed; also confirms the `libver` bound);
+- per-frame motor reading (a polling path outside the frame acquisition path; today the last move's read-back, NaN
+  before the first move);
+- `sink_error` (storage errors during recording) stored in the file, not only in `api.acq.status()`;
+- the `.tra` column-0 origin: docs/format/tra-cal.md:78 says relative to the first **saved** buffer, `export.py`
+  (`legacy_matrix`, frame = buffer - `/segments/first_buffer`, the segment's first **received** buffer) differs when
+  recording starts after acquisition; owner to confirm before Python export and MATLAB reader change together.
 
 ## 4. Example: the enzyme-cleavage experiment as a Python experiment script (level 3)
 ```python

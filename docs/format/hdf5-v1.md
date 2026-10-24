@@ -279,10 +279,12 @@ needs them.
 1. **Crash tolerance — undecided** (decision 0006 item 5). Options: (a) HDF5 SWMR mode with a flush every N frames;
    (b) an append-only raw binary stream during the run, converted to HDF5 at the end and on recovery; (c) plain
    chunked HDF5 with periodic `flush` plus a repair step. To be chosen with a crash test in phase 5.
-   **WP4:** (c) is implemented without a repair step: rows are buffered in memory and written only at a flush
-   (every 150 rows or 1 s, and at close), so a crash loses at most the rows since the last flush; a subprocess
-   killed after a flush left a readable file with exactly the flushed rows (`closed_cleanly = 0`). A crash during a
-   flush itself is not tested; SWMR is not used (event tables are created on first use).
+   **WP4:** (c) is implemented without a repair step: rows are buffered in memory and written at a flush (every
+   150 rows or 1 s, and at close). Tested crash points only: a subprocess ended after a flush with rows still in
+   memory, and right after a new event-kind group was created, left a readable file with exactly the flushed rows
+   (`closed_cleanly = 0`). A crash during a flush (including the motor back-fill rewrite) is not tested and nothing
+   is promised for it (WP6). SWMR is not used (event tables are created on first use). The file is written with
+   `libver=("earliest", "v108")` (HDF5 1.8 object formats at most; a real MATLAB check is WP6).
 2. Per-bead ROI images (decision 0006 item 6) — not in v1.
 3. ~~A command / event log — needed?~~ **Resolved** by the owner's requirements: re-zero / exclusion events (U14),
    device errors (U8), mid-run protocol edits (U18), light changes (U24) and setting changes (U17) are all stored with
