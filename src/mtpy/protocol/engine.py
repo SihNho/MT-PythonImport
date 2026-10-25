@@ -59,6 +59,7 @@ class Engine:
         self.motion_timeout_s, self.ramp_step_s = float(motion_timeout_s), float(ramp_step_s)
         self._lock = threading.Lock()
         self._stop, self._pause, self._done = threading.Event(), threading.Event(), threading.Event()
+        self._abort = None        # decision 0019: the reason a magnet stall aborted the run (set from any thread)
         self._pending = None
         self._pos = []            # per nesting level: the index of the statement (ancestors: the running loops)
         self._gen = gen
@@ -85,6 +86,11 @@ class Engine:
 
     def request_stop(self):
         self._stop.set()
+
+    def abort(self, reason):
+        """Decision 0019 (magnet stall): end the run as `aborted` at the next check; the running move is NOT
+        cancelled from here (the stall response moves the magnet itself), and no further step starts."""
+        self._abort = reason
 
     def pause(self):
         self._pause.set()
@@ -153,6 +159,9 @@ class Engine:
         if self._estopped():
             raise _End("aborted", "emergency stop engaged: the run is aborted and never resumes motion by itself; "
                                   "start the protocol again after the stop is released")
+        if self._abort:
+            raise _End("aborted", f"{self._abort}: the run is aborted; the magnet stall response returns the "
+                                  "magnet to 0 mm")
         if self._stop.is_set():
             raise _End("stopped", "stopped by the operator; magnet, rotor, recording and lasers left as they are")
 
@@ -253,6 +262,8 @@ class Engine:
             if self._estopped():
                 end = _End("aborted", f"emergency stop engaged during line {st.line} '{st.text}': the run is aborted "
                                       f"and never resumes motion by itself ({type(e).__name__}: {e})")
+            elif isinstance(e, api.MagnetStall) or self._abort:
+                end = _End("aborted", f"magnet stall during line {st.line} '{st.text}' (decision 0019): {e}")
             elif self._stop.is_set():
                 end = _End("stopped", f"stopped by the operator during line {st.line} '{st.text}'")
             elif isinstance(e, api.SafetyRefused):

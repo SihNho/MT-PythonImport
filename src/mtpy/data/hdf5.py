@@ -579,6 +579,8 @@ class HDF5Writer(ResultSink):
                                                              "event": {"kind": e.kind, "extra": e.extra}})
         for e in pending_e:
             self._write_event(e)
+        if "magnet_stalls" not in self.f.attrs:             # decision 0019: the stall count is always present
+            self.f.attrs["magnet_stalls"] = 0
         self.f.attrs["sink_failures"] = 0
         self._write_sink_errors()                          # failures noted before the file existed (WP6)
         self._pending_frames = pending_f
@@ -714,6 +716,8 @@ class HDF5Writer(ResultSink):
 
     def _write_event(self, ev):
         self._ids[id(ev)] = self._write_event_row(ev.kind, ev, data=dict(ev.extra or {}))
+        if ev.kind == "magnet_stall":                      # decision 0019: an error record, counted at the root
+            self.f.attrs["magnet_stalls"] = int(self.f.attrs.get("magnet_stalls", 0)) + 1
 
     def _write_event_row(self, kind, ev, data, buffer=None, segment=None, t=None):
         name = kind.replace("/", "_") or "unnamed"

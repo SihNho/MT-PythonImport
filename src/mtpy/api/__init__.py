@@ -17,16 +17,19 @@ shipped rig safety profile v5 without `magnet_force_pN`. 0.9.0 (decision 0018): 
 the LabVIEW equation M270 v3 computed live (`magnet.set_touch_position`, `force_calibration`, `force_at`,
 `coerce_force`; tables stay an alternative); a force outside the reachable range and a magnet position outside the
 position limit are coerced (a `coerced` event), also in protocols (the checked plan is rewritten), and the position
-sent to the magnet is coerced into the limit in the last step; magnet readings carry the live force.
+sent to the magnet is coerced into the limit in the last step; magnet readings carry the live force. 0.10.0
+(decision 0019): magnet stall (controller error -1024) detected after moves and on polls; the extinguisher stops the
+move and the protocol, returns the magnet to 0 mm once and verifies it, else locks the magnet until
+`magnet.clear_stall()`; a `magnet_stall` event (an error record) and `MagnetStall`.
 """
 from . import errors, estop, events, safety  # noqa: I001 - must load before the device groups (they import them)
 from . import camera, devices, focus, light, magnet, rotor, stage, sync
 from . import acq, beads, data, tracking
 from . import protocol
-from .errors import DeviceError, MtpyError, NotReady, SafetyRefused, ScriptError, Timeout
+from .errors import DeviceError, MagnetStall, MtpyError, NotReady, SafetyRefused, ScriptError, Timeout
 
-VERSION = "0.9.0"
+VERSION = "0.10.0"
 
-__all__ = ["VERSION", "DeviceError", "MtpyError", "NotReady", "SafetyRefused", "ScriptError", "Timeout",
+__all__ = ["VERSION", "DeviceError", "MagnetStall", "MtpyError", "NotReady", "SafetyRefused", "ScriptError", "Timeout",
            "acq", "beads", "camera", "data", "devices", "errors", "estop", "events", "focus", "light", "magnet",
            "protocol", "rotor", "safety", "stage", "sync", "tracking"]

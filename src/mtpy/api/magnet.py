@@ -14,16 +14,23 @@ safeguard (0018 item 4): the position sent to the device is coerced into the lim
 The speed is checked as before (refused above `magnet_speed_mm_s`). A `magnet_force_pN` entry left in an older
 profile (v1-v4) is ignored.
 """
+import contextvars
+import threading
+import time
+
 from mtpy import forcecal
 
 from . import estop, events, safety
 from .devices import _move, service
-from .errors import NotReady, SafetyRefused
+from .errors import DeviceError, MagnetStall, MtpyError, NotReady, SafetyRefused
 
 COERCE_TOL = 1e-9        # |applied - requested| at or below this is numerical noise: applied, not logged as coerced
+STALL_ERROR = -1024      # PI: "position error too large, servo switched off" (decision 0019)
+RETURN_TIMEOUT_S = 60.0  # the stall return: 39 mm at >= 1 mm/s, with margin
+_STALL_LOCK = threading.Lock()   # one stall check / response at a time (one magnet)
 
 
-def move_to(position_mm, speed_mm_s=None):
+def move_to(position_mm, speed_mm_s=None, _stall_return=False):
     """Move the magnet to position_mm (0 = top, larger = closer to the sample) and return a Motion.
 
     Position (decision 0018 item 5): outside the profile's `magnet_position_mm` it is coerced to the nearest limit
@@ -38,10 +45,18 @@ def move_to(position_mm, speed_mm_s=None):
     Example: `api.magnet.move_to(5.0).wait(10)`.
     The request is made at the first line: an emergency stop engaged from here on (even while the speed is read
     back, and even if released again) voids it (re-review l2s-wp2-r2).
+    Stall (decision 0019): the read-back also reads the controller error; a stall is handled at once (return to
+    0 mm) and wait() raises MagnetStall. While the magnet is locked after an unverified return, every move is refused
+    (NotReady) until clear_stall().
     """
     gen = estop.generation()
     svc = service("magnet")
     dev = svc.require()
+    if getattr(svc, "stall_locked", None) is not None and not _stall_return:
+        reason = ("the magnet is locked after a stall whose return to 0 mm was not verified (decision 0019); "
+                  "api.magnet.clear_stall() first")
+        events.log("refused", request={"quantity": "magnet_position_mm", "value": position_mm}, reason=reason)
+        raise NotReady(reason)
     omitted = speed_mm_s is None
     speed = svc.call(dev.speed, what="VEL? 1") if omitted else speed_mm_s
     request = {"quantity": "magnet_speed_mm_s", "value": speed}
@@ -53,8 +68,9 @@ def move_to(position_mm, speed_mm_s=None):
         events.log("refused", request=request, reason=str(e))
         raise
     applied = _coerce_position(position_mm)
-    m = _move("magnet", "magnet_position_mm", applied, dev.position, gen=gen,
-              send=lambda v: _send(svc, dev, v, speed))
+    n_stall = getattr(svc, "stall_count", 0)
+    m = _move("magnet", "magnet_position_mm", applied, lambda: _read_checked(svc, dev, n_stall, _stall_return),
+              gen=gen, send=lambda v: _send(svc, dev, v, speed), read_on_caller=True)
     m.requested_mm, m.applied_mm = position_mm, applied
     m.coerced = applied is not position_mm and abs(applied - position_mm) > COERCE_TOL
     return m
@@ -98,6 +114,166 @@ def position():
     """The magnet position read back, mm. Example: `api.magnet.position()`."""
     svc = service("magnet")
     return svc.call(svc.require().position, what="POS?")
+
+
+# --- stall: the extinguisher (decision 0019) -----------------------------------------------------------------------
+
+def _read_error(svc, dev):
+    fn = getattr(dev, "error", None)
+    return 0 if fn is None else svc.call(fn, what="ERR?")
+
+
+def _read_checked(svc, dev, n_stall, returning):
+    """The magnet move's read-back (motion thread): the controller error first, then the position. A stall (-1024)
+    is handled here (return to 0 mm) and raised as MagnetStall; so is a stall the poller handled during this move.
+    During the stall return itself (`returning`) a new stall is only raised, never handled again (one shot)."""
+    if returning:
+        err = _read_error(svc, dev)
+        if err == STALL_ERROR:
+            raise MagnetStall(svc.last_stall, hint=f"a new stall (controller error {err}) during the return to 0 mm")
+        return svc.call(dev.position, what="POS?")
+    with _STALL_LOCK:
+        if getattr(svc, "stall_count", 0) != n_stall:
+            raise MagnetStall(svc.last_stall)
+        err = _read_error(svc, dev)
+        if err != STALL_ERROR:
+            return svc.call(dev.position, what="POS?")
+        svc.stall_count = getattr(svc, "stall_count", 0) + 1
+        rec = _respond(svc, dev, err, svc.call(dev.position, what="POS?"), "move read-back")
+    raise MagnetStall(rec)
+
+
+def _abort_protocol(reason):
+    from . import protocol as _protocol
+    eng = _protocol._engine
+    if eng is not None and not eng.done:
+        eng.abort(reason)
+
+
+def _return_to_zero(svc, dev):
+    """Servo on again, move to 0 mm through the normal path (speed check, coercion, last-step coercion), verify the
+    position within the device tolerance. Returns the position read; raises on any failure (never retried)."""
+    svc.call(dev.set_servo, True, what="SVO 1 1")
+    if not svc.call(dev.servo_on, what="SVO? 1"):
+        raise DeviceError("magnet", "SVO 1 1", "the servo did not switch on again after the stall")
+    move_to(0.0, _stall_return=True).wait(RETURN_TIMEOUT_S)
+    p = svc.call(dev.position, what="POS?")
+    if not (safety._is_number(p) and abs(p) <= dev.tol):
+        raise DeviceError("magnet", "POS?", f"read {p!r} mm after the return, not 0 mm within {dev.tol} mm")
+    return p
+
+
+def _respond(svc, dev, err, pos, source):
+    """Decision 0019, under _STALL_LOCK, once per stall: stop the move and the protocol, return to 0 mm unless that
+    is not allowed (emergency stop engaged) or not possible (position not valid after a stall per the device layer),
+    verify; otherwise lock the magnet. Logs one `magnet_stall` event (level error) and returns its content."""
+    valid = bool(getattr(dev, "position_valid_after_stall", True))
+    rec = {"t_stall": time.time(), "position_mm": pos, "controller_error": err, "detected_by": source,
+           "position_valid_after_stall": valid, "return_attempted": False, "return_verified": False,
+           "position_after_mm": None, "locked": False, "reason": None}
+    svc.last_stall = rec
+    try:
+        dev.stop()                     # directly, as the emergency stop does (the servo is off already)
+    except Exception:  # noqa: BLE001, S110 - the stop is best effort; the return below is what counts
+        pass
+    _abort_protocol(f"magnet stall at {pos!r} mm (controller error {err}, decision 0019)")
+    if estop.active():
+        rec["reason"] = ("emergency stop engaged: no return move; after the release the user returns the magnet "
+                         "with api.magnet.clear_stall()")
+    elif not valid:
+        rec["reason"] = ("the device layer says the position is not valid after a stall (a reference move would be "
+                         "needed first, not implemented): no return move")
+    else:
+        rec["return_attempted"] = True
+        try:
+            rec["position_after_mm"] = _return_to_zero(svc, dev)
+            rec["return_verified"] = True
+        except Exception as e:  # noqa: BLE001 - any failure of the return locks the magnet
+            rec["reason"] = f"return to 0 mm failed: {type(e).__name__}: {e}"
+    if not rec["return_verified"]:
+        rec["locked"] = True
+        svc.stall_locked = rec
+    events.log("magnet_stall", request={"quantity": "magnet_position_mm"}, readback=pos, level="error", **rec)
+    return rec
+
+
+def _poll_respond(svc, dev, err, pos):
+    try:
+        _respond(svc, dev, err, pos, "poll")
+    finally:
+        _STALL_LOCK.release()
+
+
+def poll_position():
+    """For the acquisition's motor poller (decision 0019): the position, after reading the controller error. A stall
+    is handled on its own thread (the poller keeps reading); the reading is still returned (the stall position)."""
+    svc = service("magnet")
+    dev = svc.require()
+    if not _STALL_LOCK.acquire(blocking=False):      # a stall is being handled: just read
+        return position()
+    try:
+        try:
+            err = _read_error(svc, dev)
+        except MtpyError:          # a failed ERR? is not a reading error of its own: the position read decides
+            err = None
+        pos = position()
+    except BaseException:
+        _STALL_LOCK.release()
+        raise
+    if err != STALL_ERROR:
+        _STALL_LOCK.release()
+        return pos
+    svc.stall_count = getattr(svc, "stall_count", 0) + 1     # before the thread: a running move sees it at once
+    threading.Thread(target=contextvars.copy_context().run, args=(_poll_respond, svc, dev, err, pos),
+                     name="magnet-stall", daemon=True).start()
+    return pos
+
+
+def check_stall():
+    """Read the controller error now; on a stall respond (decision 0019) and raise MagnetStall. Returns None when
+    there is none. Example: `api.magnet.check_stall()`."""
+    svc = service("magnet")
+    dev = svc.require()
+    with _STALL_LOCK:
+        err = _read_error(svc, dev)
+        if err != STALL_ERROR:
+            return
+        svc.stall_count = getattr(svc, "stall_count", 0) + 1
+        rec = _respond(svc, dev, err, svc.call(dev.position, what="POS?"), "check_stall")
+    raise MagnetStall(rec)
+
+
+def stall_status():
+    """{"locked": the record that locked the magnet or None, "last": the last stall record or None, "count"}."""
+    svc = service("magnet")
+    return {"locked": getattr(svc, "stall_locked", None), "last": getattr(svc, "last_stall", None),
+            "count": getattr(svc, "stall_count", 0)}
+
+
+def clear_stall(return_to_zero=True):
+    """The user's explicit action after a stall that locked the magnet (decision 0019): return_to_zero (default)
+    re-enables the servo, moves to 0 mm and verifies it, then unlocks; False unlocks without moving (the user has
+    made the magnet safe by hand). Refused (NotReady) while the emergency stop is engaged. A failed return keeps the
+    lock and raises MagnetStall. Logs `magnet_stall_clear`. Returns stall_status()."""
+    svc = service("magnet")
+    dev = svc.require()
+    rec = getattr(svc, "stall_locked", None)
+    if rec is None:
+        return stall_status()
+    with _STALL_LOCK:
+        p = None
+        if return_to_zero:
+            if estop.active():
+                raise NotReady("the emergency stop is engaged; release it before returning the magnet")
+            try:
+                p = _return_to_zero(svc, dev)
+            except MtpyError as e:
+                why = f"return to 0 mm failed: {type(e).__name__}: {e}"
+                events.log("magnet_stall_clear", result="failed", reason=why, level="error")
+                raise MagnetStall({**rec, "return_attempted": True, "return_verified": False, "reason": why}) from e
+        svc.stall_locked = None
+        events.log("magnet_stall_clear", result="cleared", return_to_zero=return_to_zero, position_after_mm=p)
+    return stall_status()
 
 
 # --- force calibration (decisions 0010, 0017, 0018) --------------------------------------------------------------

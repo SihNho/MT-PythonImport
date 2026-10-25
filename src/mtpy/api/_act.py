@@ -5,7 +5,7 @@ emergency stop -> tolerance and profile check -> act -> read back and compare ->
 its own thread, never on the frame acquisition path.
 """
 from . import estop, events, safety
-from .errors import DeviceError, NotReady, SafetyRefused
+from .errors import DeviceError, MagnetStall, NotReady, SafetyRefused
 
 
 def _device_error(request, device, command, hint, stage, cause=None, **extra):
@@ -89,6 +89,8 @@ def acting(quantity, value, do, readback, tol, origin=None, device=None, check=N
         got = readback()
     except NotReady as e:
         events.log("cancelled", request=request, reason=str(e))
+        raise
+    except MagnetStall:             # decision 0019: handled (and logged as `magnet_stall`) by the magnet's read-back
         raise
     except Exception as e:  # noqa: BLE001 - any device failure must become a DeviceError with an event
         _device_error(request, name, command, f"read-back failed: {type(e).__name__}: {e}", "readback", e)

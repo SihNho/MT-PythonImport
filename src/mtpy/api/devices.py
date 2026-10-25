@@ -89,13 +89,16 @@ def self_check():
     return {name: svc.self_check() for name, svc in _services.items()}
 
 
-def _move(name, quantity, value, read, send=None, origin=None, check=None, match=None, gen=None):
+def _move(name, quantity, value, read, send=None, origin=None, check=None, match=None, gen=None,
+          read_on_caller=False):
     """Start a Motion: refuse at once (caller's thread) if e-stopped or outside the profile, then on the motion thread
     send, wait for arrival, read back and compare through acting().
 
     gen: the emergency-stop generation recorded on the FIRST line of the public move function, before any device
     pre-read (magnet speed, rotor position; re-review l2s-wp2-r2), so an engage -> clear during a pre-read voids the
-    move. None = now (a move function without pre-reads)."""
+    move. None = now (a move function without pre-reads). read_on_caller (decision 0019): read() runs on the motion
+    thread and makes its own service calls (the magnet's read-back also reads the controller error); else it runs
+    on the service thread."""
     svc = service(name)
     dev = svc.require()
     if gen is None:
@@ -106,7 +109,7 @@ def _move(name, quantity, value, read, send=None, origin=None, check=None, match
     def body(motion):
         def readback():
             motion.wait_arrival(dev.moving, gen)
-            return svc.call(read, what="position")
+            return read() if read_on_caller else svc.call(read, what="position")
         return acting(quantity, value, send, readback, dev.tol, origin, name, check, match, gen=gen,
                       cancel=motion.cancel_flag)
     return _devices.Motion(svc, body, what=f"{name} move to {value!r}")

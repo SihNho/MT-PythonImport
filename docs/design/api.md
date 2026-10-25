@@ -825,8 +825,9 @@ allows is **coerced to the nearest reachable value** - no alarm, no refusal - an
 - **Open point (not decided, owner):** when `touch_mm` is below the position-limit max (39 mm), positions between
   touch and 39 mm give d < 0 and very large forces (F(d = -5) = 4088 pN; F(d = 1) = 37.18 pN). The code then treats them as reachable:
   the force range's max is F(39 mm), a large force request moves the magnet past the touch position up to 39 mm, and
-  only the position limit stops it; `force_range()["touch_beyond_limit"]` is True. Whether the limit should follow
-  the touch position (e.g. min(39, touch)) is for the owner.
+  only the position limit stops it; `force_range()["touch_beyond_limit"]` is True. **Closed by decision 0018 item 6
+  (owner):** the touch position is NOT a second bound (no min(limit, touch)); the only bound is the profile's position
+  limit, changed by a new profile version when the rig changes. The behaviour above stays as it is.
 - Tests: `tests/test_forcecal.py` (equation values at d = 0 and 2 and more, round trip, cost, table interface);
   in `tests/test_devices.py` `test_direct_position_outside_the_limit_is_coerced_to_the_nearest_limit`,
   `test_last_step_coerces_whatever_the_caller_computed`, `test_table_force_above_/below_the_reachable_range_...`,
@@ -837,6 +838,51 @@ allows is **coerced to the nearest reachable value** - no alarm, no refusal - an
   `test_shipped_profile_v5_runs_position_moves_and_force_steps_in_range` (coerced ramp runs to 39 mm),
   `test_equation_run_file_records_calibration_coercion_and_live_force`. Walking skeleton: "default force
   calibration is the live equation" and "force beyond the magnet position limit coerced, not refused; runs to 39 mm".
+
+### Decision 0019: magnet stall (2026-10-25, `api.VERSION = "0.10.0"`; simulators only)
+An extinguisher, not a working feature: a stall hard enough for the PI controller to detect has probably already hurt
+the piezo stage; the response limits follow-on damage. Normal safety stays the position limit.
+- **Detection:** the PI controller's own stall detection - position error above its programmable maximum, servo
+  switched off, error **-1024** (`magnet.STALL_ERROR`). The magnet reads the controller error (`ERR?`, cleared by the
+  read) in every move's read-back (before the position) and on every poll of the acquisition's motor poller
+  (`magnet.poll_position`); `magnet.check_stall()` reads it on demand. A device without `error()` is not checked.
+- **Response (one shot, never a retry loop; one at a time):** stop the axis directly; abort the running protocol
+  (`Engine.abort`: state `aborted`, no further step; the running move is not cancelled from the engine); then, unless
+  the emergency stop is engaged or the device layer says the position is not valid after a stall: servo on again
+  (`SVO 1 1`, read back with `SVO?`), move to 0 mm through the normal path (`move_to(0.0)`: speed limit, coercion,
+  last-step coercion), verify the position within the device tolerance. A new stall during that return is raised,
+  never handled again.
+- **Record:** one `magnet_stall` event, `level: "error"`: `t_stall`, `position_mm` (at the stall), `controller_error`,
+  `detected_by` ("move read-back" | "poll" | "check_stall"), `position_valid_after_stall`, `return_attempted`,
+  `return_verified`, `position_after_mm`, `locked`, `reason`. While recording it is a row of `/events/magnet_stall`
+  and the root attribute `magnet_stalls` counts them (always present, 0 without a stall); the in-process
+  `api.events` log is the session log. The caller of the stalled move gets **`MagnetStall`** (a `DeviceError`, with
+  `.record`) from `Motion.wait()` / `check_stall()`; a protocol ends `aborted` with "magnet stall" in its reason; a
+  stall found by the poller is handled on its own thread (`magnet-stall`, the poller keeps reading), and a move
+  running then also raises `MagnetStall`.
+- **Lock:** when the return is not attempted (emergency stop, position not valid) or fails or cannot be verified,
+  the magnet is locked: every `move_to` / `set_force` / protocol magnet step is refused (`NotReady`, `refused` event)
+  until the user's explicit `api.magnet.clear_stall(return_to_zero=True)` (refused while the e-stop is engaged; it
+  re-enables the servo, returns to 0 mm and verifies, else stays locked and raises `MagnetStall`; `False` unlocks
+  without moving, for a magnet made safe by hand). Each try is a `magnet_stall_clear` event. A stall during an
+  emergency stop is recorded and never followed by a return move on its own - not even after the release.
+  `api.magnet.stall_status()` -> `{"locked", "last", "count"}`.
+- **GUI contract (phase 8):** every `magnet_stall` event opens a **modal error window** that stays until the user
+  closes it (unlike 0018's silent coercion), showing time, position at the stall, controller error, whether the
+  return to 0 mm was verified, and - when locked - the reason and the clear action (`clear_stall`).
+- **Device-layer flag:** `position_valid_after_stall` (sim default `True`: the return needs no reference move). With
+  `False` no return is attempted (there is no reference path) and the magnet is locked.
+- **Simulator:** `SimMagnet.inject_stall(at_mm=None)` (TEST ONLY: now, or the next move that passes `at_mm` stops
+  there, servo off, error -1024), `error()` (`ERR?`), `set_servo` / `servo_on` (`SVO`, `SVO?`), `fail_servo_on`
+  (TEST ONLY); a move with the servo off is refused (PI error 5).
+- **Open rig item (needs the owner's go):** read the C-863 parameter list and the current maximum position error
+  (the stall threshold; its parameter id on the C-863 is not known yet); confirm that after a -1024 the servo can be
+  re-enabled and the position is still valid without a new reference. If not, the real backend sets
+  `position_valid_after_stall = False` (lock, no return) until a reference-first return path exists.
+- Tests: `tests/test_stall.py` (no stall -> nothing changes; stall during a move -> return verified + MagnetStall;
+  failing return -> locked, refused, cleared by the user; position-not-valid flag; stall during an e-stop; stall
+  during a protocol move -> aborted, returned, `/events/magnet_stall` + `magnet_stalls` in the file; the poller
+  catching a stall while idle).
 
 ## 4. Example: the enzyme-cleavage experiment as a Python experiment script (level 3)
 ```python

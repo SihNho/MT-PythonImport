@@ -47,6 +47,7 @@ while this page is a draft.
 | `created_utc` | string | ISO 8601 time the file was opened |
 | `closed_cleanly` | uint8 | 0 while writing, 1 after a normal close (crash detection, decision 0007) |
 | `legacy_tra_files` | string array | paths of the `.tra` files of this run |
+| `magnet_stalls` | int | number of `magnet_stall` error records in `/events/magnet_stall` (decision 0019; 0 = none) |
 | `legacy_cal_file` | string | path of the `.cal` file used |
 | `run_id` | string | unique id of the run (UUID); the same id is in any separate fluorescence / image file and in the JSON copy, so the files of one run are linked (0006 "Later notes") |
 | `frames_written` | int64 | /mt rows of the last COMPLETE flush (updated after every column was written); a reader of a file with `closed_cleanly = 0` uses only this many rows (`mtpy.data.hdf5.mt_rows`) — *WP4, reader rule WP6* |

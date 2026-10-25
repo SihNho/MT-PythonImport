@@ -57,7 +57,7 @@ class _MotorPoller:
     number. A device that fails is read
     again after `retry_s` (one `motor_reading_error` event per new error text, not one per poll)."""
 
-    _READ = (("magnet", "magnet_position_mm", lambda: _magnet.position()),
+    _READ = (("magnet", "magnet_position_mm", lambda: _magnet.poll_position()),     # + stall check (0019)
              ("rotor", "rotor_turns", lambda: _rotor.position()))
 
     def __init__(self, pipe, period_s, retry_s=1.0):

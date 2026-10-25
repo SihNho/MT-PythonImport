@@ -120,18 +120,85 @@ class SimMagnet(SimMotor):
     hint = "check the PI controller power, servo (SVO) and the USB cable"
     quantities = ("magnet_position_mm", "magnet_force_pN", "magnet_speed_mm_s")
 
+    STALL_ERROR = -1024             # PI: "position error too large, servo switched off" (decision 0019)
+    # Device-layer flag (decision 0019 item 5): after a -1024 the position is still valid, so the return to 0 mm needs
+    # no reference move first. NOT confirmed on the rig's C-863 yet (open rig item, docs/design/api.md); a real
+    # backend sets it from that check. False -> the API does not attempt the return (no reference path exists).
+    position_valid_after_stall = True
+
     def __init__(self, pos=0.0, speed=10.0, soft=(0.0, 39.0)):
         super().__init__(Axis(pos, speed, (0.0, 40.94), 1e-5, noise=2e-4), tol=0.01)
         self.soft = soft
+        self.err, self.servo = 0, True
+        self._stall_at = None          # armed stall position (inject_stall), or None
+        self._stall_pending = False    # a move was cut at the stall position; the stall fires when it arrives
+        self.fail_servo_on = False     # TEST ONLY: re-enabling the servo fails (it stays off)
 
     def limits(self):
         return {**super().limits(), "soft_limits_TMN_TMX": self.soft}
+
+    # --- stall injection for tests (decision 0019) -----------------------------------------------------------------
+    def inject_stall(self, at_mm=None):
+        """TEST ONLY. at_mm None: stall now, where the magnet is. Else: the next move that passes at_mm stops there,
+        and then the controller reports -1024 with the servo switched off."""
+        if at_mm is None:
+            self._stall_now()
+        else:
+            self._stall_at = float(at_mm)
+
+    def _stall_now(self):
+        self.axis.stop()
+        self.servo, self.err, self._stall_at, self._stall_pending = False, self.STALL_ERROR, None, False
+
+    def _update(self):
+        if self._stall_pending and not self.axis.moving():
+            self._stall_now()
 
     def move_to(self, target, speed=None):
         self._io()
         if not self.soft[0] <= target <= self.soft[1]:
             raise ValueError(f"PI ERR 7: target {target:g} mm outside the soft limits TMN/TMX {self.soft} mm")
-        self.axis.move_to(target, speed)
+        self._update()
+        if not self.servo:
+            raise ValueError("PI ERR 5: move attempted with the servo off")
+        s, p = self._stall_at, self.axis.position()
+        if s is not None and min(p, target) <= s <= max(p, target) and abs(s - p) > 1e-9:
+            self.axis.move_to(s, speed)        # the motor is blocked at s
+            self._stall_pending = True
+        else:
+            self.axis.move_to(target, speed)
+
+    def moving(self):
+        self._io()
+        self._update()
+        return self.axis.moving()
+
+    def position(self):
+        self._io()
+        self._update()
+        return super().position()
+
+    def error(self):
+        """PI `ERR?`: the last controller error code, cleared by the read (0 = none)."""
+        self._io()
+        self._update()
+        e, self.err = self.err, 0
+        return e
+
+    def set_servo(self, on):
+        """PI `SVO 1 <on>`."""
+        self._io()
+        if not (on and self.fail_servo_on):
+            self.servo = bool(on)
+
+    def servo_on(self):
+        """PI `SVO? 1`."""
+        self._io()
+        return self.servo
+
+    def stop(self):
+        self._stall_pending = False
+        super().stop()
 
 
 class SimRotor(SimMotor):
