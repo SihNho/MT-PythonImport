@@ -13,8 +13,13 @@ Owner: "멈춤 감지가 생기면 당장 0으로 돌리도록 짜. (그렇지�
 2. **On a stall the program returns the magnet to 0 mm (the ceiling, farthest from the sample) at once:** stop the
    running protocol / move, re-enable the servo, move to 0 mm, verify the position, log the event and show it. If the
    return cannot be done or verified, stop everything magnet-related and ask the user; never retry in a loop.
-3. **It is an extinguisher, not a working feature.** A stall hard enough to trigger it has probably already damaged
+3. **The user must notice it** (owner 2026-10-25: "그리고 그 경우 에러창을 띄우고 레코드를 남겨서 유저가 인지하게
+   해야함."): a stall opens an error window that stays until the user closes it (unlike the silent coercion of 0018),
+   and it is written as an error record in the data file and the session log (time, position at the stall, the
+   controller error, whether the return to 0 mm was verified). Until the GUI exists (phase 8) the API raises a
+   distinct error and emits a `magnet_stall` event the GUI will turn into that window.
+4. **It is an extinguisher, not a working feature.** A stall hard enough to trigger it has probably already damaged
    the piezo stage; the point is to stop follow-on damage. Normal safety is the position limit (0015, 0017, 0018).
-4. To be checked on the rig before relying on it (needs the owner's go): read the C-863 parameter list and the
+5. To be checked on the rig before relying on it (needs the owner's go): read the C-863 parameter list and the
    current maximum position error; confirm that after a -1024 the servo can be re-enabled and the position is still
    valid (no new reference needed) - otherwise the return path must reference first.
