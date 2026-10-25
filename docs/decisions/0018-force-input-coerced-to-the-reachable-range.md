@@ -25,5 +25,8 @@ Owner:
 4. **Second safeguard:** whatever the force computation gives, the position sent to the magnet motor is coerced into
    the magnet position limit at the last step before sending. The controller's own TMN / TMX limits stay set as the
    hardware layer below that.
+6. **The upper position bound follows the touch position** (owner 2026-10-25: "그 경우 상한이 갱신되어야함", on the case
+   'Mag pos when touched to glass' < 39 mm): the effective magnet upper bound is min(position-limit max, touch); force
+   range, coercion and the last-step coercion all use it.
 5. **Direct position commands are coerced too** (owner 2026-10-25: "가장 가까운 한계값으로 맞춰"): a magnet position
    outside the position limit becomes the nearest limit value, written back the same way (no alarm, event logged).
