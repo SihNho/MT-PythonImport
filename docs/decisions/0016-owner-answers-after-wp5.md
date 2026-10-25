@@ -14,6 +14,12 @@
    e-stop does not switch recording off either (as in 0007).
    *Interpretation recorded by the AI, to confirm:* the end statement switches recording off; it does not stop
    acquisition (live display continues).
+   **Confirmed 2026-10-25** (owner: "프로토콜이 끝나도 종료 아니면 영상 계속 받아야지. 이어서 다른 프로토콜 실행할 수도
+   있으니까."): acquisition keeps running after a protocol, with or without the end statement.
 4. **`.tra` frame column counts from the first recorded frame** (owner: "첫 프레임부터 세는게 맞을듯").
+   **Refined 2026-10-25** (owner: "동일한 파일이라면 프레임 숫자는 계속 이어져야함. 아니면 아예 새 파일 저장하여 프레임을
+   갱신하는 방법도 있겠지만, 그 경우 cal ~ tra 까지 이어지는 이름 규칙이 깨질까 두려움"): 0 is the first recorded frame
+   of the FILE; within one file the numbers continue across recording off / on and across segments (no restart at 0,
+   no split into a new `.tra` series per segment), so the `.cal` -> `.tra` naming stays intact.
 5. **MATLAB version 2026** (owner: "우선 2026으로 하자") for the MATLAB reader and its check in WP6. Release letter
    (a / b) not given. MATLAB is not installed on the development PC; the reader is checked where MATLAB is available.
