@@ -14,6 +14,9 @@ Owner: "자석 힘 최대값은 모터 리밋에 종속되어야함. Force calib
    bead type), the reachable force range is the force at the position-limit ends. A force request is converted to a
    position through the table and checked against the position limit; a force the table only reaches outside the
    position limit is refused, with both numbers in the message.
-3. This fits 0010 (magnet position is the raw record, force is derived and recomputable). The `magnet_force_pN` entry
+3. **Force and magnet position are one-to-one** (owner 2026-10-25: "우선은, Force vs magnet은 1:1 대응이기는 함"), so
+   the force table is inverted directly and a table whose values are not strictly monotonic is refused (as
+   implemented in c0ecefc). If a real calibration ever has a flat or noisy part, this is revisited (smooth first).
+4. This fits 0010 (magnet position is the raw record, force is derived and recomputable). The `magnet_force_pN` entry
    leaves the profile (or becomes a derived, non-editable entry); changing it is not a safety-profile change, changing
    the position limit is.
