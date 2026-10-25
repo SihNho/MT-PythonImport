@@ -408,8 +408,10 @@ checked separately in phases 6/7):**
   back-fill rewrite (WP6 carry below). Option (c) of hdf5-v1.md open item 1, without a repair tool; no SWMR (event
   tables are created when a kind first appears, which SWMR does not allow).
 - **Readers / export:** `mtpy.data.read_run(path)` (nested dicts, JSON columns parsed), `legacy_matrix(path)`
-  (`.tra` columns per segment), `export_tra(path, base=None, nominal=2_000_000)` (tracked rows only; frame =
-  buffer - segment first buffer; one series per segment when there are several: `<base>-s<k>-000`; header by
+  (`.tra` columns per segment, file-wide frame numbers), `legacy_rows(path)` (the one matrix of the series),
+  `export_tra(path, base=None, nominal=2_000_000)` (tracked rows only; frame numbering file-wide, see "`.tra` frame
+  numbering (decision 0016 item 4, refined)" below; one series per run `<base>-000`, ... - the earlier per-segment
+  `<base>-s<k>-000` split is gone; header by
   `lvfiles.tra_header` with the local start time and the `.cal` path), `export_cal(path, out)` (the `.cal` bytes stored
   in the file, checked by sha256; byte-identical to the fixture `cal002`, test). `api.data.open_run(path)`,
   `api.data.export("tra" | "cal", path, out)`. MATLAB: `matlab/read_mtpy_h5.m` (`[data, run]`: legacy matrix and
@@ -419,8 +421,8 @@ checked separately in phases 6/7):**
   `beads.source` or the acquisition-start event's `cal`.
 - **Deviations from docs/format/hdf5-v1.md** (the draft is updated to match; schema_version stays "1.0" while the
   draft is not fixed): new groups `/segments` and `/recordings`; `/mt` gains `segment`, `dropped`, `track_error`,
-  `track_ms`; `/mt/frame` is not stored (buffer numbers restart per segment: frame = `buffer_number` -
-  `/segments/first_buffer`); `t_camera` is float64 seconds with attribute `source` (no camera ticks: the JAI has no
+  `track_ms`; `/mt/frame` is not stored (buffer numbers restart per segment; readers compute the file-wide frame
+  number, see "`.tra` frame numbering" below); `t_camera` is float64 seconds with attribute `source` (no camera ticks: the JAI has no
   timestamp, 0005); event tables keep the common columns plus `segment`, `request`, `readback` and `data` (JSON of
   the event's own fields) instead of one dataset per own column, and `buffer_number` is int64 with -1 when the event
   carries none (only events with a frame position carry one; arrival order is not used to guess); event kinds are
@@ -431,8 +433,8 @@ checked separately in phases 6/7):**
   `legacy_tra_files` (stays empty: export does not modify the data file). `/metadata/calibration` adds `cal_bytes`,
   `n_slices`, `date`, `path`.
 - **Open for the owner:** HDF5 field names (`/segments`, `/recordings`, the event `data` column); whether event own
-  columns must be separate datasets for MATLAB; `.tra` export of a multi-segment run (one series per segment, or one
-  file with a running frame number); whether magnet / rotor need a polling thread (LabVIEW reads them every frame)
+  columns must be separate datasets for MATLAB; `.tra` export of a multi-segment run (DECIDED 2026-10-25, decision
+  0016 item 4: one series with a running frame number, see below); whether magnet / rotor need a polling thread (LabVIEW reads them every frame)
   before `.tra` column 1-2 match LabVIEW's meaning; how storage errors during recording are stored (now: only
   `api.acq.status()` `sink_error`, the file may not be writable).
 
@@ -766,6 +768,21 @@ The danger is the magnet hitting the stage, not a large force, so the only magne
   `test_force_needing_a_position_beyond_39_mm_is_refused_with_the_numbers`, `..._below_0_mm_...`,
   `test_changing_the_force_table_changes_the_reachable_range_not_the_profile`, `test_no_force_table_force_requests_refused`,
   `test_shipped_profile_v5_runs_position_moves_and_force_steps_in_range`.
+
+### `.tra` frame numbering (decision 0016 item 4, refined by the owner 2026-10-25)
+Within one run file the frame numbers continue; they never restart at 0, and the run gives one `.tra` series
+(`<base>-000`, `<base>-001`, ... split every `nominal` = 2,000,000 rows, as LabVIEW), so the `.cal` ~ `.tra` naming
+stays intact. `mtpy.data.legacy_matrix` / `legacy_rows` / `export_tra` and `matlab/read_mtpy_h5.m` compute:
+- 0 = the first recorded frame of the run (the first `/mt` row, a dropped or untracked one included);
+- within a segment: frame = buffer number - the segment's first recorded buffer number + the segment's offset, so a
+  recording off / on gap inside a segment stays a visible jump (the time information is kept);
+- **segment boundary, counted as +1:** buffer numbers restart at every camera start and the frames between two
+  segments are not countable, so the next segment's first recorded frame = the previous segment's last recorded
+  frame number + 1 (the previous segment's last `/mt` row, dropped or untracked rows included). The time of the
+  boundary stays in `/segments` (`t_end`, `t_start`) and `/mt/t_host`.
+Tests: `test_tra_recording_off_on_inside_a_segment_is_a_jump_not_a_restart`,
+`test_tra_two_segments_continue_plus_one_in_one_series`, `test_segment_restart_and_two_recordings_synthetic`,
+`test_export_tra_roundtrip_against_reader`.
 
 ### Decision 0018: live force equation and coercion (2026-10-25, `api.VERSION = "0.9.0"`)
 Replaces the refusal of 0017 item 2: a force (or a direct magnet position) outside what the magnet position limit

@@ -76,6 +76,11 @@ the z step as 0.1.
 - **Mixed byte order** between the two files.
 - The header text is **CP949**, not UTF-8.
 - Use absolute buffer numbers (see decision 0005) when aligning with other data. The `.tra` frame column is relative to the first saved buffer.
-- **mtpy export (owner, decision 0016 item 4, 2026-10-25):** the frame column counts from the first RECORDED frame = 0
-  (per segment: `buffer_number - smallest recorded buffer number of the segment`), also when recording started
-  after acquisition; gaps (lost or untracked frames) still show. Same rule in `matlab/read_mtpy_h5.m`.
+- **mtpy export (owner, decision 0016 item 4, 2026-10-25, refined the same day):** the frame column runs over the
+  whole run file and never restarts. 0 = the first RECORDED frame of the run (also when recording started after
+  acquisition). Within a segment, frame = `buffer_number - the segment's smallest recorded buffer number + the
+  segment's offset`, so lost or untracked frames and a recording off / on gap stay visible jumps. Across segments
+  (buffer numbers restart at every camera start) the numbers continue: the next segment's first recorded frame = the
+  previous segment's last recorded frame + 1 (the frames between segments cannot be counted). One `.tra` series per
+  run, named `<base>-000`, `<base>-001`, ... as LabVIEW (split every 2,000,000 rows), so the `.cal` ~ `.tra` naming
+  stays intact. Same rule in `matlab/read_mtpy_h5.m`.

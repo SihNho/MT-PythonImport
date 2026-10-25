@@ -2,13 +2,16 @@
 0006 item 1 and 0011; layouts in docs/format/tra-cal.md, written with `mtpy.lvfiles`).
 
 `.tra` rows are the tracked frames only (pipeline drops and frames whose tracking raised have no positions and are
-left out, so they show as gaps in the frame column, as lost frames do in LabVIEW's files). Column 0 is
-`buffer_number - first RECORDED buffer number of its segment` (decision 0016 item 4: the frame column counts from
-the first recorded frame, 0, also when recording started after acquisition; the first recorded frame is the
-segment's first `/mt` row, a dropped or untracked one included, so its gaps still show). Buffer numbers restart in
-every segment, so a run with more than one segment gives one `.tra` series per segment (`<base>-s<segment>-000`,
-...), each counted from its own first recorded frame; a one-segment run gives
-`<base>-000`, ... as LabVIEW. A series is split every `nominal` rows (LabVIEW: 2,000,000), `file k of a series`.
+left out, so they show as gaps in the frame column, as lost frames do in LabVIEW's files). Column 0, the frame
+number (decision 0016 item 4 as refined by the owner, 2026-10-25), runs over the whole FILE and never restarts:
+- 0 = the first recorded frame of the run (its first `/mt` row, a dropped or untracked one included, so gaps show);
+- within a segment, frame = buffer_number - the segment's base (its first recorded buffer number) + the segment's
+  offset, so a recording off / on gap inside a segment stays a visible jump (time information kept);
+- across segments (buffer numbers restart at every camera start) the numbers continue: a segment's first recorded
+  frame = the previous segment's last recorded frame number + 1 (the frames between segments cannot be counted, so
+  the boundary is counted as one step).
+One `.tra` series per run, `<base>-000`, `<base>-001`, ... as LabVIEW (no per-segment split, so the `.cal` ~ `.tra`
+naming stays intact), split every `nominal` rows (LabVIEW: 2,000,000), `file k of a series`.
 Column 1 is the magnet position (mm) and column 2 the rotor (deg) last read before the frame: since WP6 from the
 acquisition's motor poller (`api.acq`, a reading every 50 ms and one before the first frame) and every move's
 read-back; NaN only without a reading (e.g. a motor not connected).
@@ -29,9 +32,10 @@ NOMINAL = 2_000_000
 
 
 def legacy_matrix(path, segment=None):
-    """{segment: rows} with the `.tra` columns: frame (from the segment's first recorded frame = 0), magnet (mm),
-    rotor (deg), then x, y, z per bead (the /beads order); only tracked frames. segment: one segment number, or None
-    for every segment with rows."""
+    """{segment: rows} with the `.tra` columns: frame (file-wide, see the module text: 0 = the run's first recorded
+    frame, continuing +1 across segments), magnet (mm), rotor (deg), then x, y, z per bead (the /beads order); only
+    tracked frames. segment: one segment number, or None for every segment with tracked rows. `legacy_rows` joins
+    them into the one matrix the `.tra` series holds."""
     with h5py.File(path, "r") as f:
         if "mt" not in f:
             return {}
@@ -41,18 +45,29 @@ def legacy_matrix(path, segment=None):
         n_beads = int(mt.attrs["n_beads"])
         xyz = [mt[k][:n] for k in ("x_px", "y_px", "z_um")] if n_beads else []
         mag, rot = mt["magnet_mm"][:n], mt["rotor_deg"][:n]
+    shift, nxt = {}, 0                               # frame = buffer + shift[segment]
+    for s in sorted(set(seg.tolist())):
+        b = buf[seg == s]
+        shift[s] = nxt - int(b.min())                # the segment's first recorded frame = previous last + 1
+        nxt = int(b.max()) + shift[s] + 1
     out = {}
-    for s in sorted(set(seg.tolist()) if segment is None else {segment}):
+    for s in sorted(shift) if segment is None else [segment]:
         sel = ok & (seg == s)
         if not sel.any():
             continue
-        first = int(buf[seg == s].min())             # the first RECORDED frame of the segment (decision 0016)
-        cols = [buf[sel] - first, mag[sel], rot[sel]]
+        cols = [buf[sel] + shift[s], mag[sel], rot[sel]]
         for i in range(n_beads):
             cols += [xyz[0][sel, i], xyz[1][sel, i], xyz[2][sel, i]]
         order = np.argsort(buf[sel], kind="stable")
         out[s] = np.column_stack(cols).astype(np.float64)[order]
     return out
+
+
+def legacy_rows(path):
+    """The rows of the run's one `.tra` series: every segment of legacy_matrix() in segment order (frame numbers
+    already continue across segments), or None when no frame was tracked."""
+    mats = legacy_matrix(path)
+    return np.vstack([mats[s] for s in sorted(mats)]) if mats else None
 
 
 def export_tra(path, base=None, nominal=NOMINAL):
@@ -65,20 +80,17 @@ def export_tra(path, base=None, nominal=NOMINAL):
         cal = f.attrs.get("legacy_cal_file", "")
         cal = cal.decode() if isinstance(cal, bytes) else str(cal)
     created = datetime.datetime.fromtimestamp(t0).replace(microsecond=0)   # local time, as LabVIEW's header
-    mats = legacy_matrix(path)
-    if not mats:
+    rows = legacy_rows(path)
+    if rows is None:
         raise NotReady(f"{path}: no tracked frames to export")
-    written = []
-    for s, rows in mats.items():
-        stem = f"{base}-s{s}" if len(mats) > 1 else str(base)
-        for k, start in enumerate(range(0, len(rows), nominal)):
-            part = rows[start:start + nominal]
-            out = Path(f"{stem}-{k:03d}")
-            if out.exists():
-                raise FileExistsError(f"{out} exists; export never overwrites")
-            write_tra(out, tra_header(created, cal, k, len(part), nominal), part)
-            written.append(out)
-    return written
+    outs = [Path(f"{base}-{k:03d}") for k in range((len(rows) + nominal - 1) // nominal)]
+    for out in outs:                                 # checked before writing anything: never a partial series
+        if out.exists():
+            raise FileExistsError(f"{out} exists; export never overwrites")
+    for k, out in enumerate(outs):
+        part = rows[k * nominal:(k + 1) * nominal]
+        write_tra(out, tra_header(created, cal, k, len(part), nominal), part)
+    return outs
 
 
 def export_cal(path, out):

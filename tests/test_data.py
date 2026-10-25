@@ -16,7 +16,7 @@ from test_acq import SlowKernel, _connect, _no_poll
 from mtpy import api
 from mtpy.acq import Beads, FrameRecord, FrameResult
 from mtpy.api.events import Event
-from mtpy.data import HDF5Writer, RecordingRefused, export_cal, export_tra, legacy_matrix, read_run
+from mtpy.data import HDF5Writer, RecordingRefused, export_cal, export_tra, legacy_matrix, legacy_rows, read_run
 from mtpy.lvfiles import read_cal, read_tra
 
 REPO = Path(__file__).resolve().parents[1]
@@ -194,8 +194,47 @@ def test_segment_restart_and_two_recordings_synthetic(tmp_path):
     assert run["recordings"]["name"].tolist() == ["r1", "r2"]
     assert run["recordings"]["off_buffer"].tolist() == [3, -1]
     assert "warning" in h5py.File(tmp_path / "s.h5", "r")["metadata/run/frame_rate_hz"].attrs
-    m = legacy_matrix(tmp_path / "s.h5")
-    assert sorted(m) == [1, 2] and m[1][:, 0].tolist() == [0, 1, 2, 3, 4] and m[2][:, 0].tolist() == [0, 1, 2, 3]
+    m = legacy_matrix(tmp_path / "s.h5")              # decision 0016 item 4: segment 2 continues at 4 + 1
+    assert sorted(m) == [1, 2] and m[1][:, 0].tolist() == [0, 1, 2, 3, 4] and m[2][:, 0].tolist() == [5, 6, 7, 8]
+
+
+def test_tra_recording_off_on_inside_a_segment_is_a_jump_not_a_restart(tmp_path):
+    """Decision 0016 item 4 (owner refinement): recording off at buffer 3, on again at buffer 10 of the same segment;
+    the frame column jumps 3 -> 10 (time kept), it does not restart at 0, and stays one series."""
+    w = HDF5Writer(tmp_path / "j.h5")
+    w.write_event(rec_on(0.0, buf=None, name="r1"))
+    for b in range(4):
+        w.write_frame(frame(1, b, 0.1 + b / 90))
+    w.write_event(ev(0.15, "recording", action="off", name="r1", segment=1, buffer_number=3))
+    w.write_event(rec_on(0.2, buf=9, name="r2"))       # switched on after buffer 9: buffer 10 is the first recorded
+    for b in range(10, 13):
+        w.write_frame(frame(1, b, 0.1 + b / 90))
+    w.close()
+    paths = export_tra(tmp_path / "j.h5")
+    assert paths == [tmp_path / "j-000"]
+    assert read_tra(paths[0])[1][:, 0].tolist() == [0, 1, 2, 3, 10, 11, 12]
+
+
+def test_tra_two_segments_continue_plus_one_in_one_series(tmp_path):
+    """Two segments (buffer numbers restart), recording started at buffer 4 of segment 1: segment 1 -> frames 0..3
+    (buffers 4..7), segment 2 (buffers 0..2) -> 4, 5, 6 (= last + 1); one `<base>-000` series, split by nominal only;
+    the rows round trip through read_tra."""
+    w = HDF5Writer(tmp_path / "t.h5")
+    w.write_event(rec_on(0.0, buf=3, name="r1"))       # switched on after buffer 3: buffer 4 is the first recorded
+    for b in range(4, 8):
+        w.write_frame(frame(1, b, 0.1 + b / 90))
+    w.write_event(seg_end(0.2, seg=1, last=7, gaps=0, drops=0))
+    w.write_event(seg_begin(0.25, seg=2, reason="settings change"))
+    for b in range(3):
+        w.write_frame(frame(2, b, 0.3 + b / 90))
+    w.close()
+    rows = legacy_rows(tmp_path / "t.h5")
+    assert rows[:, 0].tolist() == [0, 1, 2, 3, 4, 5, 6]
+    paths = export_tra(tmp_path / "t.h5", nominal=4)
+    assert [p.name for p in paths] == ["t-000", "t-001"]                  # one series, no -s<k>- split
+    back = np.vstack([read_tra(p)[1] for p in paths])
+    np.testing.assert_array_equal(back, rows)
+    assert back[4:, 3].tolist() == [0.0, 1.0, 2.0]                        # segment 2's own rows (bead 1 x = buffer)
 
 
 def test_export_tra_roundtrip_against_reader(tmp_path):

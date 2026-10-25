@@ -4,10 +4,12 @@ function [data, run] = read_mtpy_h5(path)
 %   [data, run] = read_mtpy_h5(path)
 %   data  legacy mode, like read_tra: one row per TRACKED frame (pipeline drops and tracking errors left out),
 %         columns frame, magnet (mm), rotor (deg), then x, y, z per bead in the order of run.beads.bead_id.
-%         frame = buffer number - first RECORDED buffer number of its segment (decision 0016 item 4: counts
-%         from the first recorded frame, also when recording started after acquisition); buffer numbers restart
-%         in every segment, so with several segments use run.mt.segment (or the per-segment .tra export) to
-%         split the rows.
+%         frame runs over the whole file and never restarts (decision 0016 item 4, owner refinement
+%         2026-10-25), as the .tra export: 0 = the first recorded frame of the run; within a segment frame =
+%         buffer number - the segment's first recorded buffer number + the segment's offset (a recording off / on
+%         gap stays a visible jump); the next segment's first recorded frame = the previous segment's last
+%         recorded frame + 1 (buffer numbers restart; the frames between segments are not countable). Rows are
+%         sorted by frame (= segment order, then buffer number). run.mt.segment still tells the segments apart.
 %   run   extended mode: run.attrs (root attributes), run.mt, run.beads, run.segments, run.recordings,
 %         run.events.<kind>, run.meta (the /metadata group). Columns marked as JSON stay text: use jsondecode.
 %   Per-frame per-bead datasets are stored [frames x beads]; h5read returns them transposed, so 2-D datasets
@@ -37,16 +39,21 @@ end
 ok = run.mt.dropped == 0 & run.mt.track_error == 0;
 buf = double(run.mt.buffer_number);
 seg = double(run.mt.segment);
-first = zeros(size(buf));
-for s = unique(seg).'
-    first(seg == s) = min(buf(seg == s));  % the segment's first RECORDED frame = 0 (decision 0016 item 4)
+shift = zeros(size(buf));                  % frame = buffer number + shift of its segment
+nxt = 0;
+for s = unique(seg).'                      % unique() sorts: segment order
+    b = buf(seg == s);
+    shift(seg == s) = nxt - min(b);        % first recorded frame of the segment = previous last + 1 (0 for the first)
+    nxt = max(b) - min(b) + nxt + 1;
 end
 nb = size(run.mt.x_px, 2);
 xyz = zeros(sum(ok), 3 * nb);
 xyz(:, 1:3:end) = run.mt.x_px(ok, :);
 xyz(:, 2:3:end) = run.mt.y_px(ok, :);
 xyz(:, 3:3:end) = run.mt.z_um(ok, :);
-data = [buf(ok) - first(ok), run.mt.magnet_mm(ok), run.mt.rotor_deg(ok), xyz];
+data = [buf(ok) + shift(ok), run.mt.magnet_mm(ok), run.mt.rotor_deg(ok), xyz];
+[~, order] = sort(data(:, 1));             % stable: the .tra row order
+data = data(order, :);
 end
 
 function s = read_group(path, g)
