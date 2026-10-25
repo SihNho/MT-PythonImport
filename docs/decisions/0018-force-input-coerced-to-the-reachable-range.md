@@ -25,4 +25,5 @@ Owner:
 4. **Second safeguard:** whatever the force computation gives, the position sent to the magnet motor is coerced into
    the magnet position limit at the last step before sending. The controller's own TMN / TMX limits stay set as the
    hardware layer below that.
-5. Direct position commands keep the existing rule unless the owner says otherwise (to confirm: refuse or coerce).
+5. **Direct position commands are coerced too** (owner 2026-10-25: "가장 가까운 한계값으로 맞춰"): a magnet position
+   outside the position limit becomes the nearest limit value, written back the same way (no alarm, event logged).
