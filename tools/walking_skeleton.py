@@ -7,9 +7,11 @@ One run, through the public API only (`mtpy.api`), as a script would do it:
 1. A copy of the shipped `config/` in `<out>/config` becomes the active profile folder (the shipped files are never
    written; their sha256 is compared before and after). The run uses that copy unchanged: the shipped profile (v5:
    magnet position [0, 39] mm and speed 15 mm/s rig-checked, no separate force limit - decision 0017).
-2. Decision 0017 on the shipped profile: with a TEST-ONLY table that reaches past 39 mm, a protocol whose force needs
-   a position beyond the limit is refused before anything moves; with the run's table the protocol passes the check.
-   (Until v5 the skeleton made a TEST-ONLY profile with a force maximum in the copy; v5 needs none.)
+2. Decision 0018 on the shipped profile: the default force calibration is the live LabVIEW equation (M270 v3, with a
+   TEST-ONLY touch position); with a TEST-ONLY table that reaches past 39 mm, a protocol whose force needs a position
+   beyond the limit is COERCED (checked plan rewritten, `coerced` event) and runs to the 39 mm limit; with the run's
+   table the protocol passes the check. (Until v5 the skeleton made a TEST-ONLY profile with a force maximum in the
+   copy; v5 needs none. Until 0018 the out-of-reach force was refused.)
 3. Simulated devices (the camera replays the recorded G: fixture frames when they exist, else synthetic rings); a
    camera preset (90 Hz) applied and read back; beads 1-5 of the fixture's `cal002` selected, bead 1 = reference;
    a TEST-ONLY synthetic position-to-force table.
@@ -51,6 +53,7 @@ TABLE = {"name": "TEST ONLY synthetic table (walking skeleton)", "version": "tes
 WIDE_TABLE = {"name": "TEST ONLY wide synthetic table (walking skeleton)", "version": "test",
               "position_mm": [0.0, 20.0, 45.0], "force_pN": [0.1, 1.0, 30.0]}
 OUT_OF_REACH = 'grammar 0.1\nprotocol "out-of-reach"\nhold f=25 t=0.1\n'      # 25 pN -> 40.69 mm with WIDE_TABLE
+TOUCH_MM = 40.0     # TEST ONLY - a touch position for the force equation (the rig's value is set per session)
 PRESET = {"name": "skeleton 90 Hz", "roi": (0, 0, 1280, 1024), "rate_Hz": 90.0, "exposure_ms": 2.0, "gain_dB": 0.0}
 BEADS = [1, 2, 3, 4, 5]
 ROLES = {1: "reference", 2: "tethered", 3: "tethered", 4: "tethered", 5: "tethered"}
@@ -111,23 +114,39 @@ def _shipped_profile_passes(r, script):
             f"v{p['version']} in {safety.CONFIG}: {[str(d) for d in rep['errors']]}")
 
 
-def _out_of_reach_refused(r):
-    """Decision 0017 with the shipped profile: a force the TEST-ONLY wide table reaches only beyond the 39 mm magnet
-    position limit is refused before anything moves; the run's table is loaded again afterwards."""
-    p0, n = api.magnet.position(), len(events.events())
+def _equation_is_the_default(r):
+    """Decision 0018 item 1: right after connecting, the calibration in use is the live LabVIEW equation; it needs
+    the touch position (TEST-ONLY value here) and then gives the equation's force at a position."""
+    cal = api.magnet.force_calibration()
+    api.magnet.set_touch_position(TOUCH_MM)
+    got = api.magnet.force_at(38.0)
+    want = 48.8162 * np.exp(-2 / 1.13483) + 22.8394 * np.exp(-2 / 3.68428) - 0.45845
+    r.check("default force calibration is the live equation M270 v3 case 1 (0018)",
+            cal["name"].startswith("M270 v3") and cal["kind"] == "equation" and not cal["ready"]
+            and abs(got - want) < 1e-12, f"{cal['name']}: F(38 mm, touch {TOUCH_MM}) = {got!r}")
+
+
+def _out_of_reach_coerced(r):
+    """Decision 0018 with the shipped profile: a force the TEST-ONLY wide table reaches only beyond the 39 mm magnet
+    position limit is coerced to the force at 39 mm (checked plan rewritten, `coerced` event, no refusal) and runs
+    to the limit; the run's table is loaded again afterwards."""
+    n = len(events.events())
     api.magnet.use_force_table(WIDE_TABLE)
     try:
+        rep = api.protocol.check(parse(OUT_OF_REACH, "out_of_reach.mtprot"), devices=True)
         api.protocol.run(parse(OUT_OF_REACH, "out_of_reach.mtprot"))
-        refused, why = False, "run() started"
-    except api.ScriptError as e:
-        refused, why = True, str(e)
+        st = api.protocol.wait(30)
+    except api.MtpyError as e:
+        rep, st = {"ok": False, "coerced": [], "text": ""}, {"state": f"{type(e).__name__}: {e}"}
     finally:
         api.magnet.use_force_table(TABLE)
-    moved = abs(api.magnet.position() - p0) > 0.005
-    acts = [e for e in events.events()[n:] if e.kind in ("act", "force_request")]
-    r.check("force beyond the magnet position limit refused before anything moves (0017)",
-            refused and "needs magnet position" in why and "at the limit end 39 mm" in why and not moved and not acts,
-            why)
+    p = api.magnet.position()
+    co = [e for e in events.events()[n:] if e.kind == "coerced"]
+    api.magnet.move_to(0.0).wait(10)                   # the main protocol starts from the top, as before 0018
+    r.check("force beyond the magnet position limit coerced, not refused; runs to 39 mm (0018)",
+            rep["ok"] and [c["applied"] for c in rep["coerced"]] == [23.04] and "hold f=23.04 t=0.1" in rep["text"]
+            and st["state"] == "completed" and abs(p - 39.0) < 0.01 and len(co) == 1, f"{st['state']}, {p:.3f} mm, "
+            f"{[(c['requested'], c['applied']) for c in rep['coerced']]}")
 
 
 def _engage_mid_move(r, target_lo=11.0, target_hi=16.0, timeout_s=20.0):
@@ -181,9 +200,10 @@ def run(out, fixture=FIXTURE, estop_variant=False, name=None):
         with events.as_caller("gui"):
             estop.clear()
             api.devices.connect({"backend": "sim", "fixture": str(fixture)})
+            _equation_is_the_default(r)
             api.magnet.use_force_table(TABLE)
             script = api.protocol.load(prot)
-            _out_of_reach_refused(r)
+            _out_of_reach_coerced(r)
             _shipped_profile_passes(r, script)
             got = api.camera.apply_preset(PRESET)
             r.check("camera preset applied and read back (U15)", abs(got["rate_Hz"] - 90.0) < 0.01, got)

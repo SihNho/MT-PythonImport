@@ -98,7 +98,8 @@ proposals; phase 5 may refine them, and every change after the first release fol
 
 ## 3. Safety behaviour (inside every acting function)
 1. Check the request against the **active rig safety profile** (0015 item 5); outside -> `SafetyRefused` with the
-   allowed range.
+   allowed range. (Exception, decision 0018: a magnet force or magnet position outside the position limit is
+   coerced to the nearest reachable value with a `coerced` event, not refused; see the 0018 section below.)
 2. Act through the device service (its own thread; never on the frame path).
 3. Read back and compare; mismatch -> `DeviceError`.
 4. Log an event (caller, request, read-back, time); the event goes into the run's metadata.
@@ -737,7 +738,8 @@ The danger is the magnet hitting the stage, not a large force, so the only magne
   Every other limit is identical to v4 (`unverified` loses `magnet_force_pN`); `checked: {}` (nothing added or
   changed, so there is nothing to move to on the rig); v1-v4 stay in the history. A `magnet_force_pN` entry in an
   older profile (v1-v4) is ignored by the force path.
-- **Force -> position:** `set_force(force_pN, table=None)` converts the force through the table in use (0010) with
+- **Force -> position** (**the refusal below is replaced by decision 0018: such a force is now coerced, see the next
+  section**): `set_force(force_pN, table=None)` converts the force through the table in use (0010) with
   `force_position(force_pN, table=None)` (read only; nothing moves or is logged) and checks that position against the
   position limit **before anything moves**; a force reachable only outside the limit, or outside the table, is
   `SafetyRefused` with the requested force, the position it needs, and the table's force at the limit end, e.g.
@@ -764,6 +766,60 @@ The danger is the magnet hitting the stage, not a large force, so the only magne
   `test_force_needing_a_position_beyond_39_mm_is_refused_with_the_numbers`, `..._below_0_mm_...`,
   `test_changing_the_force_table_changes_the_reachable_range_not_the_profile`, `test_no_force_table_force_requests_refused`,
   `test_shipped_profile_v5_runs_position_moves_and_force_steps_in_range`.
+
+### Decision 0018: live force equation and coercion (2026-10-25, `api.VERSION = "0.9.0"`)
+Replaces the refusal of 0017 item 2: a force (or a direct magnet position) outside what the magnet position limit
+allows is **coerced to the nearest reachable value** - no alarm, no refusal - and written back everywhere.
+- **Calibration** (`mtpy.forcecal`, pure maths, swappable per 0010): the default is `M270_V3`, "M270 v3 (LabVIEW
+  Magnet2Force v3, case 1)", computed live: `F_pN = 48.8162*exp(-d/1.13483) + 22.8394*exp(-d/3.68428) - 0.45845`,
+  `d = touch_mm - pos_mm` (read from `Magnet2Force v3_for M270.vi` case "1, Default" and checked by running it, V6 card
+  m2feq2: 16 points, worst relative deviation 2.2e-16; `Max Trans Pos.vi` is an identity). F rises strictly with the
+  position. The inverse is a bisection on the reachable position interval to 1e-9 mm. The VI's unused case "0" is
+  kept as `M270_CASE0`, a named alternative, never the default. A recorded table (`TableCalibration`, the pre-0018
+  default) works behind the same interface (`force`, `position`, `domain`, `describe`).
+- **Session state:** `api.magnet.set_touch_position(mm)` ('Mag pos when touched to glass'; reset at every connect);
+  `use_force_calibration(name_or_object)`; `use_force_table(table)`; `force_calibration()` (name, kind, equation,
+  constants or table, `touch_mm`, `ready`, `why`). Each change is a `calibration` event. Without a touch position
+  the equation is not ready: `set_force` / `force_range` / `coerce_force` / `force_at` raise `NotReady`.
+- **Forces:** `coerce_force(f)` (read only) -> `{"requested_pN", "applied_pN", "position_mm", "coerced", "reason",
+  "calibration", "touch_mm"}`; the reachable range is `[F(limit min), F(limit max)]` for the current touch
+  (`force_range()`, now also `calibration`, `kind`, `touch_mm`, and for an equation `touch_beyond_limit`).
+  `set_force(f)` moves to the coerced force's position and returns the Motion with `requested_pN`, `applied_pN`,
+  `coerced`, `position_mm` (so the GUI rewrites the typed field and the applied field). A coerced request logs a
+  `coerced` event (request, applied, position, reason, calibration, touch) before `force_request` and `act`.
+  `force_position(f)` = the coerced position. A non-finite force is still refused; |applied - requested| <= 1e-9 is
+  numerical noise (applied silently).
+- **Direct positions (0018 item 5):** `move_to(p)` outside `magnet_position_mm` -> the nearest limit, `coerced`
+  event, Motion `requested_mm` / `applied_mm` / `coerced`. Non-finite -> refused.
+- **Second safeguard (0018 item 4):** the device send (`magnet._send`) coerces the final position into the limit once
+  more, whatever the caller computed (a `coerced` event with `stage: "send"` when it had to); the controller's TMN /
+  TMX remain the hardware layer below. Speed is unchanged: `magnet_speed_mm_s` above 15 mm/s is refused.
+- **Protocols:** the checker coerces instead of failing (forces of `hold` / `ramp` / `rotate`, `move mm=`); the report
+  gains `coerced` (line, col, key, requested, applied, reason, calibration), `text` (the corrected source = the edit
+  buffer) and `script` (its parsed plan). `run()` runs that plan and `edit()` keeps it as the draft; both log one
+  `coerced` event per value (`stage: "protocol run check"` / `"protocol edit check"`, original and plan sha256). The
+  plan's numbers have at most 4 decimals, rounded toward the inside, so the run needs no second coercion; a change of
+  touch or calibration during the run is still coerced by `set_force` at each step.
+- **Off the frame path (0018 item 1):** the acquisition's motor poller adds `force_pN`, `force_calibration`,
+  `touch_mm` to each magnet `motor_reading` (via `magnet.live_force`, two exponentials, never on the acquisition
+  thread); the raw record stays the position (0010).
+- **Run file (0010):** `metadata/devices/magnet/force_calibration_at_start` = `force_calibration()` at acquisition
+  start (name, equation, constants, touch); later changes are `calibration` events in `/events`.
+- **Open point (not decided, owner):** when `touch_mm` is below the position-limit max (39 mm), positions between
+  touch and 39 mm give d < 0 and very large forces (F(d = -5) = 4088 pN; F(d = 1) = 37.18 pN). The code then treats them as reachable:
+  the force range's max is F(39 mm), a large force request moves the magnet past the touch position up to 39 mm, and
+  only the position limit stops it; `force_range()["touch_beyond_limit"]` is True. Whether the limit should follow
+  the touch position (e.g. min(39, touch)) is for the owner.
+- Tests: `tests/test_forcecal.py` (equation values at d = 0 and 2 and more, round trip, cost, table interface);
+  in `tests/test_devices.py` `test_direct_position_outside_the_limit_is_coerced_to_the_nearest_limit`,
+  `test_last_step_coerces_whatever_the_caller_computed`, `test_table_force_above_/below_the_reachable_range_...`,
+  `test_default_calibration_is_the_live_equation_and_needs_the_touch_position`,
+  `test_equation_force_coerced_above_and_below_and_touch_changes_the_range`,
+  `test_bad_internal_position_from_a_calibration_is_still_coerced`; in `tests/test_protocol.py`
+  `test_check_coerces_out_of_range_force_and_position_in_the_checked_plan`,
+  `test_shipped_profile_v5_runs_position_moves_and_force_steps_in_range` (coerced ramp runs to 39 mm),
+  `test_equation_run_file_records_calibration_coercion_and_live_force`. Walking skeleton: "default force
+  calibration is the live equation" and "force beyond the magnet position limit coerced, not refused; runs to 39 mm".
 
 ## 4. Example: the enzyme-cleavage experiment as a Python experiment script (level 3)
 ```python

@@ -185,23 +185,32 @@ def test_check_refuses_statements_the_api_cannot_run(rig):
     assert errs[2].startswith("c.mtprot:7:1: 'wait until' needs api.events.rule")
 
 
-def test_check_out_of_profile_value_names_step_and_range(rig):
-    rep = api.protocol.check(parse(HEAD + "hold f=1 t=1\nloop n=2\n  ramp from=1 to=25 t=5\nend\nmove mm=40\n",
-                                   "fe.mtprot"))
-    errs = [str(d) for d in rep["errors"]]
-    to = [e for e in errs if e.startswith("fe.mtprot:5:18:")]   # one error for 'to' (decision 0017: no force max)
-    assert len(to) == 1 and to[0].startswith("fe.mtprot:5:18: 'to' is 25 pN; magnet force 25 pN is outside the table "
-                                             "'synthetic test table' range [0.1, 10] pN")
-    assert "10 pN at the table end 20 mm" in to[0] and "rig safety profile v5" in to[0]
-    assert any(e.startswith("fe.mtprot:7:9: 'mm' is 40 mm; magnet_position_mm 40 mm is outside the allowed range "
-                            "[0, 39] mm") for e in errs)
-    assert not any(e.startswith("fe.mtprot:3:") for e in errs)
+def test_check_coerces_out_of_range_force_and_position_in_the_checked_plan(rig):
+    """Decision 0018: an out-of-range force / position is not a check error; the checked plan carries the corrected
+    number (the edit buffer's text) and a `coerced` warning names the step, requested and applied value."""
+    s = parse(HEAD + "hold f=1 t=1\nloop n=2\n  ramp from=1 to=25 t=5\nend\nmove mm=40\nmove mm=-3\n", "fe.mtprot")
+    n = len(events.events())
+    rep = api.protocol.check(s)
+    assert rep["ok"], [str(d) for d in rep["errors"]]
+    warns = [str(d) for d in rep["warnings"]]
+    to = [w for w in warns if w.startswith("fe.mtprot:5:18: warning: coerced: 'to' 25 pN -> 10 pN")]
+    assert len(to) == 1 and "above the reachable range [0.1, 10] pN of 'synthetic test table'" in to[0]
+    assert "set to 10 pN at the table end (20 mm)" in to[0] and "rig safety profile v5" in to[0]
+    assert any(w.startswith("fe.mtprot:7:9: warning: coerced: 'mm' 40 mm -> 39 mm") for w in warns)
+    assert any(w.startswith("fe.mtprot:8:9: warning: coerced: 'mm' -3 mm -> 0 mm") for w in warns)
+    assert [(c["line"], c["key"], c["requested"], c["applied"]) for c in rep["coerced"]] == [
+        (5, "to", 25, 10.0), (7, "mm", 40, 39.0), (8, "mm", -3, 0.0)]
+    assert rep["text"] == HEAD + "hold f=1 t=1\nloop n=2\n  ramp from=1 to=10 t=5\nend\nmove mm=39\nmove mm=0\n"
+    assert rep["script"].text == rep["text"] and rep["script"].body[1].body[0].args["to"].value == 10.0
+    assert s.text != rep["text"] and not [e for e in events.events()[n:] if e.kind == "coerced"]   # check: read only
+    assert api.protocol.check(rep["script"])["coerced"] == []        # the corrected plan needs no second coercion
 
 
 def test_shipped_profile_v5_runs_position_moves_and_force_steps_in_range(shipped_rig):
-    """Shipped v5 (decision 0017): `move` and `zero` pass the check and run in the simulator; a force step without a
-    force table is a check warning and run() refuses it; with a table, `hold` / `ramp` inside the reachable range pass
-    the check and run; out of range they fail the check with the line and column and nothing moves."""
+    """Shipped v5 (decisions 0017, 0018): `move` and `zero` pass the check and run in the simulator; a force step while
+    the default equation has no touch position is a check warning and run() refuses it; with a table, `hold` / `ramp`
+    inside the reachable range pass the check and run; out of range they are coerced in the checked plan (line and
+    column named) and the run moves to the limit end."""
     assert api.safety.profile()["version"] == 5
     s = parse(HEAD + "move mm=2\nzero t=0.1\n", "v5.mtprot")
     rep = api.protocol.check(s, devices=False)
@@ -212,9 +221,10 @@ def test_shipped_profile_v5_runs_position_moves_and_force_steps_in_range(shipped
     assert abs(api.magnet.position()) < 0.01
     hold = parse(HEAD + "hold f=1 t=0.1\n", "h.mtprot")
     rep = api.protocol.check(hold, devices=False)
-    assert rep["ok"] and any("no position-to-force table is loaded" in str(w) for w in rep["warnings"])
+    assert rep["ok"] and any("the force calibration 'M270 v3 (LabVIEW Magnet2Force v3, case 1)' is not ready (the "
+                             "touch position is not set" in str(w) for w in rep["warnings"])
     p0 = api.magnet.position()
-    with pytest.raises(ScriptError, match="no position-to-force table is loaded"):
+    with pytest.raises(ScriptError, match="touch position is not set"):
         api.protocol.run(hold)
     assert not api.protocol.running() and abs(api.magnet.position() - p0) < 0.01
     api.magnet.use_force_table(WIDE_TABLE)                       # 0.1 pN at 0 mm .. 23.04 pN at the 39 mm limit
@@ -226,16 +236,23 @@ def test_shipped_profile_v5_runs_position_moves_and_force_steps_in_range(shipped
     assert st["state"] == "completed" and st["steps_done"] == 2, st
     assert api.magnet.position() == pytest.approx(20.0, abs=0.01)
     bad = parse(HEAD + "hold f=20 t=0.1\nramp from=1 to=25 t=2\nrotate from=0 to=1 f=25 t=1\n", "bad.mtprot")
-    errs = [str(d) for d in api.protocol.check(bad, devices=False)["errors"]]
-    assert any(e.startswith("bad.mtprot:4:16: 'to' is 25 pN; magnet force 25 pN needs magnet position 40.6897 mm")
-               and "23.04 pN at the limit end 39 mm" in e for e in errs), errs
-    assert any(e.startswith("bad.mtprot:5:22: 'f' is 25 pN; magnet force 25 pN needs magnet position") for e in errs)
-    assert not any(e.startswith("bad.mtprot:3:") for e in errs)
-    p0, n = api.magnet.position(), len(events.events())
-    with pytest.raises(ScriptError, match="needs magnet position 40.6897 mm"):
-        api.protocol.run(bad)
-    assert not api.protocol.running() and abs(api.magnet.position() - p0) < 0.01
-    assert not any(e.kind in ("act", "force_request") for e in events.events()[n:])
+    rep = api.protocol.check(bad, devices=False)
+    errs, warns = [str(d) for d in rep["errors"]], [str(d) for d in rep["warnings"]]
+    assert not any(e.startswith(("bad.mtprot:3:", "bad.mtprot:4:")) for e in errs), errs   # only the rotor (v5)
+    assert any(w.startswith("bad.mtprot:4:16: warning: coerced: 'to' 25 pN -> 23.04 pN") for w in warns), warns
+    assert any(w.startswith("bad.mtprot:5:22: warning: coerced: 'f' 25 pN -> 23.04 pN") for w in warns), warns
+    assert "ramp from=1 to=23.04 t=2\nrotate from=0 to=1 f=23.04 t=1\n" in rep["text"]
+    ramp = parse(HEAD + "hold f=20 t=0.1\nramp from=1 to=25 t=0.4\n", "ramp.mtprot")
+    n = len(events.events())
+    api.protocol.run(ramp)                                       # decision 0018: runs, coerced, not refused
+    st = api.protocol.wait(60)
+    assert st["state"] == "completed" and st["steps_done"] == 2, st
+    assert api.magnet.position() == pytest.approx(39.0, abs=0.01)
+    co = [e for e in events.events()[n:] if e.kind == "coerced"]
+    assert len(co) == 1 and co[0].extra["stage"] == "protocol run check" and co[0].request["line"] == 4
+    assert co[0].request["value"] == 25 and co[0].extra["applied"] == 23.04 and co[0].extra["sha256"] == ramp.sha256
+    start = next(e for e in events.events()[n:] if e.kind == "protocol" and e.extra["action"] == "start")
+    assert "ramp from=1 to=23.04 t=0.4" in start.extra["text"]           # the run ran the corrected plan
 
 
 def test_profile_v3_still_refuses_magnet_moves_before_anything_runs(tmp_path, monkeypatch):
@@ -373,12 +390,13 @@ def test_run_refused_while_estop_engaged(rig):
 def test_api_refusal_mid_run_stops_the_run(rig):
     n = len(events.events())
     api.protocol.run(parse(HEAD + 'hold f=1 t=0.5\nhold f=8 t=0.1\nmark "never"\n'))
-    _until(lambda: (api.protocol.status()["current"] or {}).get("line") == 3)
-    narrow = {**SYNTHETIC_TABLE, "name": "narrow table", "force_pN": [0.1, 1.0, 5.0]}
-    api.magnet.use_force_table(narrow)                 # the operator loads another table during the run
+    _until(lambda: any(e.kind == "act" for e in events.events()[n:]))          # line 3's move done, its hold runs
+    # the controller's speed is changed behind the API during the run (a force out of range would now be coerced,
+    # decision 0018; the speed is still refused): the next magnet move reads it back and is refused
+    api.devices.service("magnet").device.axis.speed = 12.0
     st = api.protocol.wait(10)
     assert st["state"] == "refused", st
-    assert "line 4 'hold f=8 t=0.1' was refused by the API" in st["reason"] and "outside the table" in st["reason"]
+    assert "line 4 'hold f=8 t=0.1' was refused by the API" in st["reason"] and "magnet_speed_mm_s 12" in st["reason"]
     refused = [e for e in events.events()[n:] if e.kind == "protocol_step" and e.extra["phase"] == "refused"]
     assert len(refused) == 1 and refused[0].extra["line"] == 4 and refused[0].extra["error"] == "SafetyRefused"
     assert _marks(n) == [] and (5, "start", -1) not in _steps(n)
@@ -405,8 +423,9 @@ def test_mid_run_edit_applies_at_next_step_boundary(rig):
     finally:
         unsubscribe()
     assert _marks(n) == []
-    with pytest.raises(ScriptError, match="25 pN"):
-        api.protocol.edit(HEAD + 'loop n=3\n  hold f=25 t=0.3\n  mark "a"\nend\n')
+    rep = api.protocol.edit(HEAD + 'loop n=3\n  hold f=25 t=0.3\n  mark "a"\nend\n')     # decision 0018: coerced
+    assert rep["ok"] and rep["coerced"][0]["applied"] == 10.0 and "  hold f=10 t=0.3\n" in rep["text"]
+    assert api.protocol._draft.text == rep["text"]               # the draft is the corrected plan
     api.protocol.edit(HEAD + 'loop n=2\n  hold f=2 t=0.3\n  mark "b"\nend\n')
     api.protocol.apply_edits()
     api.protocol.resume()
@@ -414,7 +433,8 @@ def test_mid_run_edit_applies_at_next_step_boundary(rig):
     assert st["state"] == "completed" and st["protocol_version"] == 1
     assert _marks(n) == ["b", "b"]                     # the not-started mark takes it at once; 2 passes in all
     ed = [e for e in events.events()[n:] if e.kind == "protocol_edit"]
-    assert [e.extra["action"] for e in ed] == ["refused", "applied"] and 'mark "b"' in ed[1].extra["new_text"]
+    assert [e.extra["action"] for e in ed] == ["applied"] and 'mark "b"' in ed[0].extra["new_text"]
+    assert [e.extra["stage"] for e in events.events()[n:] if e.kind == "coerced"] == ["protocol edit check"]
     acts = [e.extra["action"] for e in events.events()[n:] if e.kind == "protocol"]
     assert acts == ["start", "resume", "end"]          # paused by the engine itself, resumed through the API
 
@@ -714,6 +734,31 @@ def test_end_to_end_recording_has_protocol_events(cam, tmp_path):
     assert ev["protocol"]["data"][0]["sha256"] == s.sha256 and ev["protocol"]["data"][0]["text"] == s.text
     assert "in protocol" in [d["text"] for d in ev["mark"]["data"]]
     assert run["attrs"]["closed_cleanly"] == 1
+
+
+def test_equation_run_file_records_calibration_coercion_and_live_force(cam, tmp_path):
+    """Decision 0018 + 0010 end to end: the default live equation with a touch position; a protocol force above the
+    reachable range is coerced at check and run (not failed); the run file has the calibration (name, equation,
+    constants, touch) in its metadata, the `coerced` event, and the live force on the magnet readings."""
+    api.magnet.set_touch_position(40.0)
+    api.acq.start(record=True, name="eq", folder=tmp_path)
+    s = parse(HEAD + "hold f=100 t=0.2\nend protocol\n", "eq.mtprot")
+    rep = api.protocol.check(s)
+    fmax = api.magnet.force_range()["force_pN"][1]
+    assert rep["ok"] and rep["coerced"][0]["applied"] <= fmax and fmax - rep["coerced"][0]["applied"] < 1e-4
+    api.protocol.run(s)
+    assert api.protocol.wait(30)["state"] == "completed"
+    assert api.magnet.position() == pytest.approx(39.0, abs=0.01)
+    assert api.acq.stop()["sink_failures"] == 0
+    run = read_run(tmp_path / "eq.h5")
+    cal = run["metadata"]["devices"]["magnet"]["force_calibration_at_start"]
+    assert cal["name"] == "M270 v3 (LabVIEW Magnet2Force v3, case 1)" and cal["touch_mm"] == 40.0
+    assert cal["constants"]["a1_pN"] == 48.8162 and "exp(-d/1.13483)" in cal["equation"] and cal["ready"]
+    co = run["events"]["coerced"]["data"]
+    assert len(co) == 1 and co[0]["applied"] == rep["coerced"][0]["applied"] and co[0]["calibration"] == cal["name"]
+    mag = [d for d in run["events"]["motor_reading"]["data"] if d.get("device") == "magnet"]
+    assert mag and all(d["force_calibration"] == cal["name"] and d["touch_mm"] == 40.0 for d in mag)
+    assert max(d["force_pN"] for d in mag) == pytest.approx(fmax, rel=1e-3)
 
 
 # --- decision 0016 item 3: `end protocol` -------------------------------------------------------------------------------

@@ -24,7 +24,7 @@ def test_walking_skeleton(tmp_path, estop_variant):
     before = (safety.CONFIG, safety.profile()["version"])
     r = _tool().run(tmp_path / "out", fixture=FIXTURE, estop_variant=estop_variant)
     assert r.ok, "\n".join(f"{c['check']}: {c['detail']}" for c in r.failed)
-    assert len(r.checks) == (20 if estop_variant else 17)
+    assert len(r.checks) == (21 if estop_variant else 18)          # + the default-equation check (decision 0018)
     assert (safety.CONFIG, safety.profile()["version"]) == before          # the tool restored the profile in force
 
 

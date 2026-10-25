@@ -43,10 +43,13 @@ def _script(s):
 
 def check(script, devices=None):
     """Validate a protocol before it runs: every statement against the API (functions, argument units) and the rig
-    safety profile (a force through the loaded force table to a position inside the magnet position limit, decision
-    0017); with devices (default: when devices are connected) also the rig state (devices connected, a force table
-    loaded for every force step, focus window from the current position, acquisition running for `record`). Only
-    reads. Returns {"ok", "errors", "warnings", "min_duration_s"}."""
+    safety profile (a force by the force calibration in use to a position inside the magnet position limit,
+    decisions 0017 / 0018); with devices (default: when devices are connected) also the rig state (devices
+    connected, the force calibration ready for every force step, focus window from the current position,
+    acquisition running for `record`). Only reads. Returns {"ok", "errors", "warnings", "min_duration_s", "coerced",
+    "text", "script"}: a force outside the reachable range or a `move mm=` outside the position limit is not an error
+    (decision 0018) - it is rewritten in the checked plan ("text" = the corrected source for the edit buffer,
+    "script" = what run() runs) and listed in "coerced" with a `coerced` warning."""
     from mtpy.protocol.check import check as _check
 
     from . import devices as _devices
@@ -102,6 +105,7 @@ def run(script, motion_timeout_s=120.0, ramp_step_s=0.5):
             events.log("refused", request=request, reason="protocol check failed",
                        errors=[str(d) for d in report["errors"]])
             require_ok(report)
+        script = _coerced_plan(script, report, "run")
         if estop.generation() != gen:
             reason = "the emergency stop was engaged (and released) while the protocol was checked; start it again"
             events.log("refused", request=request, reason=reason)
@@ -114,6 +118,18 @@ def run(script, motion_timeout_s=120.0, ramp_step_s=0.5):
             raise
         _engine, _draft = eng, None
     return status()
+
+
+def _coerced_plan(script, report, stage):
+    """Decision 0018: the checked plan to run (or keep as the draft), with one `coerced` event per value the check
+    rewrote into range (requested, applied, reason, calibration, line); the run file thus keeps the request."""
+    for c in report.get("coerced", ()):
+        events.log("coerced", request={"quantity": c["quantity"], "value": c["requested"], "protocol": script.name,
+                                       "line": c["line"], "key": c["key"]},
+                   applied=c["applied"], reason=c["reason"], calibration=c.get("calibration"),
+                   touch_mm=c.get("touch_mm"), stage=f"protocol {stage} check", sha256=script.sha256,
+                   plan_sha256=report["script"].sha256)
+    return report.get("script", script)
 
 
 def _require_engine():
@@ -201,7 +217,7 @@ def edit(draft):
     if not report["ok"]:
         events.log("protocol_edit", action="refused", reason="check failed", errors=[str(d) for d in report["errors"]])
         raise ScriptError(report["errors"], report["warnings"])
-    _draft = script
+    _draft = _coerced_plan(script, report, "edit")
     return report
 
 

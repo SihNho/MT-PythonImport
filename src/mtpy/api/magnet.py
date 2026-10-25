@@ -1,29 +1,41 @@
-"""The magnet (PI C-863): position is the raw quantity, force is derived from a recorded table (decision 0010).
+"""The magnet (PI C-863): position is the raw quantity, force is derived from a calibration (decisions 0010, 0018).
 
-    m = api.magnet.move_to(5.0)          # mm; refused outside the rig safety profile's magnet travel
+    m = api.magnet.move_to(5.0)          # mm; a position outside the magnet position limit is coerced (0018 item 5)
     m.wait(timeout_s=10)                 # -> position read back (mm)
+    api.magnet.set_touch_position(20.0)  # 'Mag pos when touched to glass' (mm) for the force equation
+    m = api.magnet.set_force(5.0)        # m.applied_pN: the force actually set (coerced into the reachable range)
 
-Decision 0017: there is no separate maximum force. A force is converted to a magnet position through the force table
-in use and that position is checked against the profile's `magnet_position_mm` limit; the reachable force range is
-the table's force at the position-limit ends (`force_range()`). A `magnet_force_pN` entry left in an older profile
-(v1-v4) is ignored.
+Decision 0018 (refines 0017 item 2): the default calibration is the LabVIEW force equation computed live
+(`mtpy.forcecal.M270_V3`, needs the touch position); a recorded table (`use_force_table`) is the swappable
+alternative (0010). The only magnet safety limit is the profile's `magnet_position_mm` (0017). A force outside the
+reachable range [F(limit min), F(limit max)] and a position outside the limit are COERCED to the nearest reachable
+value - no alarm, no refusal - and a `coerced` event records requested, applied, reason and calibration. Second
+safeguard (0018 item 4): the position sent to the device is coerced into the limit in the last step before sending.
+The speed is checked as before (refused above `magnet_speed_mm_s`). A `magnet_force_pN` entry left in an older
+profile (v1-v4) is ignored.
 """
-import numpy as np
+from mtpy import forcecal
 
 from . import estop, events, safety
 from .devices import _move, service
 from .errors import NotReady, SafetyRefused
 
+COERCE_TOL = 1e-9        # |applied - requested| at or below this is numerical noise: applied, not logged as coerced
+
 
 def move_to(position_mm, speed_mm_s=None):
     """Move the magnet to position_mm (0 = top, larger = closer to the sample) and return a Motion.
 
-    Safety: position_mm inside the profile's `magnet_position_mm`; the speed inside `magnet_speed_mm_s`, ALWAYS:
-    a given speed_mm_s is checked, and when it is omitted the speed the controller would apply is read back
-    (`VEL?`) and checked (review l2s-wp2-r1); the checked speed is then sent with the move, so the move runs at
-    exactly the speed that was checked. A profile without a speed limit (the shipped v1: `magnet_speed_mm_s` has
-    no max) refuses every magnet move until a rig-admin sets it. Emergency stop -> NotReady. Read back within the
-    device's tolerance or DeviceError (from wait()). Example: `api.magnet.move_to(5.0).wait(10)`.
+    Position (decision 0018 item 5): outside the profile's `magnet_position_mm` it is coerced to the nearest limit
+    (no alarm; a `coerced` event); the Motion carries `requested_mm`, `applied_mm` and `coerced`, so a GUI field can
+    be rewritten with the applied value. The position actually sent is coerced into the limit once more right
+    before sending (0018 item 4). A position that is not a finite number is refused (SafetyRefused).
+    Speed: inside `magnet_speed_mm_s`, ALWAYS: a given speed_mm_s is checked, and when it is omitted the speed the
+    controller would apply is read back (`VEL?`) and checked (review l2s-wp2-r1); the checked speed is then sent with
+    the move, so the move runs at exactly the speed that was checked. A profile without a speed limit (the shipped
+    v1: `magnet_speed_mm_s` has no max) refuses every magnet move until a rig-admin sets it. Emergency stop ->
+    NotReady. Read back within the device's tolerance or DeviceError (from wait()).
+    Example: `api.magnet.move_to(5.0).wait(10)`.
     The request is made at the first line: an emergency stop engaged from here on (even while the speed is read
     back, and even if released again) voids it (re-review l2s-wp2-r2).
     """
@@ -40,8 +52,46 @@ def move_to(position_mm, speed_mm_s=None):
     except SafetyRefused as e:
         events.log("refused", request=request, reason=str(e))
         raise
-    return _move("magnet", "magnet_position_mm", position_mm, dev.position, gen=gen,
-                 send=lambda v: svc.call(dev.move_to, v, speed, what=f"VEL 1 {speed!r}; MOV 1 {v!r}"))
+    applied = _coerce_position(position_mm)
+    m = _move("magnet", "magnet_position_mm", applied, dev.position, gen=gen,
+              send=lambda v: _send(svc, dev, v, speed))
+    m.requested_mm, m.applied_mm = position_mm, applied
+    m.coerced = applied is not position_mm and abs(applied - position_mm) > COERCE_TOL
+    return m
+
+
+def _coerce_position(position_mm):
+    """Decision 0018 item 5: a finite position outside the absolute position limit -> the nearest limit, with a
+    `coerced` event. Anything else (not a number, no usable limit) is returned unchanged for the profile check to
+    refuse with its own message."""
+    if not safety._is_number(position_mm):
+        return position_mm
+    try:
+        lo, hi, v = _position_limit()
+    except SafetyRefused:
+        return position_mm
+    applied = float(min(max(position_mm, lo), hi))
+    if abs(applied - position_mm) <= COERCE_TOL:
+        return position_mm if lo <= position_mm <= hi else applied
+    events.log("coerced", request={"quantity": "magnet_position_mm", "value": position_mm}, applied=applied,
+               reason=f"outside the magnet position limit [{lo:g}, {hi:g}] mm of the rig safety profile v{v}; set to "
+                      "the nearest limit (decision 0018 item 5)")
+    return applied
+
+
+def _send(svc, dev, position_mm, speed):
+    """The last step before the device (decision 0018 item 4): whatever the caller computed, the position sent is
+    coerced into the magnet position limit (a `coerced` event, stage "send", when it had to be). Runs on the motion
+    thread inside acting()'s guarded send; the controller's TMN / TMX stay set as the hardware layer below."""
+    if not safety._is_number(position_mm):
+        raise SafetyRefused(f"magnet position {position_mm!r} is not a finite number; nothing sent")
+    lo, hi, v = _position_limit()
+    sent = float(min(max(position_mm, lo), hi))
+    if sent != position_mm:
+        events.log("coerced", request={"quantity": "magnet_position_mm", "value": position_mm}, applied=sent,
+                   stage="send", reason=f"last-step coercion into the magnet position limit [{lo:g}, {hi:g}] mm of "
+                                        f"the rig safety profile v{v} before sending (decision 0018 item 4)")
+    return svc.call(dev.move_to, sent, speed, what=f"VEL 1 {speed!r}; MOV 1 {sent!r}")
 
 
 def position():
@@ -50,19 +100,42 @@ def position():
     return svc.call(svc.require().position, what="POS?")
 
 
-def _valid_table(t):
+# --- force calibration (decisions 0010, 0017, 0018) --------------------------------------------------------------
+
+def _state(svc=None):
+    """(calibration, touch_mm) of this session: the default is the live equation without a touch position."""
+    svc = svc or service("magnet")
+    return getattr(svc, "force_state", None) or (forcecal.DEFAULT, None)
+
+
+def _set_state(cal, touch):
+    svc = service("magnet")
+    svc.force_state = (cal, touch)              # one tuple: a reader (poller, display) never sees a mixed state
+    calib = {"force": cal.describe(touch)}
+    if cal.kind == "table":
+        calib["force_table"] = {"name": cal.name, "version": cal.version}
+    svc.calibration = calib
+    events.log("calibration", device="magnet", force_calibration=cal.name, calibration_kind=cal.kind, touch_mm=touch,
+               **({"force_table": cal.name, "version": cal.version} if cal.kind == "table" else {}))
+
+
+def _as_table(table):
     try:
-        pos = np.asarray(t["position_mm"], dtype=float)
-        f = np.asarray(t["force_pN"], dtype=float)
-        ok = (isinstance(t["name"], str) and t["name"] and "version" in t and pos.ndim == 1 and pos.shape == f.shape
-              and pos.size >= 2 and np.all(np.isfinite(pos)) and np.all(np.isfinite(f)) and np.all(np.diff(f) > 0)
-              and (np.all(np.diff(pos) > 0) or np.all(np.diff(pos) < 0)))
-    except (KeyError, TypeError, ValueError):
-        ok = False
-    if not ok:
-        raise SafetyRefused("a force table needs name, version, position_mm and force_pN (same length >= 2, finite, "
-                            "force strictly increasing, position strictly monotonic)")
-    return pos, f
+        return forcecal.TableCalibration(table)
+    except ValueError as e:
+        raise SafetyRefused(str(e)) from None
+
+
+def _resolve(table):
+    """(calibration, touch) for a call: `table` None = the session's; a table dict or a calibration object for this
+    call only (touch from the session). NotReady when the calibration needs a touch position that is not set."""
+    cal, touch = _state()
+    if table is not None:
+        cal = table if hasattr(table, "position") and hasattr(table, "domain") else _as_table(table)
+    if cal.needs_touch and touch is None:
+        raise NotReady(f"the force calibration {cal.name!r} needs the touch position ('Mag pos when touched to "
+                       "glass'); api.magnet.set_touch_position(mm) first (decision 0018)")
+    return cal, touch
 
 
 def _position_limit():
@@ -77,102 +150,153 @@ def _position_limit():
     return e["min"], e["max"], p["version"]
 
 
-def _reach(table):
-    """The reachable force range of `table` inside the magnet position limit (decision 0017), as force_range()."""
-    pos, f = _valid_table(table)
+def _reach(cal, touch):
+    """The reachable force range of `cal` inside the magnet position limit (decision 0017), as force_range()."""
     lo, hi, v = _position_limit()
-    if pos[0] > pos[-1]:
-        pos, f = pos[::-1], f[::-1]
-    a, b = max(lo, pos[0]), min(hi, pos[-1])
+    d0, d1 = cal.domain()
+    a, b = max(lo, d0), min(hi, d1)
     if a > b:
-        raise SafetyRefused(f"the force table {table['name']!r} covers magnet positions [{pos[0]:g}, {pos[-1]:g}] mm, "
-                            f"none inside the magnet position limit [{lo:g}, {hi:g}] mm of the rig safety profile "
-                            f"v{v}; no force is reachable")
-    ends = sorted([(float(np.interp(a, pos, f)), float(a)), (float(np.interp(b, pos, f)), float(b))])
-    return {"force_pN": (ends[0][0], ends[1][0]), "position_mm": (ends[0][1], ends[1][1]),
-            "limited_by": tuple("position limit" if p in (lo, hi) else "table end" for _, p in ends),
-            "position_limit_mm": (float(lo), float(hi)), "table": table["name"], "table_version": table["version"],
-            "profile_version": v}
+        raise SafetyRefused(f"the force calibration {cal.name!r} covers magnet positions [{d0:g}, {d1:g}] mm, none "
+                            f"inside the magnet position limit [{lo:g}, {hi:g}] mm of the rig safety profile v{v}; no "
+                            "force is reachable")
+    ends = sorted([(cal.force(a, touch), float(a)), (cal.force(b, touch), float(b))])
+    r = {"force_pN": (ends[0][0], ends[1][0]), "position_mm": (ends[0][1], ends[1][1]),
+         "limited_by": tuple("position limit" if p in (lo, hi) else "table end" for _, p in ends),
+         "position_limit_mm": (float(lo), float(hi)), "calibration": cal.name, "kind": cal.kind,
+         "touch_mm": touch, "profile_version": v}
+    if cal.kind == "table":
+        r.update(table=cal.name, table_version=cal.version)
+    else:
+        r["touch_beyond_limit"] = touch is not None and touch < hi      # open point, see api.md (not decided)
+    return r
 
 
-def _table(table):
-    if table is not None:
-        return table
-    table = getattr(service("magnet"), "force_table", None)
-    if table is None:
-        raise NotReady("no position-to-force table is loaded; use api.magnet.use_force_table(table) (decision 0010)")
-    return table
+def use_force_calibration(calibration=forcecal.DEFAULT.name):
+    """Use a force calibration for this session: the name of a known equation (`mtpy.forcecal.EQUATIONS`; default
+    the LabVIEW M270 v3 case 1) or a calibration object. The touch position set before is kept. Logs `calibration`."""
+    cal = forcecal.EQUATIONS.get(calibration) if isinstance(calibration, str) else calibration
+    if cal is None or not (hasattr(cal, "position") and hasattr(cal, "describe")):
+        raise SafetyRefused(f"unknown force calibration {calibration!r}; known: {sorted(forcecal.EQUATIONS)}")
+    _set_state(cal, _state()[1])
 
 
-def force_range(table=None):
-    """The force range reachable inside the magnet position limit with the force table in use (decision 0017).
-    Read only. {"force_pN": (min, max), "position_mm": (position at min, position at max), "limited_by": ("position
-    limit" | "table end", ...), "position_limit_mm", "table", "table_version", "profile_version"}.
-    table: a table for this call, else the loaded one (none -> NotReady). Example: `api.magnet.force_range()`."""
-    return _reach(_table(table))
-
-
-def force_position(force_pN, table=None):
-    """The magnet position (mm) that gives force_pN by the force table in use, checked against the magnet position
-    limit (decision 0017). Read only: nothing moves and nothing is logged. SafetyRefused when the force is reachable
-    only outside the position limit (or not at all), with the requested force, the table's force at the limit end
-    and the position; NotReady without a table. The protocol checker uses it before a run."""
-    table = _table(table)
-    if not safety._is_number(force_pN):
-        raise SafetyRefused(f"magnet force {force_pN!r} is not a finite number")
-    pos, f = _valid_table(table)
-    r = _reach(table)
-    (fmin, fmax), (pmin, pmax), (lo, hi) = r["force_pN"], r["position_mm"], r["position_limit_mm"]
-    if fmin <= force_pN <= fmax:
-        return float(np.interp(force_pN, f, pos))
-    end_f, end_p, end_by = (fmax, pmax, r["limited_by"][1]) if force_pN > fmax else (fmin, pmin, r["limited_by"][0])
-    reach = (f"the table gives {end_f:g} pN at the {'limit' if end_by == 'position limit' else 'table'} end "
-             f"{end_p:g} mm (reachable force [{fmin:g}, {fmax:g}] pN with the magnet position limit [{lo:g}, {hi:g}] "
-             f"mm of the rig safety profile v{r['profile_version']}, decision 0017)")
-    if f[0] <= force_pN <= f[-1]:
-        need = float(np.interp(force_pN, f, pos))
-        raise SafetyRefused(f"magnet force {force_pN:g} pN needs magnet position {need:g} mm by the force table "
-                            f"{table['name']!r}, outside the magnet position limit [{lo:g}, {hi:g}] mm; {reach}")
-    raise SafetyRefused(f"magnet force {force_pN:g} pN is outside the table {table['name']!r} range "
-                        f"[{f[0]:g}, {f[-1]:g}] pN (no position for it); {reach}")
+def set_touch_position(touch_mm):
+    """Set 'Mag pos when touched to glass' (mm) for this session: the force equation's d = touch_mm - position.
+    Changes the reachable force range (not the profile). Logs `calibration`."""
+    if not safety._is_number(touch_mm):
+        raise SafetyRefused(f"touch position {touch_mm!r} is not a finite number")
+    _set_state(_state()[0], float(touch_mm))
 
 
 def use_force_table(table):
-    """Load the recorded position-to-force table for this session (0010): {"name", "version", "position_mm": [...],
-    "force_pN": [...]} with force strictly increasing. Its name and version show as the calibration in use."""
-    svc = service("magnet")
-    _valid_table(table)
-    svc.calibration = {"force_table": {"name": table["name"], "version": table["version"]}}
-    svc.force_table = table
-    events.log("calibration", device="magnet", force_table=table["name"], version=table["version"])
+    """Load a recorded position-to-force table for this session (0010, the swappable alternative to the equation):
+    {"name", "version", "position_mm": [...], "force_pN": [...]} with force strictly increasing and position strictly
+    monotonic. Its name and version show as the calibration in use."""
+    _set_state(_as_table(table), _state()[1])
+
+
+def force_calibration():
+    """The calibration in use (read only): name, kind, equation and constants (or the table), touch_mm, plus
+    "ready" (False while an equation lacks the touch position) and "why". The run file records it (0010)."""
+    cal, touch = _state()
+    d = cal.describe(touch)
+    d["ready"] = not (cal.needs_touch and touch is None)
+    d["why"] = None if d["ready"] else "the touch position is not set (api.magnet.set_touch_position)"
+    return d
 
 
 def force_table():
-    """The position-to-force table loaded with use_force_table() (a copy: name, version, position_mm, force_pN), or
-    None. Read only; the protocol checker (WP5) uses it to refuse a force outside the table before a run starts."""
-    t = getattr(service("magnet"), "force_table", None)
-    if t is None:
+    """The table in use (a copy: name, version, position_mm, force_pN) when the calibration is a table, else None."""
+    cal, _ = _state()
+    if cal.kind != "table":
         return None
+    t = cal.table
     return {"name": t["name"], "version": t["version"], "position_mm": [float(x) for x in t["position_mm"]],
             "force_pN": [float(x) for x in t["force_pN"]]}
 
 
-def set_force(force_pN, table=None):
-    """Move the magnet to the position that gives force_pN by the position-to-force table (0010); returns a Motion.
+def force_range(table=None):
+    """The force range reachable inside the magnet position limit with the calibration in use (decision 0017).
+    Read only. {"force_pN": (min, max), "position_mm": (position at min, position at max), "limited_by": ("position
+    limit" | "table end", ...), "position_limit_mm", "calibration", "kind", "touch_mm", "profile_version"} (+ "table",
+    "table_version" for a table; "touch_beyond_limit" for an equation). table: a table (or calibration) for this call.
+    NotReady when the equation has no touch position. Example: `api.magnet.force_range()`."""
+    return _reach(*_resolve(table))
 
-    table: a table for this call, else the one from use_force_table(). No table -> NotReady (no physics is
-    invented). Safety (decision 0017): no separate maximum force; the force is converted to a position through the
-    table and that position must be inside the profile's `magnet_position_mm` limit (force_position()), else
-    SafetyRefused before anything moves; then the position goes through move_to() (speed and position checked
-    again). Example: `api.magnet.set_force(2.0).wait(30)`.
+
+def coerce_force(force_pN, table=None):
+    """Decision 0018: the force actually applied for a requested force, read only (nothing moves, nothing logged).
+    {"requested_pN", "applied_pN", "position_mm", "coerced", "reason", "calibration", "touch_mm"}: a force outside
+    the reachable range becomes the nearest reachable force (the force at the position-limit end). SafetyRefused only
+    for a value that is not a finite number (or no reachable force at all); NotReady without a touch position."""
+    cal, touch = _resolve(table)
+    if not safety._is_number(force_pN):
+        raise SafetyRefused(f"magnet force {force_pN!r} is not a finite number")
+    r = _reach(cal, touch)
+    (fmin, fmax), (pmin, pmax) = r["force_pN"], r["position_mm"]
+    applied, reason = float(force_pN), None
+    if force_pN > fmax + COERCE_TOL or force_pN < fmin - COERCE_TOL:
+        hi = force_pN > fmax
+        applied, pos, by = (fmax, pmax, r["limited_by"][1]) if hi else (fmin, pmin, r["limited_by"][0])
+        lo_l, hi_l = r["position_limit_mm"]
+        reason = (f"magnet force {force_pN:g} pN is {'above' if hi else 'below'} the reachable range [{fmin:g}, "
+                  f"{fmax:g}] pN of {cal.name!r}"
+                  + (f" at touch {touch:g} mm" if touch is not None else "")
+                  + f" inside the magnet position limit [{lo_l:g}, {hi_l:g}] mm (rig safety profile "
+                    f"v{r['profile_version']}); set to {applied:g} pN at the {by} ({pos:g} mm) (decision 0018)")
+    else:
+        applied = min(max(applied, fmin), fmax)
+        pos = cal.position(applied, min(pmin, pmax), max(pmin, pmax), touch)
+    return {"requested_pN": force_pN, "applied_pN": applied, "position_mm": float(pos),
+            "coerced": reason is not None, "reason": reason, "calibration": cal.name, "touch_mm": touch}
+
+
+def force_position(force_pN, table=None):
+    """The magnet position (mm) for force_pN after coercion into the reachable range (decision 0018); always inside
+    the magnet position limit. Read only. See coerce_force()."""
+    return coerce_force(force_pN, table)["position_mm"]
+
+
+def force_at(position_mm, table=None):
+    """The force (pN) at a magnet position by the calibration in use, computed live (decision 0018 item 1). Read
+    only, no device call: cheap enough for a poller or display per reading, never called on the acquisition path.
+    NotReady while the equation has no touch position. Example: `api.magnet.force_at(api.magnet.position())`."""
+    cal, touch = _resolve(table)
+    return cal.force(position_mm, touch)
+
+
+def live_force(position_mm):
+    """For the motor poller and the live display (decision 0018 item 1): {"force_pN", "force_calibration",
+    "touch_mm"} at position_mm by the calibration in use, or None while it is not ready. Never raises for a missing
+    touch position; pure arithmetic (no device call, no lock), so it costs microseconds off the frame path."""
+    cal, touch = _state()
+    if cal.needs_touch and touch is None:
+        return None
+    return {"force_pN": cal.force(position_mm, touch), "force_calibration": cal.name, "touch_mm": touch}
+
+
+def set_force(force_pN, table=None):
+    """Move the magnet to the position that gives force_pN by the calibration in use; returns a Motion.
+
+    Decision 0018: a force outside the reachable range (the force at the magnet position-limit ends, 0017) is coerced
+    to the nearest reachable force - no alarm - and a `coerced` event records requested, applied, reason and
+    calibration. The Motion carries `requested_pN`, `applied_pN`, `coerced` and `position_mm`, so the GUI can rewrite
+    the typed field with the applied value. table: a table (or calibration) for this call, else the session's (the
+    live equation by default; it needs the touch position, else NotReady). The position then goes through move_to()
+    (speed checked, position coerced again in the last step). Example: `api.magnet.set_force(2.0).wait(30)`.
     """
-    table = _table(table)
-    _valid_table(table)
-    request = {"quantity": "magnet_force_pN", "value": force_pN, "table": table["name"]}
+    cal, _ = _resolve(table)
+    request = {"quantity": "magnet_force_pN", "value": force_pN, "calibration": cal.name}
     try:
-        target = force_position(force_pN, table)
+        r = coerce_force(force_pN, table)
     except SafetyRefused as e:
         events.log("refused", request=request, reason=str(e))
         raise
-    events.log("force_request", request=request, position_mm=target, table_version=table["version"])
-    return move_to(target)
+    if r["coerced"]:
+        events.log("coerced", request=request, applied=r["applied_pN"], position_mm=r["position_mm"],
+                   reason=r["reason"], calibration=cal.name, touch_mm=r["touch_mm"])
+    events.log("force_request", request=request, applied_pN=r["applied_pN"], position_mm=r["position_mm"],
+               touch_mm=r["touch_mm"], **({"table_version": cal.version} if cal.kind == "table" else {}))
+    m = move_to(r["position_mm"])
+    m.requested_pN, m.applied_pN, m.coerced, m.position_mm = force_pN, r["applied_pN"], r["coerced"], r["position_mm"]
+    return m

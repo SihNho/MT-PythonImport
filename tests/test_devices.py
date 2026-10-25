@@ -89,14 +89,58 @@ def test_moves_within_limits_read_back(rig):
     assert abs(x - ox - 1.0) <= 0.0005 and abs(y - oy + 1.0) <= 0.0005
 
 
-def test_refusal_outside_profile_names_range_and_moves_nothing(rig):
+def test_speed_outside_profile_refused_and_moves_nothing(rig):
+    """The speed is still refused outside the profile (decision 0018 changes positions and forces, not speeds); a
+    position that is not a finite number is refused too."""
     n = len(events.events())
-    with pytest.raises(SafetyRefused, match=r"\[0, 39\] mm"):
-        api.magnet.move_to(40.0)                                  # refused at once, not only at wait()
     with pytest.raises(SafetyRefused, match=r"\[0, 10\] mm/s"):
-        api.magnet.move_to(1.0, speed_mm_s=50.0)
+        api.magnet.move_to(1.0, speed_mm_s=50.0)                  # refused at once, not only at wait()
+    with pytest.raises(SafetyRefused, match="not a finite number"):
+        api.magnet.move_to(float("nan"))
     assert api.magnet.position() == pytest.approx(0.0, abs=0.01)
     assert [e.kind for e in _since(n)] == ["refused", "refused"]
+
+
+@pytest.mark.parametrize("requested, applied", [(45.0, 39.0), (-3.0, 0.0)])
+def test_direct_position_outside_the_limit_is_coerced_to_the_nearest_limit(rig, requested, applied):
+    """Decision 0018 item 5: no alarm, no refusal; the applied value is returned (for the GUI field), logged as a
+    `coerced` event with requested / applied / reason, and is the position the magnet moves to."""
+    if applied == 0.0:
+        api.magnet.move_to(5.0).wait(5)
+    n = len(events.events())
+    m = api.magnet.move_to(requested)
+    assert (m.requested_mm, m.applied_mm, m.coerced) == (requested, applied, True)
+    assert m.wait(10) == pytest.approx(applied, abs=0.01)
+    ev = [e for e in _since(n) if e.kind in ("coerced", "act", "refused")]
+    assert [e.kind for e in ev] == ["coerced", "act"]
+    assert ev[0].request == {"quantity": "magnet_position_mm", "value": requested} and ev[0].extra["applied"] == applied
+    assert "nearest limit" in ev[0].extra["reason"] and "[0, 39] mm" in ev[0].extra["reason"]
+    assert ev[1].request["value"] == applied
+    m = api.magnet.move_to(applied)                               # inside: no coercion, no event
+    assert m.coerced is False and m.wait(5) == pytest.approx(applied, abs=0.01)
+
+
+def test_last_step_coerces_whatever_the_caller_computed(rig):
+    """Decision 0018 item 4: the final send coerces into 0..39 mm even when every earlier step is bypassed."""
+    svc = rig["magnet"]
+    n = len(events.events())
+    api.magnet._send(svc, svc.device, 45.0, 10.0)                 # a deliberately bad internal value
+    _wait_still(svc)
+    assert api.magnet.position() == pytest.approx(39.0, abs=0.01)
+    ev = [e for e in _since(n) if e.kind == "coerced"]
+    assert len(ev) == 1 and ev[0].extra["stage"] == "send" and ev[0].extra["applied"] == 39.0
+    api.magnet._send(svc, svc.device, -2.5, 10.0)
+    _wait_still(svc)
+    assert api.magnet.position() == pytest.approx(0.0, abs=0.01)
+    with pytest.raises(SafetyRefused, match="not a finite number"):
+        api.magnet._send(svc, svc.device, float("inf"), 10.0)
+
+
+def _wait_still(svc, timeout_s=10.0):
+    t_end = time.monotonic() + timeout_s
+    time.sleep(0.05)
+    while svc.device.moving() and time.monotonic() < t_end:
+        time.sleep(0.02)
 
 
 @pytest.fixture(params=[None, 4], ids=["shipped_v5", "history_v4"])
@@ -107,8 +151,8 @@ def v4_or_v5_rig(request, tmp_path, monkeypatch):
 
 def test_profiles_v4_and_v5_magnet_position_moves_up_to_15_mm_s_rotor_focus_refused(v4_or_v5_rig):
     """Profiles v4 (rig check 2026-10-25) and v5 (decision 0017, same position and speed limits): a magnet POSITION
-    move at <= 15 mm/s (given or read back) runs in the simulator; > 15 mm/s or > 39 mm is refused and nothing moves;
-    rotor and focus are still refused (unverified / unset)."""
+    move at <= 15 mm/s (given or read back) runs in the simulator; > 15 mm/s is refused and nothing moves; > 39 mm is
+    coerced to 39 mm (decision 0018 item 5); rotor and focus are still refused (unverified / unset)."""
     assert safety.profile()["version"] in (4, 5)
     with pytest.raises(SafetyRefused, match="not verified"):
         api.rotor.rotate(1.0)
@@ -117,9 +161,9 @@ def test_profiles_v4_and_v5_magnet_position_moves_up_to_15_mm_s_rotor_focus_refu
     for speed in (15.5, 16.0):
         with pytest.raises(SafetyRefused, match=r"magnet_speed_mm_s .* outside the allowed range \[0, 15\]"):
             api.magnet.move_to(1.0, speed_mm_s=speed)
-    with pytest.raises(SafetyRefused, match=r"magnet_position_mm 39.5 mm is outside the allowed range \[0, 39\]"):
-        api.magnet.move_to(39.5, speed_mm_s=15.0)
     assert api.magnet.position() == pytest.approx(0.0, abs=0.01) and not v4_or_v5_rig["magnet"].device.moving()
+    m = api.magnet.move_to(39.5, speed_mm_s=15.0)
+    assert m.applied_mm == 39.0 and m.wait(10) == pytest.approx(39.0, abs=0.01)
     assert api.magnet.move_to(1.0, speed_mm_s=15.0).wait(5) == pytest.approx(1.0, abs=0.01)
     n = len(events.events())
     assert api.magnet.move_to(2.0).wait(5) == pytest.approx(2.0, abs=0.01)   # omitted: VEL? read back and checked
@@ -141,34 +185,39 @@ def test_shipped_v5_force_inside_the_reachable_range_runs(shipped_rig):
     assert api.magnet.force_position(5.5) == pytest.approx(15.0)
 
 
-def test_force_needing_a_position_beyond_39_mm_is_refused_with_the_numbers(shipped_rig):
+def test_table_force_above_the_reachable_range_is_coerced_to_the_limit_end(shipped_rig):
+    """Decision 0018 with a table (the swappable alternative): 25 pN needs 40.69 mm -> 23.04 pN at 39 mm; returned,
+    logged as `coerced`, and moved to. 31 pN (beyond the table itself) -> the same."""
     api.magnet.use_force_table(WIDE_TABLE)
     r = api.magnet.force_range()
     assert r["force_pN"][0] == pytest.approx(0.1) and r["force_pN"][1] == pytest.approx(23.04)
     assert r["position_mm"] == (0.0, 39.0) and r["limited_by"] == ("position limit", "position limit")
     n = len(events.events())
-    with pytest.raises(SafetyRefused) as e:
-        api.magnet.set_force(25.0)
-    msg = str(e.value)
-    assert "magnet force 25 pN needs magnet position 40.6897 mm" in msg and "[0, 39] mm" in msg
-    assert "23.04 pN at the limit end 39 mm" in msg and "rig safety profile v5" in msg
-    with pytest.raises(SafetyRefused, match=r"outside the table 'wide test table' range \[0.1, 30\] pN.*23.04 pN"):
-        api.magnet.set_force(31.0)
-    assert [x.kind for x in _since(n)] == ["refused", "refused"]          # refused before anything moved
-    assert api.magnet.position() == pytest.approx(0.0, abs=0.01) and not shipped_rig["magnet"].device.moving()
-    assert api.magnet.set_force(23.0).wait(10) == pytest.approx(20 + 25 * 22 / 29, abs=0.01)
+    m = api.magnet.set_force(25.0)
+    assert m.requested_pN == 25.0 and m.applied_pN == pytest.approx(23.04) and m.coerced and m.position_mm == 39.0
+    assert m.wait(10) == pytest.approx(39.0, abs=0.01)
+    ev = [x for x in _since(n) if x.kind in ("coerced", "force_request", "act", "refused")]
+    assert [x.kind for x in ev] == ["coerced", "force_request", "act"]
+    c = ev[0]
+    assert c.request["value"] == 25.0 and c.extra["applied"] == pytest.approx(23.04)
+    assert c.extra["calibration"] == "wide test table" and c.extra["position_mm"] == 39.0
+    assert "above the reachable range [0.1, 23.04] pN" in c.extra["reason"]
+    assert "set to 23.04 pN at the position limit (39 mm)" in c.extra["reason"] and "rig safety profile v5" in c.extra["reason"]
+    assert api.magnet.coerce_force(31.0)["applied_pN"] == pytest.approx(23.04)
+    m = api.magnet.set_force(23.0)
+    assert not m.coerced and m.wait(10) == pytest.approx(20 + 25 * 22 / 29, abs=0.01)
 
 
-def test_force_needing_a_position_below_0_mm_is_refused_with_the_numbers(shipped_rig):
+def test_table_force_below_the_reachable_range_is_coerced_to_the_limit_end(shipped_rig):
     api.magnet.use_force_table(BELOW_TABLE)
     r = api.magnet.force_range()
     assert r["force_pN"][0] == pytest.approx(2.04) and r["force_pN"][1] == pytest.approx(10.0)
     assert r["position_mm"] == (0.0, 20.0) and r["limited_by"] == ("position limit", "table end")
-    with pytest.raises(SafetyRefused) as e:
-        api.magnet.set_force(1.0)
-    msg = str(e.value)
-    assert "magnet force 1 pN needs magnet position -2.61307 mm" in msg and "2.04 pN at the limit end 0 mm" in msg
-    assert api.magnet.position() == pytest.approx(0.0, abs=0.01)
+    api.magnet.move_to(5.0).wait(5)
+    m = api.magnet.set_force(1.0)
+    assert m.applied_pN == pytest.approx(2.04) and m.coerced and m.position_mm == 0.0
+    assert m.wait(10) == pytest.approx(0.0, abs=0.01)
+    assert api.magnet.coerce_force(1.0)["reason"].startswith("magnet force 1 pN is below the reachable range")
 
 
 def test_changing_the_force_table_changes_the_reachable_range_not_the_profile(shipped_rig):
@@ -179,21 +228,81 @@ def test_changing_the_force_table_changes_the_reachable_range_not_the_profile(sh
     wide = api.magnet.force_range()["force_pN"]
     assert narrow == (0.1, 10.0) and wide[1] == pytest.approx(23.04) and safety.profile()["version"] == v
     assert api.magnet.force_range(SYNTHETIC_TABLE)["force_pN"] == narrow       # a table for one call
-    api.magnet.set_force(15.0).wait(10)                                         # 15 pN is reachable with WIDE only
-    with pytest.raises(SafetyRefused, match="outside the table 'synthetic test table' range"):
-        api.magnet.set_force(15.0, table=SYNTHETIC_TABLE)
+    m = api.magnet.set_force(15.0)                                              # 15 pN is reachable with WIDE only
+    assert not m.coerced and m.wait(10) > 20.0
+    m = api.magnet.set_force(15.0, table=SYNTHETIC_TABLE)
+    assert m.coerced and m.applied_pN == 10.0 and m.wait(10) == pytest.approx(20.0, abs=0.01)
 
 
-def test_no_force_table_force_requests_refused(shipped_rig):
-    with pytest.raises(NotReady, match="no position-to-force table"):
-        api.magnet.set_force(1.0)
-    with pytest.raises(NotReady, match="no position-to-force table"):
-        api.magnet.force_range()
-    with pytest.raises(NotReady, match="no position-to-force table"):
-        api.magnet.force_position(1.0)
+def test_default_calibration_is_the_live_equation_and_needs_the_touch_position(shipped_rig):
+    cal = api.magnet.force_calibration()
+    assert cal["name"] == "M270 v3 (LabVIEW Magnet2Force v3, case 1)" and cal["kind"] == "equation"
+    assert not cal["ready"] and cal["touch_mm"] is None and api.magnet.force_table() is None
+    for call in (lambda: api.magnet.set_force(1.0), api.magnet.force_range, lambda: api.magnet.force_position(1.0),
+                 lambda: api.magnet.force_at(10.0)):
+        with pytest.raises(NotReady, match="needs the touch position"):
+            call()
+    assert api.magnet.live_force(10.0) is None
     with pytest.raises(SafetyRefused, match="position strictly monotonic"):
         api.magnet.use_force_table({**SYNTHETIC_TABLE, "position_mm": [0.0, 20.0, 10.0]})
+    with pytest.raises(SafetyRefused, match="not a finite number"):
+        api.magnet.set_touch_position(float("nan"))
     assert api.magnet.position() == pytest.approx(0.0, abs=0.01)
+
+
+def _f(d):
+    return 48.8162 * np.exp(-d / 1.13483) + 22.8394 * np.exp(-d / 3.68428) - 0.45845
+
+
+def test_equation_force_coerced_above_and_below_and_touch_changes_the_range(shipped_rig):
+    """Decision 0018 with the default equation: the reachable range is [F(0 mm), F(39 mm)] for the touch position;
+    too high -> F(39 mm) at 39 mm, too low -> F(0 mm) at 0 mm; a different touch gives a different range."""
+    api.magnet.set_touch_position(40.0)
+    r = api.magnet.force_range()
+    assert r["force_pN"] == pytest.approx((_f(40.0), _f(1.0)), rel=1e-12) and r["position_mm"] == (0.0, 39.0)
+    assert r["touch_mm"] == 40.0 and r["touch_beyond_limit"] is False and r["kind"] == "equation"
+    assert api.magnet.force_calibration()["ready"] and api.magnet.force_at(39.0) == pytest.approx(_f(1.0), rel=1e-12)
+    n = len(events.events())
+    m = api.magnet.set_force(100.0)
+    assert m.coerced and m.applied_pN == pytest.approx(_f(1.0), rel=1e-12) and m.position_mm == 39.0
+    assert m.wait(10) == pytest.approx(39.0, abs=0.01)
+    c = [x for x in _since(n) if x.kind == "coerced"]
+    assert len(c) == 1 and c[0].extra["touch_mm"] == 40.0 and c[0].extra["calibration"].startswith("M270 v3")
+    assert "at touch 40 mm" in c[0].extra["reason"]
+    m = api.magnet.set_force(10.0)                                 # inside: position by the live inverse
+    assert not m.coerced and _f(40.0 - m.position_mm) == pytest.approx(10.0, abs=1e-8)
+    assert m.wait(10) == pytest.approx(m.position_mm, abs=0.01)
+    api.magnet.set_touch_position(45.0)
+    assert api.magnet.force_range()["force_pN"][1] == pytest.approx(_f(6.0), rel=1e-12)     # range follows touch
+    api.magnet.set_touch_position(10.0)                            # F(0 mm) = F(d = 10) ~ 1.06 pN
+    m = api.magnet.set_force(0.5)
+    assert m.coerced and m.applied_pN == pytest.approx(_f(10.0), rel=1e-12) and m.position_mm == 0.0
+    assert m.wait(10) == pytest.approx(0.0, abs=0.01)
+    assert api.magnet.force_range()["touch_beyond_limit"] is True   # open point: touch inside the travel
+
+
+class _BadCalibration:
+    """TEST ONLY: F = position, but the inverse returns a position outside the limit (a deliberately bad value)."""
+    name, kind, needs_touch = "TEST ONLY bad inverse", "equation", False
+
+    def domain(self):
+        return (-np.inf, np.inf)
+
+    def force(self, p, touch=None):
+        return float(p)
+
+    def position(self, f, lo, hi, touch=None):
+        return 45.0
+
+    def describe(self, touch=None):
+        return {"name": self.name}
+
+
+def test_bad_internal_position_from_a_calibration_is_still_coerced(shipped_rig):
+    n = len(events.events())
+    m = api.magnet.set_force(10.0, table=_BadCalibration())
+    assert m.applied_mm == 39.0 and m.wait(10) == pytest.approx(39.0, abs=0.01)
+    assert any(x.kind == "coerced" and x.request["quantity"] == "magnet_position_mm" for x in _since(n))
 
 
 def test_profile_v3_still_refuses_every_magnet_move(tmp_path, monkeypatch):
@@ -708,14 +817,14 @@ def test_arduino_divider_count_reset_rule(rig):
     assert ard.pulses == 0 and ard.ratio == 1 and not ard.frames
 
 
-def test_set_force_needs_a_table(rig):
-    with pytest.raises(NotReady, match="force table"):
+def test_set_force_needs_a_ready_calibration(rig):
+    with pytest.raises(NotReady, match="touch position"):
         api.magnet.set_force(1.0)
     api.magnet.use_force_table(SYNTHETIC_TABLE)
     assert api.magnet.set_force(1.0).wait(5) == pytest.approx(10.0, abs=0.01)
     assert api.devices.info("magnet")["calibration"]["force_table"]["name"] == "synthetic test table"
-    with pytest.raises(SafetyRefused, match="range"):
-        api.magnet.set_force(15.0)
+    m = api.magnet.set_force(15.0)                                   # coerced to the table end (decision 0018)
+    assert m.applied_pN == 10.0 and m.wait(10) == pytest.approx(20.0, abs=0.01)
 
 
 def test_real_backend_not_implemented_and_not_connected():

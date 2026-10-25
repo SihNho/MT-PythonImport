@@ -22,7 +22,9 @@
   `magnet_mm` / `rotor_deg` from these readings (the last one COMPLETED before each frame's PC receive time:
   `t_read` = completion, `t_request` = when the read was asked, kept for reference only; review l2s-wp6-r1). A
   successful poll does not touch the device's U8 state (`passive_reads`): an error stays shown until a real command
-  succeeds.
+  succeeds. Decision 0018: a magnet reading also carries the live force (`force_pN`, `force_calibration`,
+  `touch_mm`, from `api.magnet.live_force`) when the calibration is ready - derived on this poller thread, never on
+  the frame path; the raw record stays the position (0010).
 """
 import contextvars
 import threading
@@ -90,8 +92,14 @@ class _MotorPoller:
             self.errors.pop(name, None)
             self.latest[name] = (t, v, t_request)
             self.reads += 1
+            derived = {}
+            if name == "magnet":              # decision 0018: live force from the position, on this thread only
+                try:
+                    derived = _magnet.live_force(v) or {}
+                except MtpyError:
+                    derived = {}
             events.log("motor_reading", request={"quantity": quantity}, readback=v, device=name, t_read=t,
-                       t_request=t_request, **self.pipe.last_record())
+                       t_request=t_request, **derived, **self.pipe.last_record())
 
     def relog(self):
         """Log the latest reading of each motor again (same `t_read`), e.g. right after recording is switched on,
@@ -218,7 +226,9 @@ def _hdf5_sink(folder, name, beads, roles, svc, dev, settings):
     except Exception as e:  # noqa: BLE001 - identity is metadata; its absence is recorded, acquisition goes on
         identity = {"error": f"{type(e).__name__}: {e}"}
     meta = {"devices": {"jai": {"identity": identity, "settings_at_start": settings}}}
-    preset = getattr(svc, "preset", None)               # the last camera preset applied (U15 frame-rate triple)
+    if "magnet" in _services:          # decision 0010: the force calibration in use (name, equation, constants, touch)
+        meta["devices"]["magnet"] = {"force_calibration_at_start": _magnet.force_calibration()}
+    preset = getattr(svc, "preset", None)              # the last camera preset applied (U15 frame-rate triple)
     if preset is not None:
         meta["presets"] = {"camera": preset}
     return HDF5Writer(path, beads=beads, roles=roles, metadata=meta)

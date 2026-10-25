@@ -13,7 +13,11 @@ the run file, the camera stop checked separately, the ROI origin kept at bead se
 camera reconnect as a segment end, the e-stop generation through wait_arrival and protocol run(), late sends stopped
 again. 0.8.0 (decision 0017): no separate maximum force - a force is converted to a magnet position through the
 force table in use and checked against the magnet position limit (`magnet.force_range()`, `magnet.force_position()`);
-shipped rig safety profile v5 without `magnet_force_pN`.
+shipped rig safety profile v5 without `magnet_force_pN`. 0.9.0 (decision 0018): the default force calibration is
+the LabVIEW equation M270 v3 computed live (`magnet.set_touch_position`, `force_calibration`, `force_at`,
+`coerce_force`; tables stay an alternative); a force outside the reachable range and a magnet position outside the
+position limit are coerced (a `coerced` event), also in protocols (the checked plan is rewritten), and the position
+sent to the magnet is coerced into the limit in the last step; magnet readings carry the live force.
 """
 from . import errors, estop, events, safety  # noqa: I001 - must load before the device groups (they import them)
 from . import camera, devices, focus, light, magnet, rotor, stage, sync
@@ -21,7 +25,7 @@ from . import acq, beads, data, tracking
 from . import protocol
 from .errors import DeviceError, MtpyError, NotReady, SafetyRefused, ScriptError, Timeout
 
-VERSION = "0.8.0"
+VERSION = "0.9.0"
 
 __all__ = ["VERSION", "DeviceError", "MtpyError", "NotReady", "SafetyRefused", "ScriptError", "Timeout",
            "acq", "beads", "camera", "data", "devices", "errors", "estop", "events", "focus", "light", "magnet",

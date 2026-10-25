@@ -8,15 +8,18 @@ Three layers, each reported as `Diagnostic`s with the statement's line and the a
    in the API parameter's name (`f` in pN -> `force_pN`).
 2. **Rig safety profile** (read only, `api.safety.check`): every value that would reach an acting call, and the
    magnet speed limit every magnet move needs (`api.magnet.move_to` always checks `magnet_speed_mm_s`). A value the
-   API would refuse fails here, with the step named. A force (decision 0017: no separate maximum force) is converted
-   to a magnet position through the loaded force table and checked against the magnet position limit
-   (`api.magnet.force_position`); with no table loaded it cannot be checked here (a warning without `devices`).
-3. **Rig state** (`devices=True`, done by `api.protocol.run` right before starting): the devices are connected, a
-   position-to-force table is loaded for every force step, the focus target from the current position is inside the
+   API would refuse fails here, with the step named. A force (decisions 0017, 0018: no separate maximum force) is
+   converted to a magnet position by the force calibration in use (`api.magnet.coerce_force`); a force outside the
+   reachable range, and a `move mm=` position outside the magnet position limit, is COERCED, not failed: the checked
+   plan carries the corrected number (report "text" / "script") and a `coerced` warning names requested and applied
+   value. With the calibration not ready (the equation without a touch position) a force cannot be checked here (a
+   warning without `devices`).
+3. **Rig state** (`devices=True`, done by `api.protocol.run` right before starting): the devices are connected, the
+   force calibration is ready for every force step, the focus target from the current position is inside the
    window, and acquisition runs when the protocol records. Values that depend on what happens during the run are
-   still checked by the API at each step.
+   still checked (and coerced) by the API at each step.
 
-Nothing here moves anything or logs an acting event.
+Nothing here moves anything or logs an event.
 """
 import inspect
 import math
@@ -24,7 +27,7 @@ import math
 from mtpy import api
 from mtpy.api.errors import ScriptError
 
-from .grammar import PROTOCOL_KEYS, Diagnostic
+from .grammar import PROTOCOL_KEYS, Diagnostic, parse
 
 # statement (or statement:form) -> [(api function, {grammar key: API parameter that carries the value})]
 API_MAP = {
@@ -74,12 +77,43 @@ def walk(body):
 class _Report:
     def __init__(self, script):
         self.script, self.errors, self.warnings = script, [], list(script.warnings)
+        self.coerced = []         # decision 0018: {"line", "col", "key", "statement", "requested", "applied", ...}
 
     def err(self, st, col, msg):
         self.errors.append(Diagnostic(self.script.file, st.line, col or st.col, msg))
 
     def warn(self, st, col, msg):
         self.warnings.append(Diagnostic(self.script.file, st.line, col or st.col, msg, "warning"))
+
+    def coerce(self, st, key, requested, applied, unit, reason, **extra):
+        """Record a value rewritten in the checked plan (decision 0018): the plan's number is `applied` written with
+        at most 4 decimals, rounded toward the inside of the range, so the plan never needs a second coercion."""
+        arg = st.args[key]
+        text = _plan_text(applied, -1 if requested > applied else 1)
+        self.coerced.append({"line": st.line, "col": arg.col, "key": key, "statement": st.text.strip(),
+                             "requested": requested, "applied": float(text), "text": text, "old_text": arg.text,
+                             "unit": unit, "reason": reason, **extra})
+        self.warn(st, arg.col, f"coerced: '{key}' {requested:g} {unit} -> {text} {unit} in the checked plan; {reason}")
+
+
+def _plan_text(v, toward):
+    """v as a plain decimal (no exponent: the grammar's number token) with at most 4 decimals, rounded down
+    (toward < 0) or up (toward > 0); a last-bit float error (23.039999999999996) is not rounded away - it stays
+    inside the API's coercion tolerance (1e-9)."""
+    q = 10 ** 4
+    x = (math.floor(v * q + 1e-6) if toward < 0 else math.ceil(v * q - 1e-6)) / q
+    s = f"{x:.4f}".rstrip("0").rstrip(".")
+    return "0" if s in ("", "-0") else s
+
+
+def _rewrite(text, coerced):
+    """The source with every coerced number replaced at its line and column (right to left within a line)."""
+    lines = text.removeprefix("﻿").split("\n")
+    for c in sorted(coerced, key=lambda c: (c["line"], -c["col"])):
+        s, i = lines[c["line"] - 1], c["col"] - 1
+        assert s[i:i + len(c["old_text"])] == c["old_text"], (c, s)
+        lines[c["line"] - 1] = s[:i] + c["text"] + s[i + len(c["old_text"]):]
+    return "\n".join(lines)
 
 
 def _api_layer(rep, st):
@@ -129,27 +163,58 @@ def _magnet_speed(rep, st):
                             f"rig safety profile: {e}")
 
 
-def _loaded_table():
+def _force_calibration():
     try:
-        return api.magnet.force_table()
+        return api.magnet.force_calibration()
     except api.NotReady:            # no magnet service (devices not connected)
         return None
 
 
+def _not_ready(cal):
+    if cal is None:
+        return "no magnet is connected"
+    return f"the force calibration {cal['name']!r} is not ready ({cal['why']})"
+
+
 def _forces(rep, st, a, devices):
-    """Decision 0017: each force through the loaded table to a position inside the magnet position limit."""
+    """Decisions 0017 / 0018: each force by the calibration in use to a position inside the magnet position limit;
+    a force outside the reachable range is coerced in the checked plan."""
     if st.kind not in FORCE_KEYS:
         return
-    if _loaded_table() is None:
-        if not devices:             # with devices the rig-state layer reports the missing table as an error
-            rep.warn(st, st.col, f"'{st.kind}' sets a force, and no position-to-force table is loaded: the force is "
-                                 "not checked against the magnet position limit until one is (decision 0017)")
+    cal = _force_calibration()
+    if cal is None or not cal["ready"]:
+        if not devices:             # with devices the rig-state layer reports it as an error
+            rep.warn(st, st.col, f"'{st.kind}' sets a force, and {_not_ready(cal)}: the force is not converted to a "
+                                 "magnet position (nor coerced into the reachable range) until it is (decision 0018)")
         return
     for k in FORCE_KEYS[st.kind]:
         try:
-            api.magnet.force_position(a[k])
+            r = api.magnet.coerce_force(a[k])
         except api.SafetyRefused as e:
             rep.err(st, st.args[k].col, f"'{k}' is {a[k]:g} pN; {e}")
+            continue
+        if r["coerced"]:
+            rep.coerce(st, k, a[k], r["applied_pN"], "pN", r["reason"], quantity="magnet_force_pN",
+                       calibration=r["calibration"], touch_mm=r["touch_mm"])
+
+
+def _move_position(rep, st, v):
+    """Decision 0018 item 5: a `move mm=` outside the magnet position limit is coerced to the nearest limit in the
+    checked plan; a limit that is not usable (unset, unverified) fails as before."""
+    e = api.safety.profile()["limits"].get("magnet_position_mm")
+    if e and api.safety._is_number(e["min"]) and api.safety._is_number(e["max"]) and not e["relative_to"]:
+        c = min(max(v, e["min"]), e["max"])
+        try:
+            api.safety.check("magnet_position_mm", c)
+        except api.SafetyRefused:
+            pass
+        else:
+            if c != v:
+                rep.coerce(st, "mm", v, c, "mm", f"outside the magnet position limit [{e['min']:g}, {e['max']:g}] "
+                           f"mm of the rig safety profile v{api.safety.profile()['version']}; set to the nearest "
+                           "limit (decision 0018 item 5)", quantity="magnet_position_mm")
+            return
+    _profile(rep, st, "mm", "magnet_position_mm", v)
 
 
 def _profile_layer(rep, st, devices=False):
@@ -160,7 +225,7 @@ def _profile_layer(rep, st, devices=False):
     if st.kind == "zero":
         _profile(rep, st, "magnet target", "magnet_position_mm", 0.0, why=" (zero moves the magnet to 0 mm)")
     elif st.kind == "move":
-        _profile(rep, st, "mm", "magnet_position_mm", a["mm"])
+        _move_position(rep, st, a["mm"])
     elif st.kind == "rotate":
         for k in ("from", "to"):           # turns relative to the session-start position, as the profile window
             _profile(rep, st, k, "rotor_turns", a[k], origin=0.0, why=" from the session-start position")
@@ -183,10 +248,11 @@ def _state_layer(rep, st, focus_z0):
         if not _connected(dev):
             rep.err(st, st.col, f"'{st.kind}' needs the {dev}, which is not connected (api.devices.status())")
             return
-    if st.kind in FORCE_KEYS and api.magnet.force_table() is None:      # the forces: profile layer (0017)
-        rep.err(st, st.col, f"'{st.kind}' sets a force, and no position-to-force table is loaded "
-                            "(api.magnet.use_force_table, decision 0010)")
-        return
+    if st.kind in FORCE_KEYS:                       # the forces themselves: profile layer (0017, 0018)
+        cal = api.magnet.force_calibration()
+        if not cal["ready"]:
+            rep.err(st, st.col, f"'{st.kind}' sets a force, and {_not_ready(cal)} (decision 0018)")
+            return
     if st.kind == "focus" and focus_z0 is not None:
         z0, origin = focus_z0
         _profile(rep, st, "um", "focus_z_um", z0 + a["um"], origin=origin,
@@ -199,7 +265,10 @@ _NO_RUN = object()
 
 
 def check(script, devices=False, run_focus_z0=_NO_RUN):
-    """Validate a parsed protocol. Returns {"ok", "errors", "warnings" (Diagnostics), "min_duration_s"}.
+    """Validate a parsed protocol. Returns {"ok", "errors", "warnings" (Diagnostics), "min_duration_s", "coerced",
+    "text", "script"}: "coerced" lists every value rewritten into range (decision 0018; line, col, key, requested,
+    applied, reason, ...), "text" is the checked plan's source with those numbers corrected (what an edit buffer
+    shows) and "script" its parsed Script (the input script itself when nothing was coerced) - the one to run.
 
     devices=True adds the rig-state layer (connected devices, force table, focus position, acquisition running); it
     only reads. run_focus_z0 (a mid-run edit, review l2s-wp5-r1): the focus reference of the RUNNING protocol (the
@@ -225,8 +294,16 @@ def check(script, devices=False, run_focus_z0=_NO_RUN):
         _profile_layer(rep, st, devices)
         if devices:
             _state_layer(rep, st, focus_z0)
+    plan, text = script, script.text
+    if rep.coerced:
+        text = _rewrite(script.text, rep.coerced)
+        try:
+            plan = parse(text, script.file)
+        except ScriptError as e:            # e.g. a reachable range entirely below 0 pN (grammar: forces >= 0)
+            rep.errors.extend(e.diagnostics)
+            plan = script
     return {"ok": not rep.errors, "errors": rep.errors, "warnings": rep.warnings,
-            "min_duration_s": duration(script.body)}
+            "min_duration_s": duration(script.body), "coerced": rep.coerced, "text": text, "script": plan}
 
 
 def structure_diff(old, new):

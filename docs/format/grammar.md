@@ -43,9 +43,9 @@ kind experiment            # experiment | screening
 | Statement | Keys (unit, range) | Meaning |
 |---|---|---|
 | `zero t=` | t (s, 0.1-600) | magnet to zero force, hold, then set the zero (U12) |
-| `ramp from= to= t=` | from, to (pN, >= 0; reachable range of the force table inside the magnet position limit, 0017); t (s, 0.1-36000) | force ramp |
-| `hold f= t=` | f (pN); t (s) | constant force |
-| `move mm= t=` | mm (magnet position, mm); t (s, optional) | magnet by position instead of force |
+| `ramp from= to= t=` | from, to (pN, >= 0; outside the reachable range of the force calibration inside the magnet position limit -> coerced to the nearest reachable force, 0018); t (s, 0.1-36000) | force ramp |
+| `hold f= t=` | f (pN; coerced into the reachable range, 0018); t (s) | constant force |
+| `move mm= t=` | mm (magnet position, mm; outside the position limit -> the nearest limit, 0018); t (s, optional) | magnet by position instead of force |
 | `rotate from= to= f= t=` | from, to (turns, ±profile max); f (pN); t (s) | rotation at a force |
 | `focus um= ` | um (µm, relative to start, ±profile window) | focus step (U35; use sparingly) |
 | `record t=` / `record on` / `record off` | t (s) | recording on for a time, or switch |
@@ -153,7 +153,11 @@ are defined in the metric library with their units; the list grows by plug-ins.
 
 ## 8. Errors
 `<file>:<line>:<column>: <message>` with a plain-language message and the allowed range when a value is outside it,
-e.g. `fe-ramp.mtprot:6:12: 'to' is 12 pN; the rig safety profile allows 0-10 pN`. A file with any error cannot run.
+e.g. `fe.mtprot:7:5: 'um' is 80 um from the focus position at the start; ... allowed range [-50, 50] um`. A file
+with any error cannot run. A magnet force or `move mm=` position outside its reachable range is NOT an error
+(decision 0018): the checked plan carries the corrected number and a warning says so, e.g.
+`fe.mtprot:5:18: warning: coerced: 'to' 25 pN -> 10 pN in the checked plan; magnet force 25 pN is above the reachable
+range [0.1, 10] pN ...`.
 The checker also reports the run time, number of EMCCD frames, total light-on time and data size before a run.
 
 ## 9. Versioning
@@ -238,13 +242,18 @@ Where the draft left a point open, WP5 chose the simplest safe option. Each is m
     safety profile (every value; every magnet move also needs a usable `magnet_speed_mm_s` maximum: profile v1 had
     none; v3 had 15 mm/s (0016 item 1) but verified:false, so every magnet statement failed; v4 (2026-10-25) has
     15 mm/s verified by the rig move-and-read-back (V6 card pivel15r), so position statements (`move`, `zero`) pass
-    this layer. **Decision 0017 (shipped v5):** there is no separate maximum force - each force of `hold`, `ramp`,
-    `rotate` is converted through the loaded force table to a magnet position and checked against the magnet
-    position limit (`api.magnet.force_position`); a force reachable only outside that limit fails with its line,
-    the position it needs and the table's force at the limit end; with no table loaded this layer warns), and at
-    `run()` the rig state (devices connected, a force table loaded for every force step, the focus target from the
-    current position, acquisition running for `record`). Values that depend on the run are checked again by the API
-    at each step.
+    this layer. **Decisions 0017 / 0018 (shipped v5):** there is no separate maximum force - each force of `hold`,
+    `ramp`, `rotate` is converted by the force calibration in use (default: the live LabVIEW equation M270 v3, which
+    needs the session's touch position; a recorded table is the alternative) to a magnet position inside the magnet
+    position limit (`api.magnet.coerce_force`). A force outside the reachable range, and a `move mm=` position
+    outside the limit, is **coerced, not failed**: the check report's `text` is the source with the corrected number
+    (what the edit buffer shows), `script` its parsed plan (what `run()` runs and what a mid-run edit keeps as the
+    draft), `coerced` lists line, column, key, requested and applied value, and each one is a `coerced` warning; the
+    plan's number has at most 4 decimals, rounded toward the inside. `run()` / `edit()` log one `coerced` event per
+    rewritten value. With the calibration not ready this layer warns), and at `run()` the rig state (devices
+    connected, the force calibration ready for every force step, the focus target from the current position,
+    acquisition running for `record`). Values that depend on the run are checked (and coerced) again by the API at
+    each step.
 15. **Run behaviour:** one protocol at a time, on its own thread, only through `mtpy.api`, caller
     `script:<name>@<first 12 hex of the sha256>`. A refused step ends the run (`refused`); a device error, time-out
     or other API error ends it (`failed`); nothing is skipped. Each move is waited for up to 120 s
