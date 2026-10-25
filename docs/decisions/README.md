@@ -20,6 +20,7 @@ Each file records one decision: what was decided, why, and what follows from it.
 | [0014](0014-ai-gateway.md) | One restricted AI gateway with permission tiers; AI never changes code or touches devices directly | 2026-10-22 |
 | [0015](0015-extension-architecture.md) | Fixed core + extension levels + one public function layer; safety parameters in a protected, versioned rig safety profile | 2026-10-24 |
 | [0016](0016-owner-answers-after-wp5.md) | Magnet speed max 15 mm/s; `zero` = 0 mm; protocol end statement (no end -> keep recording); `.tra` frames from the first recorded frame; MATLAB 2026 | 2026-10-25 |
+| [0017](0017-force-limit-follows-the-magnet-position-limit.md) | No separate force maximum: the force limit is derived from the magnet position limit through the force table in use | 2026-10-25 |
 
 The behavior specification of the LabVIEW program is in [../spec/README.md](../spec/README.md) and the device manuals are
 in [../manuals/README.md](../manuals/README.md).
