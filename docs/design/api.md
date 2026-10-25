@@ -796,8 +796,12 @@ The script file and its version are stored with the data (0015 item 4).
 - **The rc=1 of that log** comes only from `rig_session.py`'s final summary line, which is not a valid result-line/1;
   every other RESULT line passed. Fix belongs to V6 tooling (rig_session prints a valid result line; bgrun unchanged,
   it checks every RESULT line on purpose).
-- **Carry, phase 6 (real PI driver acceptance, owner's go needed):** a discriminating test - VEL 10 then a 30 mm move
-  (predicted about 5.1-5.6 s elapsed), then VEL 15 back to 0 (about 4.1 s). Phase 8: show the time of the last reply
+- **Speed-write test DONE 2026-10-25 10:47 (owner: "속도 변경 하도록 하고"; V6 card pivelsw, PASS 5/5; log V6
+  tools/bench/pi_velsw_check_20261025.log):** VEL 15 -> 10 read back 10, ERR 0; 30 mm move at 10 mm/s reached
+  30.00000, ERR 0, elapsed 5.2 s (predicted 4.9-5.6 s); VEL 10 -> 15 read back 15; move back at 15 mm/s reached
+  0.00000, ERR 0, elapsed 4.1 s (predicted about 4.1 s); difference 1.1 s vs predicted 0.98 +- 0.525 s (one poll). So
+  the speed write takes effect; the time resolution stays about one poll (0.5 s). VEL left at 15; session end clean.
+- **Carries:** Phase 8: show the time of the last reply
   (`last_reply_t`). V6 tooling: rig_session RESULT format.
 
 ## 5. Open
