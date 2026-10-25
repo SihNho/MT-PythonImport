@@ -22,6 +22,7 @@ Each file records one decision: what was decided, why, and what follows from it.
 | [0016](0016-owner-answers-after-wp5.md) | Magnet speed max 15 mm/s; `zero` = 0 mm; protocol end statement (no end -> keep recording); `.tra` frames from the first recorded frame; MATLAB 2026 | 2026-10-25 |
 | [0017](0017-force-limit-follows-the-magnet-position-limit.md) | No separate force maximum: the force limit is derived from the magnet position limit through the force table in use | 2026-10-25 |
 | [0018](0018-force-input-coerced-to-the-reachable-range.md) | Force from the calibration equation, live; an out-of-range force is coerced (typed or in a protocol), written back with no alarm; the motor position is always coerced | 2026-10-25 |
+| [0019](0019-magnet-stall-returns-to-zero.md) | Magnet stall (controller error -1024): return the magnet to 0 mm at once - an extinguisher, not a working feature | 2026-10-25 |
 
 The behavior specification of the LabVIEW program is in [../spec/README.md](../spec/README.md) and the device manuals are
 in [../manuals/README.md](../manuals/README.md).
