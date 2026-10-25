@@ -16,7 +16,8 @@ One run, through the public API only (`mtpy.api`), as a script would do it:
    camera preset (90 Hz) applied and read back; beads 1-5 of the fixture's `cal002` selected, bead 1 = reference;
    a TEST-ONLY synthetic position-to-force table.
 4. Acquisition and recording to `<out>/<name>.h5`; the protocol file `<out>/<name>.mtprot` runs (magnet moves,
-   ramps, a mark, `zero`, `end protocol`); acquisition stops; devices disconnect.
+   ramps, a mark, `zero`, `end protocol`); `end protocol` leaves recording on (decision 0016 item 3, owner change),
+   so the skeleton switches recording off itself; acquisition stops; devices disconnect.
 5. The file is read back and exported (`.tra`, `.cal`) and checked: frames, segment, rate (U15), events incl. the
    protocol steps, magnet position per frame, `.tra` frame column from the first recorded frame, `.cal` bytes.
    `--estop`: the emergency stop is engaged during a magnet move; the run must end `aborted`, the magnet stay
@@ -233,11 +234,12 @@ def run(out, fixture=FIXTURE, estop_variant=False, name=None):
             else:
                 st = api.protocol.wait(60)
                 r.check("protocol completed by 'end protocol'", st["state"] == "completed"
-                        and "recording switched off" in (st["reason"] or ""), st["reason"])
+                        and "recording left as it is" in (st["reason"] or ""), st["reason"])
                 acq_mid = api.acq.status()
-                r.check("after 'end protocol': recording off, acquisition still running",
-                        acq_mid["running"] and not acq_mid["recording"])
+                r.check("after 'end protocol': recording still on, acquisition still running (0016 item 3)",
+                        acq_mid["running"] and acq_mid["recording"])
                 api.acq.wait_frames(20, 10)
+                api.acq.set_recording(False)          # the skeleton (the user) switches recording off itself
             acq = api.acq.stop()
             r.check("acquisition stopped completely, no storage error",
                     acq["stop"] == "complete" and acq["sink_failures"] == 0
@@ -311,8 +313,8 @@ def _verify_file(r, h5, out, cal, estop_variant, t_estop):
     else:
         ends = [ln for ln, ph in steps if ph == "end"]
         r.check("events: every protocol step start / end with its line, then 'end protocol'",
-                ends == STEP_LINES[:-1] and steps[-1] == (STEP_LINES[-1], "start")
-                and acts == ["start", "warning", "end_statement"], f"ends {ends}, protocol {acts}")
+                ends == STEP_LINES[:-1] and steps[-2:] == [(STEP_LINES[-1], "start"), (STEP_LINES[-1], "completed")]
+                and acts == ["start", "warning", "end_statement", "end"], f"ends {ends}, protocol {acts}")
         r.check("events: mark, recording on / off, magnet moves", "midway" in [d["text"] for d in ev["mark"]["data"]]
                 and [d["action"] for d in ev["recording"]["data"]] == ["on", "off"]
                 and len(ev["act"]["event_id"]) >= 5)

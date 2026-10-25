@@ -385,16 +385,12 @@ class Engine:
         self._sleep(self._a(st, "t"))
 
     def _do_end_protocol(self, st):
-        """`end protocol` (decision 0016 item 3): switch recording off through the API (acquisition and the live
-        display keep running) and end the run. Without it, recording simply continues after the protocol."""
-        was = bool(api.acq.running() and api.acq.status().get("recording"))
-        # logged BEFORE the switch, so while recording it reaches the run file ahead of the recording-off event
+        """`end protocol` (decision 0016 item 3, owner change 2026-10-25): end the run, nothing else. The MT
+        recording is NOT switched off (recording on / off is an explicit user / API action; the future fluorescence
+        channel has its own on / off); acquisition and the live display keep running."""
         api.events.log("protocol", action="end_statement", line=st.line, name=self.script.name,
-                       recording_switched_off=was, note=None if was else "recording was not on; nothing switched off")
-        if was:
-            api.acq.set_recording(False)
-        raise _End("completed", f"'end protocol' at line {st.line}"
-                                + ("; recording switched off" if was else "; recording was not on"))
+                       recording_on=bool(api.acq.running() and api.acq.status().get("recording")))
+        raise _End("completed", f"'end protocol' at line {st.line}; recording left as it is")
 
     def _do_stop(self, st):
         raise _End("completed", f"'stop' at line {st.line}")

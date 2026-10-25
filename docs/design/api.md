@@ -593,11 +593,14 @@ gain_dB]`; a late off with written rows beyond it: `test_late_off_reports_writte
    recorded the owner's value as a rig check, which it was not.** v2 stays in the history as written.
    The WP1 profile / admin tests start from a v1-only config (their fixture), unchanged otherwise.
 2. **`zero`** = magnet to 0 mm, owner-confirmed; the U12 tracking zero stays open (grammar.md 12.7).
-3. **`end protocol`** (grammar.md 12.18): last statement at the top level; logs `protocol` `end_statement`, then
-   `api.acq.set_recording(False)` (acquisition keeps running), run `completed`. Without it recording continues after
-   the protocol; stop / e-stop never switch it off. Tests: `test_end_protocol_parse_rules`,
-   `test_end_protocol_switches_recording_off_and_closes_the_interval` (HDF5 `/recordings` off_buffer = the off event,
-   no row after it), `test_without_end_protocol_recording_keeps_going`.
+3. **`end protocol`** (grammar.md 12.18): last statement at the top level; logs `protocol` `end_statement` (with
+   `recording_on`), run `completed`. **Owner change 2026-10-25 (`api.VERSION = "0.10.1"`): it no longer switches the
+   MT recording off** - recording continues after the protocol in every case (end statement, end of file, user stop,
+   e-stop); on / off is an explicit user / API action (`api.acq.set_recording`, `record off`), and the future
+   fluorescence channel gets its own on / off. Until 0.10.0 it called `api.acq.set_recording(False)`. The walking
+   skeleton now checks "recording still on after 'end protocol'" and switches recording off itself before reading the
+   file. Tests: `test_end_protocol_parse_rules`, `test_end_protocol_ends_the_run_and_leaves_recording_on` (no
+   `recording` event from the protocol; frames recorded until the user's off), `test_without_end_protocol_recording_keeps_going`.
 4. **`.tra` frame column from the first RECORDED frame** of each segment (`legacy_matrix`, `export_tra`, and the
    MATLAB reader): `buffer - smallest recorded buffer of the segment`. Test:
    `test_tra_frame_column_counts_from_first_recorded_frame` (recording started 20+ frames after acquisition).
@@ -683,7 +686,7 @@ gain_dB]`; a late off with written rows beyond it: `test_late_off_reports_writte
 | MATLAB 2026 run of `matlab/read_mtpy_h5.m` (0016, WP4-r1) | not done | no MATLAB here; that run should also add the crash-file rule (`frames_written`) to the MATLAB reader |
 
 - **Unchanged, owner decisions pending:** `.tra` origin when recording restarts within one segment; `end protocol`
-  keeps acquisition (current behaviour); the `magnet_force_pN` maximum; when the U12 tracking zero is set; whether
+  keeps acquisition (confirmed; since 0.10.1 it keeps recording too); the `magnet_force_pN` maximum; when the U12 tracking zero is set; whether
   value-only mid-run edits meet U18.
 - **Limits:** poller readings are PC-timed (0005: ms level), not exposure-accurate; its reads share the device
   service queue with moves (interleaved, never on the frame path); the skeleton's TEST-ONLY profile and force table are

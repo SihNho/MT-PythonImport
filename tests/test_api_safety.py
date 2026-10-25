@@ -135,7 +135,7 @@ def test_no_unchecked_exception_when_unverified_limits_are_allowed(config, sessi
 
 
 def test_version_and_shipped_profile_is_valid():
-    assert api.VERSION == "0.10.0"
+    assert api.VERSION == "0.10.1"
     p = safety.profile()
     assert p["version"] == 1 and safety.versions() == [1]
     assert p["limits"]["magnet_position_mm"]["max"] == 39.0

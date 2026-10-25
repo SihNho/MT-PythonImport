@@ -20,7 +20,8 @@ position limit are coerced (a `coerced` event), also in protocols (the checked p
 sent to the magnet is coerced into the limit in the last step; magnet readings carry the live force. 0.10.0
 (decision 0019): magnet stall (controller error -1024) detected after moves and on polls; the extinguisher stops the
 move and the protocol, returns the magnet to 0 mm once and verifies it, else locks the magnet until
-`magnet.clear_stall()`; a `magnet_stall` event (an error record) and `MagnetStall`.
+`magnet.clear_stall()`; a `magnet_stall` event (an error record) and `MagnetStall`. 0.10.1 (decision 0016 item 3,
+owner change): `end protocol` ends the run only; it no longer switches the MT recording off.
 """
 from . import errors, estop, events, safety  # noqa: I001 - must load before the device groups (they import them)
 from . import camera, devices, focus, light, magnet, rotor, stage, sync
@@ -28,7 +29,7 @@ from . import acq, beads, data, tracking
 from . import protocol
 from .errors import DeviceError, MagnetStall, MtpyError, NotReady, SafetyRefused, ScriptError, Timeout
 
-VERSION = "0.10.0"
+VERSION = "0.10.1"
 
 __all__ = ["VERSION", "DeviceError", "MagnetStall", "MtpyError", "NotReady", "SafetyRefused", "ScriptError", "Timeout",
            "acq", "beads", "camera", "data", "devices", "errors", "estop", "events", "focus", "light", "magnet",

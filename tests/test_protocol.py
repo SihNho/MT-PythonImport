@@ -773,33 +773,31 @@ def test_end_protocol_parse_rules():
     assert s.body[-1].kind == "end_protocol" and len(s.rules) == 1          # rules may follow (not actions)
 
 
-def test_end_protocol_switches_recording_off_and_closes_the_interval(cam, tmp_path):
-    """With `end protocol`: recording off through the API, acquisition keeps running, the HDF5 recording interval is
-    closed at the off event, and the end is an event."""
+def test_end_protocol_ends_the_run_and_leaves_recording_on(cam, tmp_path):
+    """Decision 0016 item 3 (owner change 2026-10-25): `end protocol` ends the run (`completed`, an `end_statement`
+    event) and does NOT switch the MT recording off; frames keep being recorded until the user switches it off."""
     api.magnet.use_force_table(SYNTHETIC_TABLE)
     api.acq.start(record=True, name="ended", folder=tmp_path)
     api.acq.wait_frames(5, 5)
     n = len(events.events())
     api.protocol.run(parse(HEAD + 'hold f=1 t=0.2\nend protocol\n', "end.mtprot"))
     st = api.protocol.wait(30)
-    assert st["state"] == "completed" and "recording switched off" in st["reason"]
+    assert st["state"] == "completed" and "recording left as it is" in st["reason"]
     acq = api.acq.status()
-    assert acq["running"] and not acq["recording"]
-    received = acq["frames_received"]
-    api.acq.wait_frames(10, 5)                                              # acquisition goes on
-    assert api.acq.status()["frames_received"] > received
+    assert acq["running"] and acq["recording"]
     ends = [e for e in events.events()[n:] if e.kind == "protocol" and e.extra["action"] == "end_statement"]
-    assert len(ends) == 1 and ends[0].extra["recording_switched_off"] is True and ends[0].extra["line"] == 4
+    assert len(ends) == 1 and ends[0].extra["recording_on"] is True and ends[0].extra["line"] == 4
     assert _steps(n)[-1] == (4, "completed", -1)
-    off = [e for e in events.events()[n:] if e.kind == "recording" and e.extra["action"] == "off"]
-    assert len(off) == 1 and off[0].caller == parse(HEAD + 'hold f=1 t=0.2\nend protocol\n', "end.mtprot").caller
+    assert not [e for e in events.events()[n:] if e.kind == "recording"]       # nobody switched it
+    end_buf = ends[0].extra.get("buffer_number")
+    api.acq.wait_frames(10, 5)                                              # still recording after the end
+    api.acq.set_recording(False)                                            # the user's explicit action
     api.acq.stop()
     run = read_run(tmp_path / "ended.h5")
-    rec = run["recordings"]
-    assert rec["name"].tolist() == ["ended"] and int(rec["off_buffer"][0]) == off[0].extra["buffer_number"]
-    assert int(run["mt"]["buffer_number"].max()) == off[0].extra["buffer_number"]   # nothing after the off recorded
-    assert run["attrs"]["frames_not_written"] == 0 and run["attrs"]["frames_outside_recordings"] == 0
-    assert [d["action"] for d in run["events"]["protocol"]["data"]] == ["start", "end_statement"]
+    assert run["recordings"]["name"].tolist() == ["ended"]
+    off = int(run["recordings"]["off_buffer"][0])
+    assert off >= 0 and (end_buf is None or off > end_buf) and int(run["mt"]["buffer_number"].max()) == off
+    assert [d["action"] for d in run["events"]["protocol"]["data"]] == ["start", "end_statement", "end"]
 
 
 def test_without_end_protocol_recording_keeps_going(cam, tmp_path):

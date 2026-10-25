@@ -68,7 +68,7 @@ on <expr> do               # event handler, active until the protocol ends
   mark "cleaved"
 end
 stop                       # end the protocol here (recording left as it is)
-end protocol               # last statement: switch recording off, end the protocol (0016; see 12.18)
+end protocol               # last statement: end the protocol; recording stays on (0016; see 12.18)
 ```
 `repeat n` at the end of a file (as in the mock-up) is shorthand for wrapping the whole list in `loop n=`.
 
@@ -234,9 +234,9 @@ Where the draft left a point open, WP5 chose the simplest safe option. Each is m
     |to - from| / t, which is always passed explicitly so `rotor_speed_turns_s` is always checked.
 11. **`focus um=`** is relative to the focus position read when the protocol starts.
 12. **`record`** needs acquisition already running (`api.acq.start`); the protocol never starts or stops
-    acquisition. The recording name is the protocol name; `record t=` is on, t, off. Without `end protocol` (item 18)
-    recording keeps going after the protocol ends; a user stop or an emergency stop never switches it off (0007,
-    0016 item 3).
+    acquisition. The recording name is the protocol name; `record t=` is on, t, off. Recording keeps going after the
+    protocol ends - also after `end protocol` (item 18) - and a user stop or an emergency stop never switches it off
+    (0007, 0016 item 3); switching it off is an explicit `record off` / user / API action.
 13. **`mark`** uses `api.acq.mark` (with the frame position) while acquisition runs, else a `mark` event.
 14. **Check before the run, in three layers:** the API (functions and the unit in each parameter's name), the rig
     safety profile (every value; every magnet move also needs a usable `magnet_speed_mm_s` maximum: profile v1 had
@@ -281,10 +281,11 @@ Where the draft left a point open, WP5 chose the simplest safe option. Each is m
     keyword `end` with the word `protocol` (a bare `end` still closes a block, so an unbalanced `end` can never turn
     into a protocol end). Rule: at most one, at the top level, as the **last** statement - after `repeat n` if both
     are used (it runs once, after the repeats); only screening `rule` lines may follow it. Executing it logs a
-    `protocol` event `end_statement` (before the switch, so it is in the run file), switches recording off through
-    `api.acq.set_recording(False)` - acquisition and the live display keep running - and ends the run as
-    `completed`. If recording was not on, nothing is switched and the event says so. Unlike `stop` (ends the
-    protocol, recording left as it is).
+    `protocol` event `end_statement` (with `recording_on`) and ends the run as `completed` - nothing else.
+    **Owner change 2026-10-25 (api 0.10.1):** it does NOT switch the MT recording off ("프로터콜 종료해도 녹화는 계속");
+    recording on / off stays an explicit user / API action, and the future fluorescence channel has its own on / off.
+    (Until 0.10.0 it switched recording off.) The difference from `stop`: `end protocol` marks the planned end and
+    must be last; `stop` may appear anywhere (e.g. in an `if`).
 
 ## 13. Open
 - Exact metric names and the event-rule functions (grows with use).
@@ -294,7 +295,8 @@ Where the draft left a point open, WP5 chose the simplest safe option. Each is m
 - smCamera's FRET formula for `fret()`.
 - (WP5) When the tracking zero is set (U12); `zero` = magnet to 0 mm is owner-confirmed (0016) but sets no
   tracking zero, so it is not counted as meeting U12.
-- (resolved, 0016 item 3) Recording at the end of a protocol: off only through `end protocol` (12.18).
+- (resolved, 0016 item 3, changed 2026-10-25) Recording at the end of a protocol: it continues; `end protocol` does
+  not switch it off (12.18); off is an explicit user / API action.
 - (WP5) Structural mid-run edits (insert / delete / move a step, also adding steps after the running one) are
   refused today, so U18 is only partly met (values only); owner to confirm that this is enough until phase 8.
-- (0016) The AI's reading that `end protocol` does not stop acquisition is to be confirmed by the owner.
+- (resolved, 0016) `end protocol` does not stop acquisition - nor, since 2026-10-25, recording.
