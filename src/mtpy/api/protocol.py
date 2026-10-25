@@ -43,9 +43,10 @@ def _script(s):
 
 def check(script, devices=None):
     """Validate a protocol before it runs: every statement against the API (functions, argument units) and the rig
-    safety profile; with devices (default: when devices are connected) also the rig state (devices connected, force
-    table loaded and covering every force, focus window from the current position, acquisition running for
-    `record`). Only reads. Returns {"ok", "errors", "warnings", "min_duration_s"}."""
+    safety profile (a force through the loaded force table to a position inside the magnet position limit, decision
+    0017); with devices (default: when devices are connected) also the rig state (devices connected, a force table
+    loaded for every force step, focus window from the current position, acquisition running for `record`). Only
+    reads. Returns {"ok", "errors", "warnings", "min_duration_s"}."""
     from mtpy.protocol.check import check as _check
 
     from . import devices as _devices

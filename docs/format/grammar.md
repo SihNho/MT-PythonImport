@@ -43,7 +43,7 @@ kind experiment            # experiment | screening
 | Statement | Keys (unit, range) | Meaning |
 |---|---|---|
 | `zero t=` | t (s, 0.1-600) | magnet to zero force, hold, then set the zero (U12) |
-| `ramp from= to= t=` | from, to (pN, 0-profile max); t (s, 0.1-36000) | force ramp |
+| `ramp from= to= t=` | from, to (pN, >= 0; reachable range of the force table inside the magnet position limit, 0017); t (s, 0.1-36000) | force ramp |
 | `hold f= t=` | f (pN); t (s) | constant force |
 | `move mm= t=` | mm (magnet position, mm); t (s, optional) | magnet by position instead of force |
 | `rotate from= to= f= t=` | from, to (turns, ±profile max); f (pN); t (s) | rotation at a force |
@@ -236,12 +236,15 @@ Where the draft left a point open, WP5 chose the simplest safe option. Each is m
 13. **`mark`** uses `api.acq.mark` (with the frame position) while acquisition runs, else a `mark` event.
 14. **Check before the run, in three layers:** the API (functions and the unit in each parameter's name), the rig
     safety profile (every value; every magnet move also needs a usable `magnet_speed_mm_s` maximum: profile v1 had
-    none; v3 had 15 mm/s (0016 item 1) but verified:false, so every magnet statement failed; the shipped **v4**
-    (2026-10-25) has 15 mm/s verified by the rig move-and-read-back (V6 card pivel15r), so position statements
-    (`move`, `zero`) pass this layer; force steps (`hold`, `ramp`, `rotate`) still fail it until a
-    `magnet_force_pN` maximum is set), and at `run()` the rig state (devices connected, a force table loaded that
-    covers every force and maps it inside the magnet travel, the focus target from the current position, acquisition
-    running for `record`). Values that depend on the run are checked again by the API at each step.
+    none; v3 had 15 mm/s (0016 item 1) but verified:false, so every magnet statement failed; v4 (2026-10-25) has
+    15 mm/s verified by the rig move-and-read-back (V6 card pivel15r), so position statements (`move`, `zero`) pass
+    this layer. **Decision 0017 (shipped v5):** there is no separate maximum force - each force of `hold`, `ramp`,
+    `rotate` is converted through the loaded force table to a magnet position and checked against the magnet
+    position limit (`api.magnet.force_position`); a force reachable only outside that limit fails with its line,
+    the position it needs and the table's force at the limit end; with no table loaded this layer warns), and at
+    `run()` the rig state (devices connected, a force table loaded for every force step, the focus target from the
+    current position, acquisition running for `record`). Values that depend on the run are checked again by the API
+    at each step.
 15. **Run behaviour:** one protocol at a time, on its own thread, only through `mtpy.api`, caller
     `script:<name>@<first 12 hex of the sha256>`. A refused step ends the run (`refused`); a device error, time-out
     or other API error ends it (`failed`); nothing is skipped. Each move is waited for up to 120 s

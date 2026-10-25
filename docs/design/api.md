@@ -725,6 +725,45 @@ now the shipped version + 1 (v5) in its own copy. Tests: `test_shipped_config_is
 `test_profile_v3_still_refuses_every_magnet_move`, `test_shipped_profile_v4_runs_position_moves_and_refuses_force_steps`,
 `test_profile_v3_still_refuses_magnet_moves_before_anything_runs`. This closes the "15 mm/s rig check" carry of the WP6
 table above; the profile change was not run through the simulator-only skeleton as a rig claim.
+(Superseded in part by decision 0017 below: force steps are no longer refused for lack of a force maximum; v4 is now
+history, v5 is shipped; the tests above were renamed.)
+
+### Decision 0017: force limit from the position limit (2026-10-25, `api.VERSION = "0.8.0"`)
+The danger is the magnet hitting the stage, not a large force, so the only magnet safety limit is the position limit
+(`magnet_position_mm`, today [0, 39] mm, verified). There is no separate maximum force.
+- **Profile v5** (shipped; made through the admin path as `rig-admin`, open -> propose -> activate): v4 with the
+  `magnet_force_pN` entry **removed** (the simpler safe option, chosen over a derived non-editable entry: nothing in
+  the profile can drift from the table, and `safety.check("magnet_force_pN", ...)` refuses as "not in the profile").
+  Every other limit is identical to v4 (`unverified` loses `magnet_force_pN`); `checked: {}` (nothing added or
+  changed, so there is nothing to move to on the rig); v1-v4 stay in the history. A `magnet_force_pN` entry in an
+  older profile (v1-v4) is ignored by the force path.
+- **Force -> position:** `set_force(force_pN, table=None)` converts the force through the table in use (0010) with
+  `force_position(force_pN, table=None)` (read only; nothing moves or is logged) and checks that position against the
+  position limit **before anything moves**; a force reachable only outside the limit, or outside the table, is
+  `SafetyRefused` with the requested force, the position it needs, and the table's force at the limit end, e.g.
+  "magnet force 25 pN needs magnet position 40.6897 mm by the force table 'wide test table', outside the magnet
+  position limit [0, 39] mm; the table gives 23.04 pN at the limit end 39 mm (reachable force [0.1, 23.04] pN ...)".
+  Then `move_to` checks speed (<= 15 mm/s) and position again as before. No table -> `NotReady` (as before).
+- **Tables:** `position_mm` must now be strictly monotonic (needed to invert the table); force strictly increasing as
+  before.
+- **`force_range(table=None)`** (read only): the reachable force range = the table's force at the position-limit
+  ends, clipped to the table's own ends: `{"force_pN": (min, max), "position_mm", "limited_by": ("position limit" |
+  "table end", ...), "position_limit_mm", "table", "table_version", "profile_version"}`. Loading another table
+  changes it without any profile change; changing the position limit is a profile change.
+- **Protocol checker:** `hold` / `ramp` / `rotate f=` forces go through `force_position` in the profile layer when a
+  table is loaded (an out-of-range force fails the check with its line and column); with no table the profile layer
+  gives a warning and the rig-state layer (`run()`) refuses the step. `zero` and `move` are position moves (unchanged).
+- **Unchanged:** speed (`magnet_speed_mm_s` <= 15 mm/s, verified); rotor and focus limits (unverified / unset ->
+  refused).
+- **Walking skeleton:** runs on the shipped v5 copy unchanged (no TEST-ONLY profile any more); its first checks are
+  now "force beyond the magnet position limit refused before anything moves" (a TEST-ONLY wide table) and "shipped
+  profile, the protocol passes the check". Tests: `test_shipped_config_is_v5_without_a_force_limit`,
+  `test_history_v4_magnet_speed_15_rig_checked`,
+  `test_profiles_v4_and_v5_magnet_position_moves_up_to_15_mm_s_rotor_focus_refused`,
+  `test_shipped_v5_force_inside_the_reachable_range_runs`,
+  `test_force_needing_a_position_beyond_39_mm_is_refused_with_the_numbers`, `..._below_0_mm_...`,
+  `test_changing_the_force_table_changes_the_reachable_range_not_the_profile`, `test_no_force_table_force_requests_refused`,
+  `test_shipped_profile_v5_runs_position_moves_and_force_steps_in_range`.
 
 ## 4. Example: the enzyme-cleavage experiment as a Python experiment script (level 3)
 ```python

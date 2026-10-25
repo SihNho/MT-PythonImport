@@ -8,7 +8,7 @@ from pathlib import Path
 
 import pytest
 from test_acq import _connect
-from test_devices import SYNTHETIC_TABLE, _config
+from test_devices import SYNTHETIC_TABLE, WIDE_TABLE, _config
 
 from mtpy import api
 from mtpy.api import estop, events
@@ -47,7 +47,8 @@ def rig(tmp_path, monkeypatch):
 
 @pytest.fixture
 def shipped_rig(tmp_path, monkeypatch):
-    """Simulated rig on the shipped profile (v4: magnet speed max 15 mm/s rig-checked, force max still unset)."""
+    """Simulated rig on the shipped profile (v5: magnet speed max 15 mm/s rig-checked, no force limit - decision 0017)
+    and no force table."""
     yield from _rig(tmp_path, monkeypatch, False)
 
 
@@ -188,31 +189,53 @@ def test_check_out_of_profile_value_names_step_and_range(rig):
     rep = api.protocol.check(parse(HEAD + "hold f=1 t=1\nloop n=2\n  ramp from=1 to=25 t=5\nend\nmove mm=40\n",
                                    "fe.mtprot"))
     errs = [str(d) for d in rep["errors"]]
-    assert "fe.mtprot:5:18: 'to' is 25 pN; magnet_force_pN 25 pN is outside the allowed range [0, 20] pN of the " \
-           "rig safety profile v4" in errs                       # the TEST profile is built on the shipped v4
+    to = [e for e in errs if e.startswith("fe.mtprot:5:18:")]   # one error for 'to' (decision 0017: no force max)
+    assert len(to) == 1 and to[0].startswith("fe.mtprot:5:18: 'to' is 25 pN; magnet force 25 pN is outside the table "
+                                             "'synthetic test table' range [0.1, 10] pN")
+    assert "10 pN at the table end 20 mm" in to[0] and "rig safety profile v5" in to[0]
     assert any(e.startswith("fe.mtprot:7:9: 'mm' is 40 mm; magnet_position_mm 40 mm is outside the allowed range "
                             "[0, 39] mm") for e in errs)
-    assert any(e.startswith("fe.mtprot:5:18: 'to' is 25 pN; the force table") for e in errs)   # rig state layer
+    assert not any(e.startswith("fe.mtprot:3:") for e in errs)
 
 
-def test_shipped_profile_v4_runs_position_moves_and_refuses_force_steps(shipped_rig):
-    """Shipped v4 (magnet speed 15 mm/s rig-checked 2026-10-25): `move` and `zero` pass the check and run in the
-    simulator; a force step (`hold`) still fails the check - no magnet_force_pN maximum - and nothing moves."""
-    assert api.safety.profile()["version"] == 4
-    s = parse(HEAD + "move mm=2\nzero t=0.1\n", "v4.mtprot")
+def test_shipped_profile_v5_runs_position_moves_and_force_steps_in_range(shipped_rig):
+    """Shipped v5 (decision 0017): `move` and `zero` pass the check and run in the simulator; a force step without a
+    force table is a check warning and run() refuses it; with a table, `hold` / `ramp` inside the reachable range pass
+    the check and run; out of range they fail the check with the line and column and nothing moves."""
+    assert api.safety.profile()["version"] == 5
+    s = parse(HEAD + "move mm=2\nzero t=0.1\n", "v5.mtprot")
     rep = api.protocol.check(s, devices=False)
     assert rep["ok"], [str(d) for d in rep["errors"]]
     api.protocol.run(s)
     st = api.protocol.wait(30)
     assert st["state"] == "completed" and st["steps_done"] == 2, st
     assert abs(api.magnet.position()) < 0.01
-    hold = parse(HEAD + "hold f=1 t=1\n", "h.mtprot")
-    assert any("magnet_force_pN has no limit set" in str(e) for e in api.protocol.check(hold, devices=False)["errors"])
-    api.magnet.use_force_table({"name": "t", "version": "test", "position_mm": [0.0, 20.0], "force_pN": [0.1, 10.0]})
+    hold = parse(HEAD + "hold f=1 t=0.1\n", "h.mtprot")
+    rep = api.protocol.check(hold, devices=False)
+    assert rep["ok"] and any("no position-to-force table is loaded" in str(w) for w in rep["warnings"])
     p0 = api.magnet.position()
-    with pytest.raises(ScriptError, match="magnet_force_pN"):
+    with pytest.raises(ScriptError, match="no position-to-force table is loaded"):
         api.protocol.run(hold)
     assert not api.protocol.running() and abs(api.magnet.position() - p0) < 0.01
+    api.magnet.use_force_table(WIDE_TABLE)                       # 0.1 pN at 0 mm .. 23.04 pN at the 39 mm limit
+    ok = parse(HEAD + "hold f=20 t=0.1\nramp from=20 to=1 t=0.2\n", "ok.mtprot")
+    rep = api.protocol.check(ok, devices=True)
+    assert rep["ok"], [str(d) for d in rep["errors"]]
+    api.protocol.run(ok)
+    st = api.protocol.wait(60)
+    assert st["state"] == "completed" and st["steps_done"] == 2, st
+    assert api.magnet.position() == pytest.approx(20.0, abs=0.01)
+    bad = parse(HEAD + "hold f=20 t=0.1\nramp from=1 to=25 t=2\nrotate from=0 to=1 f=25 t=1\n", "bad.mtprot")
+    errs = [str(d) for d in api.protocol.check(bad, devices=False)["errors"]]
+    assert any(e.startswith("bad.mtprot:4:16: 'to' is 25 pN; magnet force 25 pN needs magnet position 40.6897 mm")
+               and "23.04 pN at the limit end 39 mm" in e for e in errs), errs
+    assert any(e.startswith("bad.mtprot:5:22: 'f' is 25 pN; magnet force 25 pN needs magnet position") for e in errs)
+    assert not any(e.startswith("bad.mtprot:3:") for e in errs)
+    p0, n = api.magnet.position(), len(events.events())
+    with pytest.raises(ScriptError, match="needs magnet position 40.6897 mm"):
+        api.protocol.run(bad)
+    assert not api.protocol.running() and abs(api.magnet.position() - p0) < 0.01
+    assert not any(e.kind in ("act", "force_request") for e in events.events()[n:])
 
 
 def test_profile_v3_still_refuses_magnet_moves_before_anything_runs(tmp_path, monkeypatch):

@@ -53,18 +53,35 @@ class Motor:
         return self.pos
 
 
-def test_shipped_config_is_v4_magnet_speed_15_rig_checked(monkeypatch):
-    """The shipped active profile is v4 (base v3, admin path, 2026-10-25): magnet_speed_mm_s [0, 15] mm/s verified
-    after the rig move-and-read-back (V6 card pivel15r), recorded as `checked` through the normal path (no
-    unverified exception). Every other limit is identical to v3; v1-v3 stay in the history, v3 as written (speed
-    15 mm/s verified:false, nothing checked)."""
+def test_shipped_config_is_v5_without_a_force_limit(monkeypatch):
+    """Decision 0017: the shipped active profile is v5 (base v4, admin path, 2026-10-25): `magnet_force_pN` is
+    removed (no separate maximum force; the force limit is derived from the magnet position limit), nothing was
+    checked on the rig (nothing added or changed), every other limit identical to v4; v1-v4 stay in the history."""
     monkeypatch.setattr(safety, "CONFIG", REPO_CONFIG)
     p = safety.load_active()
+    v4, v5 = (json.loads((REPO_CONFIG / "safety_profiles" / f"{v}.json").read_text(encoding="utf-8")) for v in (4, 5))
+    assert p["version"] == 5 and p["base_version"] == 4 and safety.versions() == [1, 2, 3, 4, 5]
+    assert safety._thaw(p) == v5 and v5["allow_unverified"] is False
+    assert "magnet_force_pN" not in v5["limits"] and "magnet_force_pN" not in v5["unverified"]
+    assert v5["limits"] == {q: e for q, e in v4["limits"].items() if q != "magnet_force_pN"}
+    assert v5["unverified"] == [q for q in v4["unverified"] if q != "magnet_force_pN"]
+    assert v5["recommissioning"]["checked"] == {} and v5["recommissioning"]["not_checked_unverified"] == []
+    assert "0017" in v5["reason"]
+    assert safety.check("magnet_position_mm", 39.0) is True and safety.check("magnet_speed_mm_s", 15.0) is True
+    with pytest.raises(SafetyRefused, match="magnet_force_pN is not in the rig safety profile v5"):
+        safety.check("magnet_force_pN", 1.0)
+
+
+def test_history_v4_magnet_speed_15_rig_checked(monkeypatch):
+    """v4 in the history (base v3, admin path, 2026-10-25): magnet_speed_mm_s [0, 15] mm/s verified after the rig
+    move-and-read-back (V6 card pivel15r), recorded as `checked` through the normal path (no unverified exception).
+    Every other limit is identical to v3; v3 as written (speed 15 mm/s verified:false, nothing checked)."""
     hist = {v: json.loads((REPO_CONFIG / "safety_profiles" / f"{v}.json").read_text(encoding="utf-8"))
             for v in (1, 2, 3, 4)}
-    assert p["version"] == 4 and p["base_version"] == 3 and safety.versions() == [1, 2, 3, 4]
+    monkeypatch.setattr(safety, "_active", safety._freeze(hist[4]))
     v3, v4 = hist[3], hist[4]
-    assert safety._thaw(p) == v4 and v4["allow_unverified"] is False and "magnet_speed_mm_s" not in v4["unverified"]
+    assert v4["version"] == 4 and v4["base_version"] == 3
+    assert v4["allow_unverified"] is False and "magnet_speed_mm_s" not in v4["unverified"]
     assert v4["recommissioning"]["checked"] == {"magnet_speed_mm_s": True}
     assert v4["recommissioning"]["not_checked_unverified"] == []
     assert "pivel15r" in v4["recommissioning"]["notes"] and "pi_vel15_check_20261025.log" in v4["recommissioning"]["notes"]
@@ -118,7 +135,7 @@ def test_no_unchecked_exception_when_unverified_limits_are_allowed(config, sessi
 
 
 def test_version_and_shipped_profile_is_valid():
-    assert api.VERSION == "0.7.0"
+    assert api.VERSION == "0.8.0"
     p = safety.profile()
     assert p["version"] == 1 and safety.versions() == [1]
     assert p["limits"]["magnet_position_mm"]["max"] == 39.0

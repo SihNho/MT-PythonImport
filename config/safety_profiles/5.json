@@ -1,0 +1,78 @@
+{
+  "version": 5,
+  "base_version": 4,
+  "created": "2026-10-25T10:48:30",
+  "by": "rig-admin (AI session, owner decision 0017)",
+  "reason": "decision 0017 (owner 2026-10-25): no separate maximum force; magnet_force_pN removed - the force limit is derived from the magnet position limit through the force table in use. Every other limit identical to v4",
+  "allow_unverified": false,
+  "unverified": [
+    "focus_z_um",
+    "rotor_speed_turns_s",
+    "rotor_turns"
+  ],
+  "limits": {
+    "magnet_position_mm": {
+      "min": 0.0,
+      "max": 39.0,
+      "unit": "mm",
+      "relative_to": null,
+      "verified": true,
+      "source": "PI C-863.11 TMN 0 / TMX 39 written by MT_LabVIEW tools/motor_gate.py (tools/bench/motor_limits.json pi lo_mm/hi_mm, 2026-09-18, owner at the rig)"
+    },
+    "magnet_speed_mm_s": {
+      "min": 0.0,
+      "max": 15.0,
+      "unit": "mm/s",
+      "relative_to": null,
+      "verified": true,
+      "source": "owner decision 0016 (15 mm/s); rig check 2026-10-25 on the real PI C-863.11, V6 card pivel15r (PASS, 3/3 gates), log V6 tools/bench/pi_vel15_check_20261025.log: VEL? = 15 (original 15), MOV 1 30 -> POS 30.00000 ERR 0 ONT 1, MOV 1 0 -> POS 0.00000 ERR 0"
+    },
+    "rotor_turns": {
+      "min": -5.0,
+      "max": 5.0,
+      "unit": "turns",
+      "relative_to": "session_start",
+      "verified": false,
+      "source": "unverified for the application - development-gate envelope, owner 2026-10-19 '-5 .. +5 turns' from the session-start position (motor_limits.json rotor half_width_pulses 2500 at 500 pulses per turn)"
+    },
+    "rotor_speed_turns_s": {
+      "min": 0.0,
+      "max": null,
+      "unit": "turns/s",
+      "relative_to": null,
+      "verified": false,
+      "source": "unverified - the gate caps the SPD argument at 100 (native units, pulses/s = SPD x multiplier); not converted to turns/s yet"
+    },
+    "focus_z_um": {
+      "min": null,
+      "max": null,
+      "unit": "um",
+      "relative_to": "session_start",
+      "verified": false,
+      "source": "unverified - focus window not stated yet"
+    },
+    "stage_x_mm": {
+      "min": -2.0,
+      "max": 2.0,
+      "unit": "mm",
+      "relative_to": "session_start",
+      "verified": true,
+      "source": "ASI SL/SU = session-start position +- 2.0 mm (motor_limits.json asi half_width_mm, owner 2026-10-15)"
+    },
+    "stage_y_mm": {
+      "min": -2.0,
+      "max": 2.0,
+      "unit": "mm",
+      "relative_to": "session_start",
+      "verified": true,
+      "source": "ASI SL/SU = session-start position +- 2.0 mm (motor_limits.json asi half_width_mm, owner 2026-10-15)"
+    }
+  },
+  "recommissioning": {
+    "by": "rig-admin (AI session, owner decision 0017)",
+    "t": 1792892910.2656384,
+    "checked": {},
+    "notes": "No limit was added or changed: magnet_force_pN (unset, verified:false) was removed, which needs no rig check (a removed limit only refuses; the force is now bounded by the verified magnet_position_mm limit [0, 39] mm). Nothing was moved or read back on the rig.",
+    "not_checked_unverified": []
+  }
+}

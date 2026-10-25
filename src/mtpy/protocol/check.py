@@ -8,18 +8,18 @@ Three layers, each reported as `Diagnostic`s with the statement's line and the a
    in the API parameter's name (`f` in pN -> `force_pN`).
 2. **Rig safety profile** (read only, `api.safety.check`): every value that would reach an acting call, and the
    magnet speed limit every magnet move needs (`api.magnet.move_to` always checks `magnet_speed_mm_s`). A value the
-   API would refuse fails here, with the step named.
+   API would refuse fails here, with the step named. A force (decision 0017: no separate maximum force) is converted
+   to a magnet position through the loaded force table and checked against the magnet position limit
+   (`api.magnet.force_position`); with no table loaded it cannot be checked here (a warning without `devices`).
 3. **Rig state** (`devices=True`, done by `api.protocol.run` right before starting): the devices are connected, a
-   position-to-force table is loaded and covers every force (and its position is inside the profile's magnet
-   travel), the focus target from the current position is inside the window, and acquisition runs when the protocol
-   records. Values that depend on what happens during the run are still checked by the API at each step.
+   position-to-force table is loaded for every force step, the focus target from the current position is inside the
+   window, and acquisition runs when the protocol records. Values that depend on what happens during the run are
+   still checked by the API at each step.
 
 Nothing here moves anything or logs an acting event.
 """
 import inspect
 import math
-
-import numpy as np
 
 from mtpy import api
 from mtpy.api.errors import ScriptError
@@ -129,12 +129,34 @@ def _magnet_speed(rep, st):
                             f"rig safety profile: {e}")
 
 
-def _profile_layer(rep, st):
+def _loaded_table():
+    try:
+        return api.magnet.force_table()
+    except api.NotReady:            # no magnet service (devices not connected)
+        return None
+
+
+def _forces(rep, st, a, devices):
+    """Decision 0017: each force through the loaded table to a position inside the magnet position limit."""
+    if st.kind not in FORCE_KEYS:
+        return
+    if _loaded_table() is None:
+        if not devices:             # with devices the rig-state layer reports the missing table as an error
+            rep.warn(st, st.col, f"'{st.kind}' sets a force, and no position-to-force table is loaded: the force is "
+                                 "not checked against the magnet position limit until one is (decision 0017)")
+        return
+    for k in FORCE_KEYS[st.kind]:
+        try:
+            api.magnet.force_position(a[k])
+        except api.SafetyRefused as e:
+            rep.err(st, st.args[k].col, f"'{k}' is {a[k]:g} pN; {e}")
+
+
+def _profile_layer(rep, st, devices=False):
     a = {k: v.value for k, v in st.args.items()}
     if st.kind in MAGNET_MOVES:
         _magnet_speed(rep, st)
-    for k in FORCE_KEYS.get(st.kind, ()):
-        _profile(rep, st, k, "magnet_force_pN", a[k])
+    _forces(rep, st, a, devices)
     if st.kind == "zero":
         _profile(rep, st, "magnet target", "magnet_position_mm", 0.0, why=" (zero moves the magnet to 0 mm)")
     elif st.kind == "move":
@@ -161,20 +183,10 @@ def _state_layer(rep, st, focus_z0):
         if not _connected(dev):
             rep.err(st, st.col, f"'{st.kind}' needs the {dev}, which is not connected (api.devices.status())")
             return
-    if st.kind in FORCE_KEYS:
-        table = api.magnet.force_table()
-        if table is None:
-            rep.err(st, st.col, f"'{st.kind}' sets a force, and no position-to-force table is loaded "
-                                "(api.magnet.use_force_table, decision 0010)")
-            return
-        f, pos = table["force_pN"], table["position_mm"]
-        for k in FORCE_KEYS[st.kind]:
-            if not f[0] <= a[k] <= f[-1]:
-                rep.err(st, st.args[k].col, f"'{k}' is {a[k]:g} pN; the force table {table['name']!r} covers "
-                                            f"[{f[0]:g}, {f[-1]:g}] pN")
-            else:
-                _profile(rep, st, k, "magnet_position_mm", float(np.interp(a[k], f, pos)),
-                         why=f" -> magnet position from the table {table['name']!r}")
+    if st.kind in FORCE_KEYS and api.magnet.force_table() is None:      # the forces: profile layer (0017)
+        rep.err(st, st.col, f"'{st.kind}' sets a force, and no position-to-force table is loaded "
+                            "(api.magnet.use_force_table, decision 0010)")
+        return
     if st.kind == "focus" and focus_z0 is not None:
         z0, origin = focus_z0
         _profile(rep, st, "um", "focus_z_um", z0 + a["um"], origin=origin,
@@ -210,7 +222,7 @@ def check(script, devices=False, run_focus_z0=_NO_RUN):
     for st in list(walk(script.body)) + list(script.rules):
         if not _api_layer(rep, st) or st.kind == "rule":
             continue
-        _profile_layer(rep, st)
+        _profile_layer(rep, st, devices)
         if devices:
             _state_layer(rep, st, focus_z0)
     return {"ok": not rep.errors, "errors": rep.errors, "warnings": rep.warnings,

@@ -1,8 +1,8 @@
 # Walking skeleton (WP6) - how to run it
 
 Simulators and files only: no camera, motor, serial port or LabVIEW is touched, and no rig lock is needed. The run
-uses a TEST-ONLY rig safety profile that lives only in its output folder; the shipped `config/` is never written
-(its sha256 is checked before and after).
+uses a copy of the shipped rig safety profile (v5 since decision 0017; no TEST-ONLY profile any more) in its output
+folder, with TEST-ONLY force tables; the shipped `config/` is never written (its sha256 is checked before and after).
 
 ## Run
 ```
@@ -18,7 +18,7 @@ As a test: `.venv\Scripts\python.exe -m pytest tests\test_walking_skeleton.py` (
 fixture).
 
 ## What it leaves in the output folder
-- `config/` - the copy used as the active profile folder, with the TEST-ONLY next profile version (`safety_profiles/5.json` while v4 is shipped);
+- `config/` - the unchanged copy of the shipped `config/` used as the active profile folder;
 - `<name>.mtprot` - the protocol that ran (`skeleton` or `skeleton_estop`);
 - `<name>.h5` and `<name>.meta.json` - the run file and its metadata copy;
 - `<name>-000` - the `.tra` export; `<name>.cal` - the `.cal` export (byte-identical to `cal002`).

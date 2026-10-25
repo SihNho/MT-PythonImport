@@ -118,7 +118,7 @@ def _t(lo=0.0, hi=MAX_T_S, required=True, lo_open=False):
     return Key("num", "s", lo, hi, required, lo_open)
 
 
-PN = Key("num", "pN", 0.0)                 # forces >= 0; the upper bound is the rig safety profile's
+PN = Key("num", "pN", 0.0)                 # forces >= 0; the upper bound is the force table's at the position limit (0017)
 PROTOCOL_KEYS = {
     "zero": {"t": _t(0.1, 600.0)},
     "ramp": {"from": PN, "to": PN, "t": _t(0.1)},

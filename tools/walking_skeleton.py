@@ -5,11 +5,11 @@
 
 One run, through the public API only (`mtpy.api`), as a script would do it:
 1. A copy of the shipped `config/` in `<out>/config` becomes the active profile folder (the shipped files are never
-   written; their sha256 is compared before and after). With that copy - still the shipped profile (v4: magnet speed
-   15 mm/s rig-checked, no force maximum) - the protocol, which sets forces, is refused before anything moves.
-2. A TEST-ONLY profile (shipped version + 1) is made in the copy through the admin write path (`mtpy.admin.safety_admin`, caller
-   `rig-admin`): magnet speed [0, 15] mm/s and force [0, 20] pN marked verified with the source "TEST ONLY". Its
-   re-commissioning report says it is a simulator run in a temporary folder, NOT a rig check.
+   written; their sha256 is compared before and after). The run uses that copy unchanged: the shipped profile (v5:
+   magnet position [0, 39] mm and speed 15 mm/s rig-checked, no separate force limit - decision 0017).
+2. Decision 0017 on the shipped profile: with a TEST-ONLY table that reaches past 39 mm, a protocol whose force needs
+   a position beyond the limit is refused before anything moves; with the run's table the protocol passes the check.
+   (Until v5 the skeleton made a TEST-ONLY profile with a force maximum in the copy; v5 needs none.)
 3. Simulated devices (the camera replays the recorded G: fixture frames when they exist, else synthetic rings); a
    camera preset (90 Hz) applied and read back; beads 1-5 of the fixture's `cal002` selected, bead 1 = reference;
    a TEST-ONLY synthetic position-to-force table.
@@ -37,22 +37,26 @@ REPO = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO / "src"))
 
 from mtpy import api
-from mtpy.admin import safety_admin
 from mtpy.api import estop, events, safety
 from mtpy.data import export_cal, export_tra, legacy_matrix, read_run
 from mtpy.lvfiles import read_tra
+from mtpy.protocol import parse
 
 FIXTURE = Path(os.environ.get("MTPY_DATA", r"G:\Data\SiHyeong\20260906 Kimlab - 50bp 16X WT 90Hz 1p2 Ramp_Newbatch"))
 FIXTURE = FIXTURE / "test"
 # TEST ONLY - a clearly synthetic position-to-force table (no physics; decision 0010 needs a recorded one)
 TABLE = {"name": "TEST ONLY synthetic table (walking skeleton)", "version": "test", "position_mm": [0.0, 10.0, 20.0],
          "force_pN": [0.1, 1.0, 10.0]}
+# TEST ONLY - a synthetic table reaching past the 39 mm magnet position limit (23.04 pN at 39 mm; decision 0017)
+WIDE_TABLE = {"name": "TEST ONLY wide synthetic table (walking skeleton)", "version": "test",
+              "position_mm": [0.0, 20.0, 45.0], "force_pN": [0.1, 1.0, 30.0]}
+OUT_OF_REACH = 'grammar 0.1\nprotocol "out-of-reach"\nhold f=25 t=0.1\n'      # 25 pN -> 40.69 mm with WIDE_TABLE
 PRESET = {"name": "skeleton 90 Hz", "roi": (0, 0, 1280, 1024), "rate_Hz": 90.0, "exposure_ms": 2.0, "gain_dB": 0.0}
 BEADS = [1, 2, 3, 4, 5]
 ROLES = {1: "reference", 2: "tethered", 3: "tethered", 4: "tethered", 5: "tethered"}
 PROTOCOL = """grammar 0.1
 protocol "skeleton"
-# walking skeleton (WP6): simulators only, TEST-ONLY profile and force table
+# walking skeleton (WP6): simulators only, shipped profile, TEST-ONLY force table
 hold f=1 t=0.3
 move mm=3 t=0.2
 mark "midway"
@@ -95,40 +99,35 @@ class Report:
         return [c for c in self.checks if not c["ok"]]
 
 
-def _test_only_profile(r):
-    """Shipped version + 1 in the temporary config copy, through the admin path only (open -> propose ->
-    activate)."""
-    shipped = safety.profile()["version"]
-    with events.as_caller("rig-admin"):
-        s = safety_admin.open_admin_session("TEST ONLY walking skeleton on the simulators (temporary config copy)")
-        lim = safety._thaw(safety.profile()["limits"])
-        for q, (lo, hi) in {"magnet_speed_mm_s": (0.0, 15.0), "magnet_force_pN": (0.0, 20.0)}.items():
-            lim[q].update(min=lo, max=hi, verified=True,
-                          source="TEST ONLY - walking skeleton on the simulators; NOT a rig value or a rig check")
-        pending = safety_admin.propose_change(s, lim, by="TEST ONLY walking skeleton", reason="simulator run")
-        rep = safety_admin.RecommissioningReport(
-            by="TEST ONLY walking skeleton", checked={"magnet_speed_mm_s": True, "magnet_force_pN": True},
-            notes="TEST ONLY: simulators in a temporary config copy; nothing was moved or read back on the rig")
-        p = safety_admin.activate(s, pending, rep)
-    r.check("TEST-ONLY profile activated through the admin path in the temporary copy",
-            p["version"] == shipped + 1 and Path(safety.CONFIG).resolve() != (REPO / "config").resolve(),
-            f"v{p['version']} in {safety.CONFIG}")
-
-
-def _shipped_refuses(r, script):
-    """With the shipped profile (unchanged copy; v4 has no magnet force maximum): the protocol, which sets forces,
-    is refused before anything moves."""
+def _shipped_profile_passes(r, script):
+    """The shipped profile (unchanged copy, v5) has no force limit; with the run's table the protocol passes the
+    full check (rig state included)."""
     shipped = json.loads((REPO / "config" / "safety_profile.json").read_text(encoding="utf-8"))["version"]
+    p = safety.profile()
+    rep = api.protocol.check(script, devices=True)
+    r.check("shipped profile (no force limit, 0017) in the temporary copy; the protocol passes the check",
+            p["version"] == shipped and "magnet_force_pN" not in p["limits"] and rep["ok"]
+            and Path(safety.CONFIG).resolve() != (REPO / "config").resolve(),
+            f"v{p['version']} in {safety.CONFIG}: {[str(d) for d in rep['errors']]}")
+
+
+def _out_of_reach_refused(r):
+    """Decision 0017 with the shipped profile: a force the TEST-ONLY wide table reaches only beyond the 39 mm magnet
+    position limit is refused before anything moves; the run's table is loaded again afterwards."""
     p0, n = api.magnet.position(), len(events.events())
+    api.magnet.use_force_table(WIDE_TABLE)
     try:
-        api.protocol.run(script)
+        api.protocol.run(parse(OUT_OF_REACH, "out_of_reach.mtprot"))
         refused, why = False, "run() started"
     except api.ScriptError as e:
-        refused, why = True, str(e).splitlines()[1] if len(str(e).splitlines()) > 1 else str(e)
+        refused, why = True, str(e)
+    finally:
+        api.magnet.use_force_table(TABLE)
     moved = abs(api.magnet.position() - p0) > 0.005
-    acts = [e for e in events.events()[n:] if e.kind == "act"]
-    r.check("shipped profile refuses the protocol before anything moves",
-            refused and not moved and not acts and safety.profile()["version"] == shipped, f"v{shipped}: {why}")
+    acts = [e for e in events.events()[n:] if e.kind in ("act", "force_request")]
+    r.check("force beyond the magnet position limit refused before anything moves (0017)",
+            refused and "needs magnet position" in why and "at the limit end 39 mm" in why and not moved and not acts,
+            why)
 
 
 def _engage_mid_move(r, target_lo=11.0, target_hi=16.0, timeout_s=20.0):
@@ -184,8 +183,8 @@ def run(out, fixture=FIXTURE, estop_variant=False, name=None):
             api.devices.connect({"backend": "sim", "fixture": str(fixture)})
             api.magnet.use_force_table(TABLE)
             script = api.protocol.load(prot)
-            _shipped_refuses(r, script)
-            _test_only_profile(r)
+            _out_of_reach_refused(r)
+            _shipped_profile_passes(r, script)
             got = api.camera.apply_preset(PRESET)
             r.check("camera preset applied and read back (U15)", abs(got["rate_Hz"] - 90.0) < 0.01, got)
             api.beads.select(BEADS, cal_path=cal)

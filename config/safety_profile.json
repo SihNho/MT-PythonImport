@@ -1,13 +1,12 @@
 {
-  "version": 4,
-  "base_version": 3,
-  "created": "2026-10-25T04:30:26",
-  "by": "rig-admin (AI session WP6, owner-run rig card pivel15r)",
-  "reason": "magnet_speed_mm_s 15 mm/s moved and read back on the rig (2026-10-25, card pivel15r): verified",
+  "version": 5,
+  "base_version": 4,
+  "created": "2026-10-25T10:48:30",
+  "by": "rig-admin (AI session, owner decision 0017)",
+  "reason": "decision 0017 (owner 2026-10-25): no separate maximum force; magnet_force_pN removed - the force limit is derived from the magnet position limit through the force table in use. Every other limit identical to v4",
   "allow_unverified": false,
   "unverified": [
     "focus_z_um",
-    "magnet_force_pN",
     "rotor_speed_turns_s",
     "rotor_turns"
   ],
@@ -19,14 +18,6 @@
       "relative_to": null,
       "verified": true,
       "source": "PI C-863.11 TMN 0 / TMX 39 written by MT_LabVIEW tools/motor_gate.py (tools/bench/motor_limits.json pi lo_mm/hi_mm, 2026-09-18, owner at the rig)"
-    },
-    "magnet_force_pN": {
-      "min": 0.0,
-      "max": null,
-      "unit": "pN",
-      "relative_to": null,
-      "verified": false,
-      "source": "unverified - maximum force not stated yet; force is derived from the position-to-force table (0010)"
     },
     "magnet_speed_mm_s": {
       "min": 0.0,
@@ -78,12 +69,10 @@
     }
   },
   "recommissioning": {
-    "by": "rig card pivel15r (V6), 2026-10-25",
-    "t": 1792870226.2947145,
-    "checked": {
-      "magnet_speed_mm_s": true
-    },
-    "notes": "Rig check 2026-10-25 04:17, V6 card pivel15r through V6 tools/rig_session.py + motor_gate.py, rig lock held, log G:\\Codes\\LabVIEW_Codes\\MinLab\\zz_LabView VI\\AAA_UNIST\\2. Tracking\\V6_ParallelLoop\\tools\\bench\\pi_vel15_check_20261025.log. Session start: reference and controller limits TMN 0 / TMX 39 read back. VEL 1 15 -> VEL? 15.0, ERR 0 (original VEL was already 15). MOV 1 30 -> POS 30.00000, ERR 0, ONT 1, motion about 2.25 s vs 2.05 s expected at 15 mm/s. MOV 1 0 -> POS 0.00000, ERR 0. Session end: magnet at 0 mm, limits released and read back, LabVIEW not running, lock released; card status PASS. The bgrun wrapper's final line reports rc=1 because rig_session's own RESULT line is not in the result-line/1 schema (format only; the process exit code was 0).",
+    "by": "rig-admin (AI session, owner decision 0017)",
+    "t": 1792892910.2656384,
+    "checked": {},
+    "notes": "No limit was added or changed: magnet_force_pN (unset, verified:false) was removed, which needs no rig check (a removed limit only refuses; the force is now bounded by the verified magnet_position_mm limit [0, 39] mm). Nothing was moved or read back on the rig.",
     "not_checked_unverified": []
   }
 }
