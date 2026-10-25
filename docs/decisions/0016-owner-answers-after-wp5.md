@@ -16,6 +16,10 @@
    acquisition (live display continues).
    **Confirmed 2026-10-25** (owner: "프로토콜이 끝나도 종료 아니면 영상 계속 받아야지. 이어서 다른 프로토콜 실행할 수도
    있으니까."): acquisition keeps running after a protocol, with or without the end statement.
+   **Changed 2026-10-25** (owner: "프로터콜 종료해도 녹화는 계속. 녹화를 껐다 켰다 할 거는 형광임"): the MT recording
+   is NOT switched off by the end statement either; `end protocol` only ends the protocol. Switching recording off and
+   on during an experiment concerns the fluorescence (EMCCD) channel, not the MT camera. *AI reading, to confirm:* the
+   MT recording stops only by the user (or at program stop).
 4. **`.tra` frame column counts from the first recorded frame** (owner: "첫 프레임부터 세는게 맞을듯").
    **Refined 2026-10-25** (owner: "동일한 파일이라면 프레임 숫자는 계속 이어져야함. 아니면 아예 새 파일 저장하여 프레임을
    갱신하는 방법도 있겠지만, 그 경우 cal ~ tra 까지 이어지는 이름 규칙이 깨질까 두려움"): 0 is the first recorded frame
