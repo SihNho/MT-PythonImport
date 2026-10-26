@@ -19,6 +19,7 @@ sys.path.insert(0, os.path.join(ROOT, "src"))
 from mtpy import calib, track
 
 NM_PX = 84.0
+V6 = r"G:\Codes\LabVIEW_Codes\MinLab\zz_LabView VI\AAA_UNIST\2. Tracking\V6_ParallelLoop"
 
 
 def load(d, seg):
@@ -58,7 +59,7 @@ def xy_series(crops, step=1):
             try:
                 x, y, _, _ = track.xy_croquette(sub, h, half, half, cross, win_rs, win_h, track.DEFAULT)
                 out[k, b] = x, y
-            except (TypeError, ValueError, np.linalg.LinAlgError):   # no bead pattern (parabola off the edge)
+            except (TypeError, ValueError, IndexError, np.linalg.LinAlgError):   # no bead pattern (parabola off the edge)
                 pass
     return out, cross
 
@@ -123,6 +124,27 @@ def ellipticity(sect, r_lo=8, r_hi=40):
     return float((pair.max() - pair.min()) / pair.mean()), float(-180 + 45 * int(np.argmax(pair)) + 22.5), rr.tolist()
 
 
+def stretch(img, x, y, r_lo=15, r_hi=55, n_th=180):
+    """Elongation of the outer pattern: on circles r_lo..r_hi around the centre, the cos 2theta / sin 2theta part of
+    the intensity vs angle, relative to the radial modulation. Returns (amplitude, long-axis angle deg, per-radius
+    amplitude). A round pattern gives ~0; a pattern stretched along angle a peaks there."""
+    th = np.linspace(-np.pi, np.pi, n_th, endpoint=False)
+    rs = np.arange(r_lo, r_hi + 1)
+    xs, ys = x + rs[:, None] * np.cos(th), y + rs[:, None] * np.sin(th)
+    x0, y0 = np.floor(xs).astype(int), np.floor(ys).astype(int)
+    fx, fy = xs - x0, ys - y0
+    v = (img[y0, x0] * (1 - fx) * (1 - fy) + img[y0, x0 + 1] * fx * (1 - fy) + img[y0 + 1, x0] * (1 - fx) * fy
+         + img[y0 + 1, x0 + 1] * fx * fy)
+    mod = v.mean(1).std()                                   # radial ring modulation (grey)
+    c2 = (v * np.cos(2 * th)).mean(1) * 2
+    s2 = (v * np.sin(2 * th)).mean(1) * 2
+    # the sign of the ring (bright / dark) flips with r, so combine the radii as a 2theta vector weighted by the
+    # local ring slope sign: use the amplitude only, and the angle of the strongest radius
+    amp = np.hypot(c2, s2)
+    k = int(np.argmax(amp))
+    return float(amp.mean() / mod), float(np.degrees(np.arctan2(s2[k], c2[k])) / 2), (amp / mod).round(4).tolist()
+
+
 def summarise_static(d, segs):
     res = {}
     for seg in segs:
@@ -142,14 +164,234 @@ def summarise_static(d, segs):
     return res
 
 
+def marks(d):
+    """{mark name: buffer number at the mark} from events.jsonl."""
+    out = {}
+    with open(os.path.join(d, "events.jsonl"), encoding="utf-8") as f:
+        for line in f:
+            e = json.loads(line)
+            if e.get("do") == "mark":
+                out[e["name"]] = e["buffer"]
+    return out
+
+
+def bead_profile(sub_full, half_crop, cross=120):
+    """XY (Croquette) then the radial profile of one crop -> (x, y, profile of length cross/2), crop pixels."""
+    h = track.lv_round(cross * 0.6)
+    win_rs, win_h = calib.windows(cross)
+    sub = sub_full[half_crop - h:half_crop + h, half_crop - h:half_crop + h]
+    x, y, sx, sy = track.xy_croquette(sub, h, half_crop, half_crop, cross, win_rs, win_h, track.DEFAULT)
+    return x, y, track.radial_profile(sub, h + sx, h + sy, cross // 2)
+
+
+def build_lut(d, seg, low=0, high=25, forget=20, z_step_um=0.1):
+    """LUT from a z-scan segment: per slice and bead, the mean radial profile of the slice's frames, mirrored like
+    the .cal stack (L = cross - 1). LOW / HIGH / forget default to the LabVIEW .cal of 2026-09-07 (0 / 25 / 18-23)."""
+    crops, idx, _ = load(d, seg)
+    mk = marks(d)
+    ks = sorted(int(n.split("_z")[-1][:-6]) for n in mk if n.startswith(seg + "_z") and n.endswith("_start"))
+    half_crop = crops.shape[2] // 2
+    nb = crops.shape[1]
+    stack = np.full((nb, len(ks), 119), np.nan)
+    within = np.full((nb, len(ks)), np.nan)
+    for si, k in enumerate(ks):
+        b0, b1 = mk[f"{seg}_z{k}_start"], mk[f"{seg}_z{k}_end"]
+        fr = np.flatnonzero((idx[:, 0] > b0) & (idx[:, 0] <= b1))
+        for b in range(nb):
+            profs = []
+            for f in fr:
+                try:
+                    profs.append(bead_profile(crops[f, b], half_crop)[2])
+                except (TypeError, ValueError, IndexError, np.linalg.LinAlgError):
+                    pass
+            if profs:
+                pr = np.nanmean(profs, 0)
+                stack[b, si] = np.concatenate([pr[1:][::-1], pr])
+                within[b, si] = len(profs)
+    np.savez(os.path.join(d, f"{seg}.lut.npz"), stack=stack, z_um=np.array(ks) * z_step_um, low=low, high=high,
+             forget=forget, z_step_um=z_step_um, n_frames=within)
+    return stack, np.array(ks) * z_step_um
+
+
+def lut_clusters(d, seg="zscan"):
+    z = np.load(os.path.join(d, f"{seg}.lut.npz"))
+    return [None if np.isnan(st).any() else calib.prep_bead(st, int(z["low"]), int(z["high"]), int(z["forget"]),
+                                                            float(z["z_step_um"]), 120) for st in z["stack"]]
+
+
+def z_series(crops, cals, step=1):
+    """(frames, beads) z in um with the given per-bead LUT clusters (None -> nan)."""
+    half_crop = crops.shape[2] // 2
+    out = np.full((len(range(0, len(crops), step)), crops.shape[1]), np.nan)
+    for k, f in enumerate(range(0, len(crops), step)):
+        for b, cal in enumerate(cals):
+            if cal is None:
+                continue
+            try:
+                _, _, rad = bead_profile(crops[f, b], half_crop)
+                zi, _ = track.z_phase(rad, 60, cal, track.DEFAULT)
+                out[k, b] = zi * cal["z_step"]
+            except (TypeError, ValueError, IndexError, np.linalg.LinAlgError):
+                pass
+    return out
+
+
+def spots(img):
+    """Bead centres (px) in one averaged full frame, refined by the Croquette stage (cross 120)."""
+    sys.path.insert(0, os.path.join(V6, "tools", "bench", "lean_bench"))
+    import p64_beadmap  # shortcut: the V6 finder, as refbead_record.find_beads
+    out = []
+    for b in p64_beadmap.find(img)["spots"]:
+        x0, y0 = int(b["x"]), int(b["y"])
+        if not (80 <= x0 < img.shape[1] - 80 and 80 <= y0 < img.shape[0] - 80):
+            continue
+        try:
+            x, y, _ = bead_profile(img[y0 - 80:y0 + 80, x0 - 80:x0 + 80].astype(np.float64), 80)
+            out.append((x0 - 80 + x, y0 - 80 + y))
+        except (TypeError, ValueError, IndexError, np.linalg.LinAlgError):
+            pass
+    return np.array(out)
+
+
+def match(a, b, tol):
+    """Pairs (i, j) of nearest points of a and b closer than tol px."""
+    return [(i, int(np.argmin(np.hypot(*(b - p).T)))) for i, p in enumerate(a)
+            if len(b) and np.min(np.hypot(*(b - p).T)) < tol]
+
+
+def shift_px(a, b):
+    """Integer image shift b - a (x, y) by phase correlation of two frames."""
+    fa, fb = np.fft.fft2(a - a.mean()), np.fft.fft2(b - b.mean())
+    r = np.fft.ifft2(fb * np.conj(fa) / (np.abs(fb * np.conj(fa)) + 1e-9)).real
+    y, x = np.unravel_index(np.argmax(r), r.shape)
+    return np.array([x - r.shape[1] if x > r.shape[1] // 2 else x, y - r.shape[0] if y > r.shape[0] // 2 else y])
+
+
+def displacement(fa, fb, bg):
+    """Median sub-pixel bead displacement b - a (px) and the bead count: global shift by phase correlation of the
+    background-free frames (the fixed illumination pattern would lock it at 0), then each bead of a matched to b
+    within 5 px of the shifted position."""
+    s0 = shift_px(fa - bg, fb - bg)
+    pa, pb = spots(fa), spots(fb)
+    dd = np.array([pb[j] - pa[i] for i, j in match(pa + s0, pb, 5.0)])
+    return (np.median(dd, 0), len(dd)) if len(dd) else (None, 0)
+
+
+def field(d):
+    """Pixel scale per axis from the single-axis scale line (each move against the frame just before it), the return
+    error of every move pair, and the ring elongation of every bead at every 3 x 3 position."""
+    def mean_frame(name):
+        return np.load(os.path.join(d, f"{name}.full.npy")).astype(np.float64).mean(0)
+    res = {"scale": {}, "ellipticity": {}}
+    grid = [mean_frame(f[:-9]) for f in os.listdir(d) if f.startswith("f_") and f.endswith(".full.npy")]
+    bg = np.median(grid, 0)                                 # beads sit elsewhere at each grid position
+    v, n = displacement(mean_frame("f_start"), mean_frame("f_0_0"), bg)
+    res["grid_return_px"] = None if v is None else v.round(3).tolist()
+    prev = "f_0_0"
+    for axis in ("X", "Y"):
+        rows = []
+        for um in (5, 10, 20, 35):
+            a, b, c = mean_frame(prev), mean_frame(f"sc_{axis}{um}"), mean_frame(f"sc_{axis}{um}_back")
+            v, n = displacement(a, b, bg)
+            vb, _ = displacement(a, c, bg)
+            rows.append({"um": um, "n": n, "d_px": None if v is None else v.round(3).tolist(),
+                         "nm_per_px": None if v is None else float(um * 1000 / np.hypot(*v)),
+                         "return_px": None if vb is None else vb.round(3).tolist()})
+            prev = f"sc_{axis}{um}_back"
+        res["scale"][axis] = rows
+    for f in sorted(os.listdir(d)):
+        if f.startswith("f_") and f.endswith(".full.npy") and f != "f_start.full.npy":
+            img = mean_frame(f[:-9])
+            el = []
+            for x, y in spots(img):
+                e, ang, _ = stretch(img - bg, x, y)
+                el.append([round(float(x), 1), round(float(y), 1), round(e, 4), round(ang, 1)])
+            res["ellipticity"][f[:-9]] = el
+    return res
+
+
+def mark_list(d):
+    """[(name, buffer, t)] of every mark in order (names may repeat, e.g. the way up and down of a ramp)."""
+    with open(os.path.join(d, "events.jsonl"), encoding="utf-8") as f:
+        ev = [json.loads(line) for line in f]
+    return [(e["name"], e["buffer"], e["t"]) for e in ev if e.get("do") == "mark"]
+
+
+def holds(d, seg, hold_s, step, cals, nm_px):
+    """Per marked hold: mean x, y (nm, relative to the first hold), z (um), crop mean grey, and the radial-profile
+    change versus the first hold (rms of the difference / rms of the first profile's modulation)."""
+    crops, idx, _ = load(d, seg)
+    rate = (len(idx) - 1) / (idx[-1, 1] - idx[0, 1])
+    half_crop = crops.shape[2] // 2
+    out, ref = [], None
+    for name, b0, _ in mark_list(d):
+        fr = np.flatnonzero((idx[:, 0] > b0) & (idx[:, 0] <= b0 + hold_s * rate))[::step]
+        xy, z, prof = [], [], []
+        for f in fr:
+            row_xy, row_z, row_p = [], [], []
+            for b, cal in enumerate(cals):
+                try:
+                    x, y, rad = bead_profile(crops[f, b], half_crop)
+                    zi = track.z_phase(rad, 60, cal, track.DEFAULT)[0] * cal["z_step"] if cal else np.nan
+                except (TypeError, ValueError, IndexError, np.linalg.LinAlgError):
+                    x = y = zi = np.nan
+                    rad = np.full(60, np.nan)
+                row_xy.append((x, y))
+                row_z.append(zi)
+                row_p.append(rad)
+            xy.append(row_xy)
+            z.append(row_z)
+            prof.append(row_p)
+        xy, z, prof = np.nanmean(xy, 0), np.nanmean(z, 0), np.nanmean(prof, 0)
+        grey = crops[fr].reshape(len(fr), crops.shape[1], -1).mean((0, 2))
+        if ref is None:
+            ref = (xy, z, prof)
+        mod = np.nanstd(ref[2][:, 5:], 1)
+        out.append({"name": name, "frames": len(fr), "dx_nm": ((xy[:, 0] - ref[0][:, 0]) * nm_px).round(1).tolist(),
+                    "dy_nm": ((xy[:, 1] - ref[0][:, 1]) * nm_px).round(1).tolist(),
+                    "dz_nm": ((z - ref[1]) * 1000).round(1).tolist(), "grey": grey.round(2).tolist(),
+                    "profile_change": (np.sqrt(np.nanmean((prof[:, 5:] - ref[2][:, 5:]) ** 2, 1)) / mod).round(4).tolist()})
+    return out
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("run")
     ap.add_argument("--plan", required=True)
+    ap.add_argument("--nm-px", type=float, default=NM_PX, help="measured pixel size (field plan) for nm outputs")
     a = ap.parse_args()
     d = os.path.join(a.run, a.plan)
     segs = sorted(f[:-9] for f in os.listdir(d) if f.endswith(".crops.u8"))
-    res = {"plan": a.plan, "segments": summarise_static(d, segs)} if segs else {"plan": a.plan}
+    res = {"plan": a.plan}
+    if segs and a.plan not in ("zscan", "zscan_field", "magnet", "rotation"):
+        res["segments"] = summarise_static(d, segs)
+    if a.plan == "zscan":
+        _, zs = build_lut(d, "zscan")
+        cals = lut_clusters(d)
+        crops, idx, _ = load(d, "zscan")
+        mk = marks(d)
+        z = z_series(crops, cals, step=1)
+        per = []                                          # tracked z vs commanded z, per slice (U34 quality map)
+        for k_um in zs:
+            k = round(k_um * 10)
+            fr = (idx[:, 0] > mk[f"zscan_z{k}_start"]) & (idx[:, 0] <= mk[f"zscan_z{k}_end"])
+            zz = z[fr]
+            per.append([k_um, *np.nanmean(zz, 0).round(4).tolist(), *np.nanstd(zz, 0).round(4).tolist()])
+        np.save(os.path.join(d, "zscan.z.npy"), z)
+        per = np.array(per)
+        nb = len(cals)
+        mean_z, sd_z = per[:, 1:1 + nb], per[:, 1 + nb:]
+        res["lut_beads"] = [i for i, c in enumerate(cals) if c is not None]
+        res["z_vs_command"] = {"command_um": per[:, 0].tolist(), "mean_um": mean_z.tolist(), "sd_um": sd_z.tolist()}
+        good = res["lut_beads"]
+        res["z_sd_nm_median_per_slice"] = (np.nanmedian(sd_z[:, good], 1) * 1000).round(2).tolist()
+        res["z_error_nm_median_per_slice"] = (np.nanmedian(np.abs(mean_z[:, good] - per[:, [0]] - (mean_z[:, good]
+                                              - per[:, [0]]).mean(0)), 1) * 1000).round(2).tolist()
+    if a.plan == "magnet":
+        cals = lut_clusters(os.path.join(a.run, "zscan"))
+        res["holds"] = holds(d, "ramp", 20, 5, cals, a.nm_px)
+    if a.plan == "field":
+        res.update(field(d))
     if a.plan == "drift":
         xy = np.load(os.path.join(d, "drift.xy.npy"))
         rate = res["segments"]["drift"]["rate_hz"]

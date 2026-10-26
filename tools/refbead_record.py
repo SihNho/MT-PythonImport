@@ -71,17 +71,14 @@ def plan(name, exposure_us):
                       {"do": "mark", "name": f"hold_{mm}mm"}, {"do": "wait", "s": 20},
                       {"do": "snap", "name": f"m{mm}", "n": 5}]
         return steps + [{"do": "stream", "name": None}]
-    if name == "rotation":                    # 4. +-4 turns at two speeds and four magnet positions
+    if name == "rotation":                    # 4. +-4 turns twice at the gate speed (SPD 100), four magnet positions
         steps = [cam]
         for mm in (0, 30, 36, 39):
             steps += [{"do": "gate", "device": "pi", "command": f"MOV 1 {mm}"}, {"do": "stream", "name": f"rot_{mm}mm"},
                       {"do": "wait", "s": 5}]
-            for spd in (20, 100):
-                # the gate may not wait for the rotor: 2x the run time at multiplier 10 (unread) + 2 s
-                run_s = 2 * 2000 / (spd * 10) + 2
-                steps += [{"do": "gate", "device": "rotor", "command": f"SPD {spd}"},
-                          {"do": "gate", "device": "rotor", "command": "PIC 2000"}, {"do": "wait", "s": run_s},
-                          {"do": "gate", "device": "rotor", "command": "PIC -2000"}, {"do": "wait", "s": run_s}]
+            for _ in range(2):                     # the gate sends every rotor move at its SPD cap (100) itself
+                steps += [{"do": "gate", "device": "rotor", "command": "PIC 2000"}, {"do": "wait", "s": 2},
+                          {"do": "gate", "device": "rotor", "command": "PIC -2000"}, {"do": "wait", "s": 2}]
             steps += [{"do": "wait", "s": 5}, {"do": "stream", "name": None}]
         return steps + [{"do": "gate", "device": "pi", "command": "MOV 1 0"}]
     if name == "exposure":                    # 5. noise vs exposure at 150 Hz, magnet far
