@@ -31,6 +31,7 @@ GATE = os.path.join(V6, "tools", "motor_gate.py")
 FAKE_FRAME = r"G:\m8_replay_frames\f00000.tif"
 HALF = 80                 # crop half size (px): the tracker needs a 144 px sub-image at cross 120 (h = 72) + room
 EDGE = HALF + 8
+MIN_SEP = 2 * HALF        # nearest other spot (px); --min-sep lowers it for a sparse field (crops then overlap)
 
 # ---------------------------------------------------------------- plans (numbers for the owner's approval)
 MAG_STEPS = [0, 10, 20, 25, 28, 30, 32, 34, 35, 36, 37, 38, 39]     # mm; 0 = farthest from the sample
@@ -265,7 +266,7 @@ def find_beads(img):
     found = p64_beadmap.find(img)
     h, w = img.shape
     beads = [b for b in found["beads"] if EDGE <= b["x"] < w - EDGE and EDGE <= b["y"] < h - EDGE
-             and (b["nearest"] is None or b["nearest"] >= 2 * HALF)]
+             and (b["nearest"] is None or b["nearest"] >= MIN_SEP)]
     return beads, found
 
 
@@ -432,10 +433,12 @@ def main():
     ap.add_argument("--exposure-us", type=float, default=1909.0)   # = the .icd auto value; 3000 would saturate (max grey 200 at 1909)
     ap.add_argument("--beads", help="beads.json from `snap` (default: find them in the first frame)")
     ap.add_argument("--dry", action="store_true")
+    ap.add_argument("--min-sep", type=float, help="minimum distance to the nearest other spot (px)")
     ap.add_argument("--at-um", default="0,0", help="zfine_at: field offset dx,dy in um from the session start")
     a = ap.parse_args()
-    global AT_UM
+    global AT_UM, MIN_SEP
     AT_UM = tuple(float(v) for v in a.at_um.split(","))
+    MIN_SEP = a.min_sep if a.min_sep is not None else MIN_SEP
     if a.cmd == "show":
         for i, s in enumerate(plan(a.plan, a.exposure_us)):
             print(i, s)
