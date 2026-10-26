@@ -526,6 +526,28 @@ is: owner 2026-10-22, "Laya는 Jev와 유사한 AI 모델인데, 로컬로 설�
 model similar to Jev, installable locally and fine-tunable). Per decision 0001 any AI stays an optional add-on on top
 of the normal interfaces; a natural use is the troubleshooting guide (U9), trained on the lab's case log.
 
+## Open - from mtFRET_2.pptx (2026-10-26)
+Candidates from a colleague's slide deck on smCamera for MT + FRET, not yet confirmed by the owner; not numbered as U
+items. Details, verbatim slide quotes and evidence: [smcamera-workflow-mtfret.md](../manuals/smcamera-workflow-mtfret.md)
+section 5; file formats: [smcamera-files.md](../manuals/smcamera-files.md).
+- **R1 Recorder panel** (slides 1-2): exposure / kinetic cycle read back, EM gain, display background and scaler,
+  path, auto-numbered films, current / max frames with a max-length stop, Record / Stop, min / max intensity,
+  overlay of channels and selected molecules.
+- **R2 Manual pairing in mapping** (slides 3-4): "we can select and pair the molecules by ourself", each pair in its
+  own colour; no frame sequence or threshold needed (automatic finding, U23, stays optional).
+- **R3 No automatic analysis step for MT-FRET** (slide 5): traces are built straight from the pairs.
+- **R4 `.traces` output** (slides 3, 12): smCamera's int16 `.traces` written byte-compatibly for the MATLAB scripts
+  (they compute FRET themselves); the new file also stores FRET and the corrections used (extends U28).
+- **R5 Mapping reflected in the MT view** (slide 3): "When we map here, it should also reflect in MT interface and
+  select the beads accordingly." (extends U22, U25).
+- **R6 FRET formula with corrections as presets** (slide 6): `E = (I_A - beta I_D) / (I_D + I_A)` after background
+  and acceptor direct-excitation correction; beta ~0.1 in the lab's script; factors stored with the data.
+- **R7 First / last five frames rule** (slide 6): the red-excited frames at start and end select colocalised
+  molecules and are excluded from traces and histograms; taken from the executed illumination sequence (U24, 0013).
+- **R8 Trace viewer** (slides 7-9): molecule browsing, frame slider, donor / acceptor and FRET vs time, spot zooms.
+- **R9 Histograms from frames selected per channel** (slides 10-11): FRET and intensity histograms over several films.
+- **R10 Import of old smCamera data** (slide 12): `.smm`, `.pks`, `.smt` (-> `.traces`), map `.txt`.
+
 ## Also to be supported (owner, earlier in the same chat)
 - The Andor iXon EMCCD added later (decision 0005: the JAI is the master clock, the Arduino divides frames).
 - Real-time fluorescence traces.

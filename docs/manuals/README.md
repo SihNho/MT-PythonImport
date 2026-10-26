@@ -15,6 +15,12 @@ still unknown.
 | Coherent OBIS laser | [coherent-obis.md](coherent-obis.md) | yes (TIRF, run from Coherent Connection) | no |
 | Arduino frame divider (JAI -> iXon) | [arduino-sync.md](arduino-sync.md) | wired, never run; firmware not written | no |
 
+smCamera (the lab's old smFRET program, not a device; kept here because the iXon port replaces it):
+[smcamera-emccd-parameters.md](smcamera-emccd-parameters.md) (camera parameters and SDK calls),
+[smcamera-files.md](smcamera-files.md) (its file formats, read from a real dataset),
+[smcamera-workflow-mtfret.md](smcamera-workflow-mtfret.md) (the colleague's workflow and MT-FRET requirements,
+`mtFRET_2.pptx`).
+
 Vendor SDKs and drivers (versions found on the rig PC, install paths, where to download, redistribution) are listed
 in [`third_party/MANIFEST`](../../third_party/MANIFEST), section "vendor SDKs and drivers".
 

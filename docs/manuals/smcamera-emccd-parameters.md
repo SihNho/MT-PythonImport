@@ -226,6 +226,12 @@ already the U15 idea: the settings travel with the movie.**
 
 ## 9. Open questions
 
+Update 2026-10-26: the live install in `G:\Data\SiHyeong\Dropbox\_config\smCameraRelated` has the same `smCamera.exe`
+(SHA-256 identical) but `atmcd32d.dll` **2.97.30007.0** (not 2.79), and it contains `camera.save` and `recorder.save`
+(a raw memory dump and a 4-line text file). The `.save` meanings above are now read from the dialogs on the
+colleague's slides; see [smcamera-files.md](smcamera-files.md) sections 11-12 (it also decodes `.smm` and `.smt`,
+answering the `.smm` part of item 6).
+
 1. Is "smCamera2" a different build than this 2012 `smCamera.exe` 1.0? Nothing named 2 was found.
 2. Last-used EM gain, exposure, temperature and HS index: `camera.save` / `recorder.save` are missing; are they on the
    old acquisition PC (`C:\Users\HJKIM\Desktop\TIR Programs\...`)?
