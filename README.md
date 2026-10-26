@@ -2,7 +2,7 @@
 
 A Python port of the Kim Lab (UNIST) **magnetic-tweezers (MT) bead-tracking and experiment-control software**, which today runs as a LabVIEW program.
 
-> **Status: offline core (phase 3 of [the plan](docs/plan.md)).** The tracking computation and the `.tra` / `.cal` readers and writers run offline and match the LabVIEW program on recorded frames. There is no device code yet. The LabVIEW program stays in use for experiments until this port has been validated against it.
+> **Status: phase 5 done on simulators (2026-10-26) - see [STATUS.md](STATUS.md).** The offline core (phases 1-3) matches the LabVIEW program on recorded frames. Phase 5 (branch `phase5-skeleton`) adds the public API, the protected rig safety profile, device simulators, the acquisition pipeline, the HDF5 run file, the protocol grammar and engine, and an end-to-end walking skeleton. Real device drivers (phase 6) and the GUI (phase 8) are next. The LabVIEW program stays in use for experiments until this port has been validated against it.
 
 ## Why
 
@@ -45,7 +45,12 @@ Details and reasons: [docs/decisions/](docs/decisions/).
 ## Repository layout
 
 ```
-src/mtpy/        the package: track.py (tracking, faithful port), fast.py (numba executor), lvfiles.py (.tra / .cal)
+STATUS.md        where the project is now (short)
+src/mtpy/        the package: track.py (tracking, faithful port), fast.py (numba executor), lvfiles.py (.tra / .cal),
+                 api/ (public functions), acq/ (pipeline), data/ (HDF5, export), devices/ (simulators),
+                 protocol/ (grammar, engine), forcecal.py (force equation), admin/ (safety profile writes)
+config/          the rig safety profile (written only through the admin path)
+dev/             cycle log of the phase-5 reviews, walking-skeleton notes
 tests/           pytest; replay tests need the recorded fixture and skip without it
 tools/           developer scripts (speed benchmark, spec coverage check)
 matlab/          MATLAB readers for .tra / .cal
@@ -61,6 +66,7 @@ docs/            documents for people (permanent)
   mockups/         UI mock-ups
   hardware/        rig drawings (editable, e.g. the MT-TIRF optical layout)
   literature/      literature surveys and reports
+  rig/             rig core parameter register (core-parameters.md)
   rig-facts.md     facts about the rig and samples from the owner, with sources and dates
   results/         verification and measurement results
 CLAUDE.md        working rules for AI assistants during development (AGENTS.md is the same text)
