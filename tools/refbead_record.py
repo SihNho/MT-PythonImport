@@ -106,11 +106,31 @@ def plan(name, exposure_us):
                 steps += zscan(f"zf_{i}_{j}") + [{"do": "stream", "name": None}]
                 at = (tx, ty)
         return steps + [*asi("X", -at[0]), *asi("Y", -at[1])]
-    if name in ("zfine50", "zfine20", "exposure2"):         # 9. sub-100 nm focus steps (decimal ASI units), up then back down
+    if name in ("zfine50", "zfine20"):         # 9. sub-100 nm focus steps (decimal ASI units), up then back down
         step, half = (0.5, 50) if name == "zfine50" else (0.2, 20)   # 50 nm over +-5 um, 20 nm over +-2 um
         return ([cam, {"do": "gate", "device": "pi", "command": "MOV 1 0"}] + zscan_fine(name, step, half)
                 + [{"do": "stream", "name": None}])
+    if name == "search":                      # 10. find a field with many reference beads: 5 x 5 grid, 300 um pitch
+        steps, at = [cam], (0.0, 0.0)
+        for j in range(-2, 3):
+            for i in range(-2, 3):
+                tx, ty = i * 300.0, j * 300.0
+                steps += [*asi("X", tx - at[0]), *asi("Y", ty - at[1]), {"do": "settle", "s": 1.5},
+                          {"do": "snap", "name": f"g_{i}_{j}", "n": 3}]
+                at = (tx, ty)
+        return steps + [*asi("X", -at[0]), *asi("Y", -at[1])]
+    if name == "zfine_at":                    # 11. at the chosen field: 100 nm LUT, then 50 nm and 20 nm scans
+        dx, dy = AT_UM
+        steps = [cam, {"do": "gate", "device": "pi", "command": "MOV 1 0"}, *asi("X", dx), *asi("Y", dy),
+                 {"do": "settle", "s": 2}, {"do": "repick"}]
+        steps += zscan("zscan") + [{"do": "stream", "name": None}]
+        steps += zscan_fine("zfine50", 0.5, 50) + [{"do": "stream", "name": None}]
+        steps += zscan_fine("zfine20", 0.2, 20) + [{"do": "stream", "name": None}]
+        return steps + [*asi("X", -dx), *asi("Y", -dy)]
     raise SystemExit(f"unknown plan {name!r}")
+
+
+AT_UM = (0.0, 0.0)            # field offset for zfine_at, set by --at-um
 
 
 def zscan_fine(seg, step_units, half_units):
@@ -278,8 +298,8 @@ def gate(step, dry, log, asi_pos=None):
         axis = command[2]
         asi_pos[axis] += int(command[4:])
         command = f"M {axis}={asi_pos[axis]}"
-    elif step["device"] == "asi" and command[:4] == "R Z=" and "." in command and "Z" in asi_pos:
-        # decimal focus steps go absolute from the session's start Z, so no fresh read can round them away
+    elif step["device"] == "asi" and command[:4] == "R Z=" and "Z" in asi_pos:
+        # focus steps go absolute from the session's start Z, so no rounded fresh read can lose a decimal step
         asi_pos["Z"] = round(asi_pos["Z"] + float(command[4:]), 3)
         command = f"M Z={asi_pos['Z']:g}"
     cmd = [sys.executable, "-u", GATE, "--device", step["device"], "--command", command,
@@ -407,12 +427,15 @@ def snap(args):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("cmd", choices=("show", "run", "snap"))
-    ap.add_argument("--plan", choices=("static", "field", "magnet", "rotation", "exposure", "drift", "zscan", "zscan_field", "zfine50", "zfine20", "exposure2"))
+    ap.add_argument("--plan", choices=("static", "field", "magnet", "rotation", "exposure", "drift", "zscan", "zscan_field", "zfine50", "zfine20", "exposure2", "search", "zfine_at"))
     ap.add_argument("--out", default=r"G:\l2s_rig_data\2026-10-26_refbead")
     ap.add_argument("--exposure-us", type=float, default=1909.0)   # = the .icd auto value; 3000 would saturate (max grey 200 at 1909)
     ap.add_argument("--beads", help="beads.json from `snap` (default: find them in the first frame)")
     ap.add_argument("--dry", action="store_true")
+    ap.add_argument("--at-um", default="0,0", help="zfine_at: field offset dx,dy in um from the session start")
     a = ap.parse_args()
+    global AT_UM
+    AT_UM = tuple(float(v) for v in a.at_um.split(","))
     if a.cmd == "show":
         for i, s in enumerate(plan(a.plan, a.exposure_us)):
             print(i, s)

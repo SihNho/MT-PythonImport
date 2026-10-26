@@ -12,7 +12,7 @@ def moves(steps, device):
 
 
 def test_plans_return_and_stay_inside():
-    for name in ("static", "field", "magnet", "rotation", "exposure", "drift", "zscan", "zscan_field", "zfine50", "zfine20", "exposure2"):
+    for name in ("static", "field", "magnet", "rotation", "exposure", "drift", "zscan", "zscan_field", "zfine50", "zfine20", "exposure2", "search", "zfine_at"):
         steps = rr.plan(name, 3000.0)
         pos, peak = {"X": 0, "Y": 0, "Z": 0}, {"X": 0, "Y": 0, "Z": 0}
         for c in moves(steps, "asi"):

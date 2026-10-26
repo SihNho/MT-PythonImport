@@ -14,7 +14,7 @@ import sys
 
 import numpy as np
 
-ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))  # repo
 sys.path.insert(0, os.path.join(ROOT, "src"))
 from mtpy import calib, track
 
@@ -540,6 +540,56 @@ def zstep(d, seg="zscan", steps=(1, 2, 3, 5), test_step=2):
     return res
 
 
+def search(d):
+    """Usable reference beads per grid snapshot of the search plan (the recorder's own pick rules)."""
+    sys.path.insert(0, os.path.join(ROOT, "tools"))
+    import refbead_record
+    out = {}
+    for f in sorted(os.listdir(d)):
+        if f.startswith("g_") and f.endswith(".full.npy"):
+            img = np.load(os.path.join(d, f))[0]
+            beads, found = refbead_record.find_beads(img)
+            i, j = (int(v) for v in f[2:-9].split("_"))
+            out[f[:-9]] = {"at_um": [i * 300.0, j * 300.0], "beads": len(beads), "spots": len(found["spots"])}
+    return out
+
+
+def zfine(d, seg, cals, step=1):
+    """Real focus displacement for sub-unit commands: per slice (way up and way down) the mean tracked z of the fixed
+    beads (100 nm LUT of the same session), against the commanded z. Compares a straight line (the piezo follows
+    the decimal command) with the staircase of whole 0.1 um units (it is rounded)."""
+    crops, idx, _ = load(d, seg)
+    with open(os.path.join(d, "events.jsonl"), encoding="utf-8") as f:
+        ev = [json.loads(line) for line in f]
+    st = {e["name"][:-6]: (e["buffer"], e["z_units"]) for e in ev if e.get("do") == "mark" and e["name"].startswith(seg)
+          and e["name"].endswith("_start")}
+    en = {e["name"][:-4]: e["buffer"] for e in ev if e.get("do") == "mark" and e["name"].startswith(seg)
+          and e["name"].endswith("_end")}
+    rows = []
+    for name, (b0, zu) in st.items():
+        fr = np.flatnonzero((idx[:, 0] > b0) & (idx[:, 0] <= en[name]))[::step]
+        z = z_series(crops[fr], cals)
+        rows.append((name.split("_")[-1][:2], zu, *np.nanmean(z, 0)))
+    way = np.array([r[0] == "up" for r in rows])
+    cmd = np.array([r[1] for r in rows]) * 0.1                                    # um
+    z = np.array([r[2:] for r in rows], float)
+    beads = [b for b in range(z.shape[1]) if np.isfinite(z[:, b]).mean() > 0.9]
+    zc = np.nanmean(z[:, beads], 1)
+    res = {"beads": beads, "n_slices": len(rows)}
+    for nm, m in (("up", way), ("down", ~way)):
+        c, y = cmd[m], zc[m]
+        ok = np.isfinite(y)
+        c, y = c[ok], y[ok]
+        lin = np.polyfit(c, y, 1)
+        stair = np.round(c * 10 + 1e-9) / 10                                     # whole units, half up
+        st_fit = np.polyfit(stair, y, 1)
+        res[nm] = {"slope": round(float(lin[0]), 4),
+                   "rms_line_nm": round(float(np.std(y - np.polyval(lin, c)) * 1000), 2),
+                   "rms_staircase_nm": round(float(np.std(y - np.polyval(st_fit, stair)) * 1000), 2)}
+    np.save(os.path.join(d, f"{seg}.slices.npy"), np.column_stack([way, cmd, zc]))
+    return res
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("run")
@@ -549,8 +599,15 @@ def main():
     d = os.path.join(a.run, "zscan" if a.plan == "zstep" else a.plan)    # zstep re-analyses the z-scan
     segs = [] if a.plan == "zstep" else sorted(f[:-9] for f in os.listdir(d) if f.endswith(".crops.u8"))
     res = {"plan": a.plan}
-    if segs and a.plan not in ("zscan", "zscan_field", "magnet", "rotation"):
+    if segs and a.plan not in ("zscan", "zscan_field", "magnet", "rotation", "zfine_at"):
         res["segments"] = summarise_static(d, segs, a.nm_px, 5 if a.plan == "drift" else 1)
+    if a.plan == "search":
+        res["search"] = search(d)
+    if a.plan == "zfine_at":
+        build_lut(d, "zscan")
+        cals = lut_clusters(d)
+        res["zfine50"] = zfine(d, "zfine50", cals)
+        res["zfine20"] = zfine(d, "zfine20", cals)
     if a.plan == "zstep":
         res["zstep"] = zstep(d)
         with open(os.path.join(d, "zstep.json"), "w", encoding="utf-8") as f:
