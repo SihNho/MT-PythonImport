@@ -460,17 +460,103 @@ def zscan_field(d, grid_um=(35.0, 28.0), step=3):
     return out
 
 
+def zstep(d, seg="zscan", steps=(1, 2, 3, 5), test_step=2):
+    """LUT slice spacing (owner 2026-10-27): LUTs with every m-th slice of the 100 nm scan (100 / 200 / 300 / 500 nm)
+    are built from the FIRST half of each slice's frames and tested on the SECOND half of every slice, so slices
+    between LUT slices are out of sample. Also the radius of the first bright ring vs z (the pattern size)."""
+    crops, idx, _ = load(d, seg)
+    mk = marks(d)
+    ks = list(range(-50, 51))
+    half_crop = crops.shape[2] // 2
+    nb = crops.shape[1]
+    first, second = np.full((nb, len(ks), 60), np.nan), []
+    for si, k in enumerate(ks):
+        fr = np.flatnonzero((idx[:, 0] > mk[f"{seg}_z{k}_start"]) & (idx[:, 0] <= mk[f"{seg}_z{k}_end"]))
+        n2 = len(fr) // 2
+        for b in range(nb):
+            pa = []
+            for f in fr[:n2]:
+                try:
+                    pa.append(bead_profile(crops[f, b], half_crop)[2])
+                except (TypeError, ValueError, IndexError, np.linalg.LinAlgError):
+                    pass
+            if pa:
+                first[b, si] = np.nanmean(pa, 0)
+            for f in fr[n2::test_step]:
+                try:
+                    second.append((b, k, bead_profile(crops[f, b], half_crop)[2]))
+                except (TypeError, ValueError, IndexError, np.linalg.LinAlgError):
+                    pass
+    res = {"lut_step": {}}
+    for m in steps:
+        rows = {}
+        for b in range(nb):
+            st = first[b, ::m]
+            if np.isnan(st).any():
+                continue
+            cal = calib.prep_bead(np.concatenate([st[:, 1:][:, ::-1], st], 1), 0, 25, 20, 0.1 * m, 120)
+            cmd, z, on = [], [], []
+            for bb, k, rad in second:
+                if bb != b:
+                    continue
+                try:
+                    zi = track.z_phase(rad, 60, cal, track.DEFAULT)[0]
+                except (TypeError, ValueError, IndexError, np.linalg.LinAlgError):
+                    continue
+                cmd.append(k * 0.1)
+                z.append(-5.0 + zi * 0.1 * m)
+                on.append((k + 50) % m == 0)
+            cmd, z, on = map(np.array, (cmd, z, on))
+            sel = np.abs(cmd) <= 4.0
+            err = (z - cmd)[sel]
+            err = err - np.median(err)
+            slices = np.unique(cmd[sel])
+            mean_err = np.array([np.mean(err[cmd[sel] == c]) for c in slices]) * 1000
+            on_s = np.array([on[sel][cmd[sel] == c][0] for c in slices])
+            noise = np.median([np.std(err[cmd[sel] == c]) for c in slices]) * 1000
+            rows[b] = {"rms_nm": round(float(np.sqrt(np.mean(err ** 2)) * 1000), 1),
+                       "bias_on_lut_slices_nm": round(float(np.sqrt(np.mean(mean_err[on_s] ** 2))), 1),
+                       "bias_between_slices_nm": round(float(np.sqrt(np.mean(mean_err[~on_s] ** 2))), 1) if (~on_s).any() else None,
+                       "noise_nm": round(float(noise), 1),
+                       "slope": round(float(np.polyfit(cmd[sel], z[sel], 1)[0]), 4)}
+        res["lut_step"][f"{100 * m} nm"] = rows
+    ring = {}
+    for b in range(nb):
+        r = []
+        for si in range(len(ks)):
+            p = first[b, si]
+            if np.isnan(p).any():
+                r.append(np.nan)
+                continue
+            j = 5 + int(np.argmax(p[5:35]))
+            a_, b_, c_ = p[j - 1], p[j], p[j + 1]
+            r.append(j + 0.5 * (a_ - c_) / (a_ - 2 * b_ + c_))
+        r = np.array(r)
+        z = np.array(ks) * 0.1
+        m_ = (np.abs(z) <= 4) & ~np.isnan(r)
+        ring[b] = {"radius_px_at_z": {f"{zz:.1f}": round(float(rr), 2) for zz, rr in zip(z[::10], r[::10])},
+                   "slope_px_per_um": round(float(np.polyfit(z[m_], r[m_], 1)[0]), 3) if m_.sum() > 3 else None}
+    res["ring"] = ring
+    return res
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("run")
     ap.add_argument("--plan", required=True)
     ap.add_argument("--nm-px", type=float, default=NM_PX, help="measured pixel size (field plan) for nm outputs")
     a = ap.parse_args()
-    d = os.path.join(a.run, a.plan)
-    segs = sorted(f[:-9] for f in os.listdir(d) if f.endswith(".crops.u8"))
+    d = os.path.join(a.run, "zscan" if a.plan == "zstep" else a.plan)    # zstep re-analyses the z-scan
+    segs = [] if a.plan == "zstep" else sorted(f[:-9] for f in os.listdir(d) if f.endswith(".crops.u8"))
     res = {"plan": a.plan}
     if segs and a.plan not in ("zscan", "zscan_field", "magnet", "rotation"):
         res["segments"] = summarise_static(d, segs, a.nm_px, 5 if a.plan == "drift" else 1)
+    if a.plan == "zstep":
+        res["zstep"] = zstep(d)
+        with open(os.path.join(d, "zstep.json"), "w", encoding="utf-8") as f:
+            json.dump(res, f, indent=1)
+        print(json.dumps(res, indent=1)[:4000])
+        return 0
     if a.plan == "zscan":
         _, zs = build_lut(d, "zscan")
         cals = lut_clusters(d)
