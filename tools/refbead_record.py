@@ -29,7 +29,7 @@ sys.path.insert(0, os.path.join(ROOT, "src"))
 V6 = r"G:\Codes\LabVIEW_Codes\MinLab\zz_LabView VI\AAA_UNIST\2. Tracking\V6_ParallelLoop"
 GATE = os.path.join(V6, "tools", "motor_gate.py")
 FAKE_FRAME = r"G:\m8_replay_frames\f00000.tif"
-HALF = 40                 # crop half size (px): ring radius ~13-22 px plus room to re-centre offline
+HALF = 80                 # crop half size (px): the tracker needs a 144 px sub-image at cross 120 (h = 72) + room
 EDGE = HALF + 8
 
 # ---------------------------------------------------------------- plans (numbers for the owner's approval)
@@ -39,7 +39,8 @@ SCALE_UM = [5, 10, 20, 35]  # single-axis steps for the pixel-scale line
 
 
 def asi(axis, um):
-    return {"do": "gate", "device": "asi", "command": f"R {axis}={round(um * 10)}"}   # ASI unit 0.1 um
+    """A relative ASI step as a list (empty for a zero step); unit 0.1 um."""
+    return [{"do": "gate", "device": "asi", "command": f"R {axis}={round(um * 10)}"}] if round(um * 10) else []
 
 
 def plan(name, exposure_us):
@@ -54,14 +55,14 @@ def plan(name, exposure_us):
         for j in (-1, 0, 1):
             for i in (-1, 0, 1):
                 tx, ty = i * FIELD_UM[0], j * FIELD_UM[1]
-                steps += [asi("X", tx - at[0]), asi("Y", ty - at[1]), {"do": "settle", "s": 2},
+                steps += [*asi("X", tx - at[0]), *asi("Y", ty - at[1]), {"do": "settle", "s": 2},
                           {"do": "snap", "name": f"f_{i}_{j}", "n": 30}]
                 at = (tx, ty)
-        steps += [asi("X", -at[0]), asi("Y", -at[1]), {"do": "settle", "s": 2}]
+        steps += [*asi("X", -at[0]), *asi("Y", -at[1]), {"do": "settle", "s": 2}]
         for axis in ("X", "Y"):
             for um in SCALE_UM:
-                steps += [asi(axis, um), {"do": "settle", "s": 2}, {"do": "snap", "name": f"sc_{axis}{um}", "n": 30},
-                          asi(axis, -um), {"do": "settle", "s": 2}, {"do": "snap", "name": f"sc_{axis}{um}_back", "n": 30}]
+                steps += [*asi(axis, um), {"do": "settle", "s": 2}, {"do": "snap", "name": f"sc_{axis}{um}", "n": 30},
+                          *asi(axis, -um), {"do": "settle", "s": 2}, {"do": "snap", "name": f"sc_{axis}{um}_back", "n": 30}]
         return steps
     if name == "magnet":                      # 3. pattern / z / xy vs magnet position, up then down (hysteresis)
         steps = [cam, {"do": "stream", "name": "ramp"}]
@@ -91,7 +92,31 @@ def plan(name, exposure_us):
     if name == "drift":                       # 6. 30 min at rest: drift, Allan variance, long-run frame loss
         return [{"do": "gate", "device": "pi", "command": "MOV 1 0"}, cam, {"do": "snap", "name": "d_start", "n": 5},
                 {"do": "hold", "name": "drift", "s": 1800}, {"do": "snap", "name": "d_end", "n": 5}]
+    if name == "zscan":                       # 7. LUT stack: current focus +-5 um in 100 nm (1 ASI unit) steps
+        return [cam, {"do": "gate", "device": "pi", "command": "MOV 1 0"}] + zscan("zscan") + [{"do": "stream", "name": None}]
+    if name == "zscan_field":                 # 8. the same z-scan with the field moved to each 3 x 3 position
+        steps, at = [cam, {"do": "gate", "device": "pi", "command": "MOV 1 0"}], (0.0, 0.0)
+        for j in (-1, 0, 1):
+            for i in (-1, 0, 1):
+                tx, ty = i * FIELD_UM[0], j * FIELD_UM[1]
+                steps += [*asi("X", tx - at[0]), *asi("Y", ty - at[1]), {"do": "settle", "s": 2}, {"do": "repick"}]
+                steps += zscan(f"zf_{i}_{j}") + [{"do": "stream", "name": None}]
+                at = (tx, ty)
+        return steps + [*asi("X", -at[0]), *asi("Y", -at[1])]
     raise SystemExit(f"unknown plan {name!r}")
+
+
+def zscan(seg, half_units=50):
+    """Relative focus steps of 1 ASI unit (0.1 um) from -half to +half and back to the start; every slice is marked
+    in events.jsonl (buffer numbers) and holds 0.2 s (30 frames at 150 Hz) after a 0.3 s settle."""
+    steps = [{"do": "stream", "name": seg}, {"do": "gate", "device": "asi", "command": f"R Z={-half_units}"},
+             {"do": "settle", "s": 1}]
+    for k in range(2 * half_units + 1):
+        if k:
+            steps.append({"do": "gate", "device": "asi", "command": "R Z=1"})
+        steps += [{"do": "settle", "s": 0.3}, {"do": "mark", "name": f"{seg}_z{k - half_units}_start"},
+                  {"do": "wait", "s": 0.2}, {"do": "mark", "name": f"{seg}_z{k - half_units}_end"}]
+    return steps + [{"do": "gate", "device": "asi", "command": f"R Z={-half_units}"}, {"do": "settle", "s": 1}]
 
 
 # ---------------------------------------------------------------- camera stand-in for --dry
@@ -171,6 +196,8 @@ class Recorder(threading.Thread):
                 self.f, self.idx = None, []
             self.seg = name
             if name:
+                dump({"beads": [{"y": y, "x": x} for y, x in self.yx], "half": HALF},
+                     os.path.join(self.out, f"{name}.beads.json"))
                 self.f = open(os.path.join(self.out, f"{name}.crops.u8"), "wb", buffering=8 << 20)  # noqa: SIM115
 
     def snap(self, name, n, timeout_s=30):
@@ -207,17 +234,30 @@ def dump(d, path):
         json.dump(d, f, indent=1)
 
 
-def gate(step, dry, log):
-    cmd = [sys.executable, "-u", GATE, "--device", step["device"], "--command", step["command"],
+def asi_start():
+    """ASI X/Y start position (0.1 um) that the open motor session recorded (read-only file of the V6 gate)."""
+    with open(os.path.join(V6, "tools", "bench", "motor_session.json"), encoding="utf-8-sig") as f:
+        c = json.load(f)["asi_window"]["center_units"]
+    return {"X": int(c["X"]), "Y": int(c["Y"])}
+
+
+def gate(step, dry, log, asi_pos=None):
+    command = step["command"]
+    if step["device"] == "asi" and command[:4] in ("R X=", "R Y="):
+        # the gate transmits only absolute X/Y moves: a plan step 'R X=<d>' becomes 'M X=<start + sum of d>'
+        axis = command[2]
+        asi_pos[axis] += int(command[4:])
+        command = f"M {axis}={asi_pos[axis]}"
+    cmd = [sys.executable, "-u", GATE, "--device", step["device"], "--command", command,
            "--dry-run" if dry else "--execute"]
     if step["device"] == "pi" and step["command"].startswith("MOV") and not dry:
         cmd.append("--fastpoll")                   # waits for 'RESULT: reached' (V6 card pistall2)
     t0 = time.time()
     p = subprocess.run(cmd, capture_output=True, text=True, timeout=120, check=False)
-    log({"gate": step["command"], "device": step["device"], "rc": p.returncode, "t0": t0, "t1": time.time(),
+    log({"gate": command, "plan_step": step["command"], "device": step["device"], "rc": p.returncode, "t0": t0, "t1": time.time(),
          "out": p.stdout[-2000:], "err": p.stderr[-1000:]})
     if p.returncode != 0:
-        raise RuntimeError(f"motor_gate refused or failed (rc {p.returncode}) on {step['command']!r}")
+        raise RuntimeError(f"motor_gate refused or failed (rc {p.returncode}) on {command!r}")
 
 
 def run(args):
@@ -228,7 +268,7 @@ def run(args):
     steps = plan(args.plan, args.exposure_us)
     ev = open(os.path.join(out, "events.jsonl"), "w", encoding="utf-8")  # noqa: SIM115 - closed in finally
     cam = FakeCamera() if args.dry else __import__("mtpy.devices.imaqdx", fromlist=["x"]).ImaqdxCamera()
-    rec, meta = None, {"plan": args.plan, "result": "failed"}
+    rec, meta, asi_pos = None, {"plan": args.plan, "result": "failed"}, None
     k = 0.05 if args.dry else 1.0                   # --dry runs the waits 20x faster
 
     def log(d):
@@ -266,7 +306,10 @@ def run(args):
                 if seg:
                     rec.stream(seg + f"_s{i}")
             elif s["do"] == "gate":
-                gate(s, args.dry, log)
+                if s["device"] == "asi" and asi_pos is None:
+                    asi_pos = {"X": 0, "Y": 0} if args.dry else asi_start()
+                    meta["asi_start_units"] = dict(asi_pos)
+                gate(s, args.dry, log, asi_pos)
             elif s["do"] in ("settle", "wait"):
                 time.sleep(s["s"] * k)
             elif s["do"] == "stream":
@@ -279,6 +322,20 @@ def run(args):
                 rec.snap(s["name"], s["n"])
             elif s["do"] == "mark":
                 pass
+            elif s["do"] == "repick":               # the field moved: find the beads again, new crops
+                rec.stream(None)
+                rec.running = False
+                rec.join(10)
+                cam.stop()
+                cam.start()
+                _, _, img = cam.frame(0)
+                beads, _ = find_beads(img)
+                meta.setdefault("repicks", []).append({"step": i, "beads": beads})
+                log({"repick": len(beads)})
+                if not beads:
+                    raise RuntimeError("repick: no reference bead found")
+                rec = Recorder(cam, beads, out)
+                rec.start()
         meta["result"] = "ok"
         print(f"RESULT ok: {len(steps)} steps, {len(beads)} beads, gaps {rec.gaps if rec else None} -> {out}", flush=True)
         return 0
@@ -316,7 +373,7 @@ def snap(args):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("cmd", choices=("show", "run", "snap"))
-    ap.add_argument("--plan", choices=("static", "field", "magnet", "rotation", "exposure", "drift"))
+    ap.add_argument("--plan", choices=("static", "field", "magnet", "rotation", "exposure", "drift", "zscan", "zscan_field"))
     ap.add_argument("--out", default=r"G:\l2s_rig_data\2026-10-26_refbead")
     ap.add_argument("--exposure-us", type=float, default=1909.0)   # = the .icd auto value; 3000 would saturate (max grey 200 at 1909)
     ap.add_argument("--beads", help="beads.json from `snap` (default: find them in the first frame)")
