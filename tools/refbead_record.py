@@ -336,7 +336,7 @@ def run(args):
         _, _, img = cam.frame(0)
         beads, _ = find_beads(img) if not args.beads else (load(args.beads)["beads"], None)
         cam.stop()
-        if not beads:
+        if not beads and args.plan not in ("search", "zfine_at"):   # these two pick (or need) no bead at the start
             raise RuntimeError("no reference bead found")
         meta.update({"plan": args.plan, "steps": steps, "beads": beads, "half": HALF, "dry": args.dry,
                 "camera_open": cam.readback(), "started": time.strftime("%Y-%m-%d %H:%M:%S")})
