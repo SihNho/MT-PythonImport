@@ -86,6 +86,12 @@ def plan(name, exposure_us):
         for us in (500, 1000, 1500, 1909):
             steps += [{"do": "camera", "rate_hz": 150.0, "exposure_us": us}, {"do": "hold", "name": f"e{us}", "s": 30}]
         return steps
+    if name == "exposure2":                   # 5b. shuffled and repeated, down to 100 us (owner 2026-10-27)
+        steps = [{"do": "gate", "device": "pi", "command": "MOV 1 0"},
+                 {"do": "camera", "rate_hz": 150.0, "exposure_us": 1909}, {"do": "wait", "s": 30}]   # settle first
+        for k, us in enumerate((1909, 200, 1000, 100, 500, 1909, 500, 100, 1000, 200)):
+            steps += [{"do": "camera", "rate_hz": 150.0, "exposure_us": us}, {"do": "hold", "name": f"x{k}_e{us}", "s": 20}]
+        return steps
     if name == "drift":                       # 6. 30 min at rest: drift, Allan variance, long-run frame loss
         return [{"do": "gate", "device": "pi", "command": "MOV 1 0"}, cam, {"do": "snap", "name": "d_start", "n": 5},
                 {"do": "hold", "name": "drift", "s": 1800}, {"do": "snap", "name": "d_end", "n": 5}]
@@ -100,7 +106,29 @@ def plan(name, exposure_us):
                 steps += zscan(f"zf_{i}_{j}") + [{"do": "stream", "name": None}]
                 at = (tx, ty)
         return steps + [*asi("X", -at[0]), *asi("Y", -at[1])]
+    if name in ("zfine50", "zfine20", "exposure2"):         # 9. sub-100 nm focus steps (decimal ASI units), up then back down
+        step, half = (0.5, 50) if name == "zfine50" else (0.2, 20)   # 50 nm over +-5 um, 20 nm over +-2 um
+        return ([cam, {"do": "gate", "device": "pi", "command": "MOV 1 0"}] + zscan_fine(name, step, half)
+                + [{"do": "stream", "name": None}])
     raise SystemExit(f"unknown plan {name!r}")
+
+
+def zscan_fine(seg, step_units, half_units):
+    """Relative focus steps of `step_units` (0.1 um units, may be decimal) from -half to +half and back to -half,
+    then to the start. Every slice is marked with its commanded z (units) and direction; the way back cancels a
+    linear focus drift when the two passes are averaged."""
+    n = round(2 * half_units / step_units)
+    st = f"{step_units:g}"
+    steps = [{"do": "stream", "name": seg}, {"do": "gate", "device": "asi", "command": f"R Z={-half_units}"},
+             {"do": "settle", "s": 1}]
+    for way, sign in (("up", 1), ("dn", -1)):
+        for i in range(n + 1):
+            if i:
+                steps.append({"do": "gate", "device": "asi", "command": f"R Z={st if sign > 0 else '-' + st}"})
+            z = round(-half_units + (i if sign > 0 else n - i) * step_units, 3)
+            steps += [{"do": "settle", "s": 0.3}, {"do": "mark", "name": f"{seg}_{way}{i}_start", "z_units": z},
+                      {"do": "wait", "s": 0.2}, {"do": "mark", "name": f"{seg}_{way}{i}_end", "z_units": z}]
+    return steps + [{"do": "gate", "device": "asi", "command": f"R Z={half_units}"}, {"do": "settle", "s": 1}]
 
 
 def zscan(seg, half_units=50):
@@ -232,10 +260,15 @@ def dump(d, path):
 
 
 def asi_start():
-    """ASI X/Y start position (0.1 um) that the open motor session recorded (read-only file of the V6 gate)."""
+    """ASI X/Y (and Z, when a Z window is open) start position in 0.1 um that the open motor session recorded
+    (read-only file of the V6 gate)."""
     with open(os.path.join(V6, "tools", "bench", "motor_session.json"), encoding="utf-8-sig") as f:
-        c = json.load(f)["asi_window"]["center_units"]
-    return {"X": int(c["X"]), "Y": int(c["Y"])}
+        sess = json.load(f)
+    c = sess["asi_window"]["center_units"]
+    out = {"X": int(c["X"]), "Y": int(c["Y"])}
+    if (sess.get("asi_z_window") or {}).get("start_units") is not None:
+        out["Z"] = float(sess["asi_z_window"]["start_units"])
+    return out
 
 
 def gate(step, dry, log, asi_pos=None):
@@ -245,6 +278,10 @@ def gate(step, dry, log, asi_pos=None):
         axis = command[2]
         asi_pos[axis] += int(command[4:])
         command = f"M {axis}={asi_pos[axis]}"
+    elif step["device"] == "asi" and command[:4] == "R Z=" and "." in command and "Z" in asi_pos:
+        # decimal focus steps go absolute from the session's start Z, so no fresh read can round them away
+        asi_pos["Z"] = round(asi_pos["Z"] + float(command[4:]), 3)
+        command = f"M Z={asi_pos['Z']:g}"
     cmd = [sys.executable, "-u", GATE, "--device", step["device"], "--command", command,
            "--dry-run" if dry else "--execute"]
     if step["device"] == "pi" and step["command"].startswith("MOV") and not dry:
@@ -370,7 +407,7 @@ def snap(args):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("cmd", choices=("show", "run", "snap"))
-    ap.add_argument("--plan", choices=("static", "field", "magnet", "rotation", "exposure", "drift", "zscan", "zscan_field"))
+    ap.add_argument("--plan", choices=("static", "field", "magnet", "rotation", "exposure", "drift", "zscan", "zscan_field", "zfine50", "zfine20", "exposure2"))
     ap.add_argument("--out", default=r"G:\l2s_rig_data\2026-10-26_refbead")
     ap.add_argument("--exposure-us", type=float, default=1909.0)   # = the .icd auto value; 3000 would saturate (max grey 200 at 1909)
     ap.add_argument("--beads", help="beads.json from `snap` (default: find them in the first frame)")
