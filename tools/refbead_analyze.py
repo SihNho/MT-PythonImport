@@ -71,19 +71,21 @@ def noise(xy, nm_px=NM_PX):
     det = xy - np.polyval(np.polyfit(t, xy.reshape(len(t), -1), 1), t[:, None]).reshape(xy.shape) \
         if len(t) > 2 else xy - xy.mean(0)
     sd = det.std(0) * nm_px
-    nb = xy.shape[1]
+    fixed = np.hypot(*sd.T) <= 3 * np.median(np.hypot(*sd.T))   # loose beads (Brownian) leave the statistics
+    det, nb = det[:, fixed], int(fixed.sum())
     diff = [np.std(det[:, a] - det[:, b], axis=0) / np.sqrt(2) * nm_px for a in range(nb) for b in range(a + 1, nb)]
     diff = np.array(diff)
     mean_ref = det.mean(1)                                    # average of all reference beads = the common mode
     resid = (det - mean_ref[:, None]).std(0) * nm_px
     return {"sd_x_nm": sd[:, 0].round(2).tolist(), "sd_y_nm": sd[:, 1].round(2).tolist(),
-            "ratio_y_x_median": float(np.median(sd[:, 1] / sd[:, 0])),
+            "fixed": fixed.tolist(), "ratio_y_x_median": float(np.median(sd[fixed, 1] / sd[fixed, 0])),
             "diff_x_nm_median": float(np.median(diff[:, 0])) if len(diff) else None,
             "diff_y_nm_median": float(np.median(diff[:, 1])) if len(diff) else None,
             "common_x_nm": float(mean_ref[:, 0].std() * nm_px), "common_y_nm": float(mean_ref[:, 1].std() * nm_px),
             "resid_vs_mean_x_nm_median": float(np.median(resid[:, 0])),
             "resid_vs_mean_y_nm_median": float(np.median(resid[:, 1])),
-            "drift_x_nm": float(np.ptp(xy[:, :, 0].mean(1)) * nm_px), "drift_y_nm": float(np.ptp(xy[:, :, 1].mean(1)) * nm_px)}
+            "drift_x_nm": float(np.ptp(xy[:, fixed, 0].mean(1)) * nm_px),
+            "drift_y_nm": float(np.ptp(xy[:, fixed, 1].mean(1)) * nm_px)}
 
 
 def allan(x, rate, taus=(0.01, 0.03, 0.1, 0.3, 1, 3, 10, 30, 100, 300)):
@@ -145,7 +147,7 @@ def stretch(img, x, y, r_lo=15, r_hi=55, n_th=180):
     return float(amp.mean() / mod), float(np.degrees(np.arctan2(s2[k], c2[k])) / 2), (amp / mod).round(4).tolist()
 
 
-def summarise_static(d, segs):
+def summarise_static(d, segs, nm_px=NM_PX):
     res = {}
     for seg in segs:
         crops, idx, _ = load(d, seg)
@@ -159,7 +161,7 @@ def summarise_static(d, segs):
         if not ok.any():
             res[seg] = {"frames": len(idx), "error": "no bead tracked"}
             continue
-        res[seg] = {"frames": len(idx), "rate_hz": round(rate, 3), "gaps": gaps, "cross": cross, **noise(xy),
+        res[seg] = {"frames": len(idx), "rate_hz": round(rate, 3), "gaps": gaps, "cross": cross, **noise(xy, nm_px),
                     "beads_used": np.flatnonzero(ok).tolist(), "mean_grey": float(crops[::50].mean())}
     return res
 
@@ -354,6 +356,44 @@ def holds(d, seg, hold_s, step, cals, nm_px):
     return out
 
 
+def rotation(d, cals, nm_px, step=2):
+    """Per magnet position: fixed-bead x, y, z during the rotor moves vs at rest, and the 1st / 2nd harmonic of the
+    common (bead-mean) signal in the rotor angle. The angle is taken linear in time over each move (the sender's
+    t0..t1, which includes the port open and read-backs: shortcut, upgrade with the rotor POS samples if needed)."""
+    with open(os.path.join(d, "events.jsonl"), encoding="utf-8") as f:
+        ev = [json.loads(line) for line in f]
+    moves = [(e["t0"], e["t1"], int(e["gate"].split()[1])) for e in ev if e.get("device") == "rotor" and "rc" in e]
+    out = {}
+    for seg in sorted(f[:-9] for f in os.listdir(d) if f.endswith(".crops.u8")):
+        crops, idx, _ = load(d, seg)
+        sel = np.arange(0, len(crops), step)
+        xy, _ = xy_series(crops[sel], step=1)
+        z = z_series(crops[sel], cals, step=1)
+        t = idx[sel, 1]
+        sig = np.concatenate([xy * nm_px, z[:, :, None] * 1000], 2)       # (frames, beads, 3) nm
+        good = [b for b in range(sig.shape[1]) if b not in (3, 5)]
+        cm = np.nanmean(sig[:, good], 1)
+        ang = np.full(len(t), np.nan)
+        moving = np.zeros(len(t), bool)
+        acc = 0.0
+        for t0, t1, pulses in moves:
+            m = (t >= t0) & (t <= t1)
+            if m.any():
+                moving |= m
+                ang[m] = acc + (t[m] - t0) / (t1 - t0) * pulses * 0.72
+            acc += pulses * 0.72
+        r = {"frames": len(t), "rest_sd_nm": np.nanstd(cm[~moving], 0).round(2).tolist(),
+             "moving_sd_nm": np.nanstd(cm[moving], 0).round(2).tolist() if moving.any() else None}
+        if moving.sum() > 20:
+            th = np.radians(ang[moving])
+            X = np.vstack([np.ones_like(th), np.cos(th), np.sin(th), np.cos(2 * th), np.sin(2 * th)]).T
+            for k, nm in enumerate(("x", "y", "z")):
+                c = np.linalg.lstsq(X, cm[moving, k] - np.nanmean(cm[moving, k]), rcond=None)[0]
+                r[f"h1_{nm}_nm"], r[f"h2_{nm}_nm"] = round(float(np.hypot(c[1], c[2])), 2), round(float(np.hypot(c[3], c[4])), 2)
+        out[seg] = r
+    return out
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("run")
@@ -364,7 +404,7 @@ def main():
     segs = sorted(f[:-9] for f in os.listdir(d) if f.endswith(".crops.u8"))
     res = {"plan": a.plan}
     if segs and a.plan not in ("zscan", "zscan_field", "magnet", "rotation"):
-        res["segments"] = summarise_static(d, segs)
+        res["segments"] = summarise_static(d, segs, a.nm_px)
     if a.plan == "zscan":
         _, zs = build_lut(d, "zscan")
         cals = lut_clusters(d)
@@ -390,13 +430,18 @@ def main():
     if a.plan == "magnet":
         cals = lut_clusters(os.path.join(a.run, "zscan"))
         res["holds"] = holds(d, "ramp", 20, 5, cals, a.nm_px)
+    if a.plan == "rotation":
+        res["rotation"] = rotation(d, lut_clusters(os.path.join(a.run, "zscan")), a.nm_px)
     if a.plan == "field":
         res.update(field(d))
     if a.plan == "drift":
         xy = np.load(os.path.join(d, "drift.xy.npy"))
         rate = res["segments"]["drift"]["rate_hz"]
-        res["allan_x_nm"] = allan(xy[:, :, 0].mean(1) * NM_PX, rate)
-        res["allan_diff_x_nm"] = allan((xy[:, 0, 0] - xy[:, 1, 0]) / np.sqrt(2) * NM_PX, rate)
+        fx = np.array(res["segments"]["drift"]["fixed"])
+        ok = np.array(res["segments"]["drift"]["beads_used"])[fx]
+        for k, nm in enumerate(("x", "y")):
+            res[f"allan_common_{nm}_nm"] = allan(np.nanmean(xy[:, ok, k], 1) * a.nm_px, rate)
+            res[f"allan_diff_{nm}_nm"] = allan((xy[:, ok[0], k] - xy[:, ok[1], k]) / np.sqrt(2) * a.nm_px, rate)
     with open(os.path.join(d, "analysis.json"), "w", encoding="utf-8") as f:
         json.dump(res, f, indent=1)
     print(json.dumps(res, indent=1)[:3000])
