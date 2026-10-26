@@ -46,19 +46,27 @@ def cross_for(half):
     return c
 
 
-def xy_series(crops, step=1):
-    """(frames, beads, 2) positions in crop pixels by the Croquette stage, starting each bead at the crop centre."""
+def xy_series(crops, step=1, cross=None, follow=False):
+    """(frames, beads, 2) positions in crop pixels by the Croquette stage. Each bead starts at the crop centre; with
+    `follow` every frame starts from the previous frame's position (as the LabVIEW tracker does), so a drift up to
+    half - h px stays trackable. A bead whose window would leave the crop is nan from then on."""
     half = crops.shape[2] // 2
-    cross = cross_for(half)
+    cross = cross or cross_for(half)
     h = track.lv_round(cross * 0.6)
     win_rs, win_h = calib.windows(cross)
     out = np.full((len(range(0, len(crops), step)), crops.shape[1], 2), np.nan)
+    start = np.full((crops.shape[1], 2), half)
     for k, f in enumerate(range(0, len(crops), step)):
         for b in range(crops.shape[1]):
-            sub = crops[f, b, half - h:half + h, half - h:half + h]
+            cx, cy = (track.lv_round(v) for v in start[b])
+            if not (h <= cx <= 2 * half - h and h <= cy <= 2 * half - h):
+                continue
+            sub = crops[f, b, cy - h:cy + h, cx - h:cx + h]
             try:
-                x, y, _, _ = track.xy_croquette(sub, h, half, half, cross, win_rs, win_h, track.DEFAULT)
+                x, y, _, _ = track.xy_croquette(sub, h, cx, cy, cross, win_rs, win_h, track.DEFAULT)
                 out[k, b] = x, y
+                if follow:
+                    start[b] = x, y
             except (TypeError, ValueError, IndexError, np.linalg.LinAlgError):   # no bead pattern (parabola off the edge)
                 pass
     return out, cross
@@ -147,16 +155,16 @@ def stretch(img, x, y, r_lo=15, r_hi=55, n_th=180):
     return float(amp.mean() / mod), float(np.degrees(np.arctan2(s2[k], c2[k])) / 2), (amp / mod).round(4).tolist()
 
 
-def summarise_static(d, segs, nm_px=NM_PX):
+def summarise_static(d, segs, nm_px=NM_PX, step=1):
     res = {}
     for seg in segs:
         crops, idx, _ = load(d, seg)
-        xy, cross = xy_series(crops)
+        xy, cross = xy_series(crops, step, *((60, True) if step > 1 else (None, False)))   # long run: follow the drift
         ok = np.isnan(xy).any(2).mean(0) < 0.01                 # beads tracked in >= 99 % of the frames
         np.save(os.path.join(d, f"{seg}.xy.npy"), xy)
         xy = xy[:, ok]
         xy = np.where(np.isnan(xy), np.nanmedian(xy, 0), xy)
-        rate = (len(idx) - 1) / (idx[-1, 1] - idx[0, 1])
+        rate = (len(idx) - 1) / (idx[-1, 1] - idx[0, 1]) / step   # rate of the analysed series
         gaps = int(np.sum(np.diff(idx[:, 0]) - 1))
         if not ok.any():
             res[seg] = {"frames": len(idx), "error": "no bead tracked"}
@@ -462,7 +470,7 @@ def main():
     segs = sorted(f[:-9] for f in os.listdir(d) if f.endswith(".crops.u8"))
     res = {"plan": a.plan}
     if segs and a.plan not in ("zscan", "zscan_field", "magnet", "rotation"):
-        res["segments"] = summarise_static(d, segs, a.nm_px)
+        res["segments"] = summarise_static(d, segs, a.nm_px, 5 if a.plan == "drift" else 1)
     if a.plan == "zscan":
         _, zs = build_lut(d, "zscan")
         cals = lut_clusters(d)
@@ -495,6 +503,20 @@ def main():
     if a.plan == "field":
         res.update(field(d))
     if a.plan == "drift":
+        crops, idx, _ = load(d, "drift")
+        sel = np.arange(0, len(crops), 150)                  # one frame per second
+        z = z_series(crops[sel], lut_clusters(os.path.join(a.run, "zscan")))
+        fx = np.array(res["segments"]["drift"]["fixed"])
+        ok = np.array(res["segments"]["drift"]["beads_used"])[fx]
+        xy5 = np.load(os.path.join(d, "drift.xy.npy"))[sel // 5]
+        off = np.hypot(*(xy5 - xy5[:1]).transpose(2, 0, 1))      # px from the start; z needs the cross-120 window
+        z[off > 6] = np.nan                                       # (h = 72) inside the 160 px crop: 8 px of room
+        res["z_valid_minutes"] = float(np.sum(~np.isnan(z[:, ok]).all(1)) / 60)
+        zc = np.nanmean(z[:, ok], 1) * 1000
+        good_t = ~np.isnan(zc)
+        res["z_drift_nm_per_min"] = float(np.polyfit((idx[sel, 1] - idx[0, 1])[good_t] / 60, zc[good_t], 1)[0])
+        res["z_range_nm"] = float(np.nanmax(zc) - np.nanmin(zc))
+        np.save(os.path.join(d, "drift.z_1hz.npy"), z)
         xy = np.load(os.path.join(d, "drift.xy.npy"))
         rate = res["segments"]["drift"]["rate_hz"]
         fx = np.array(res["segments"]["drift"]["fixed"])
