@@ -394,6 +394,64 @@ def rotation(d, cals, nm_px, step=2):
     return out
 
 
+# image displacement per um of stage move, measured by the field plan (px / um): X move, Y move
+PX_PER_UM_X, PX_PER_UM_Y = np.array([4.883, 0.194]), np.array([0.202, -4.983])
+
+
+def zscan_field(d, grid_um=(35.0, 28.0), step=3):
+    """Does the field position bias z? For every bead seen at the centre and at another 3 x 3 position (matched by the
+    measured stage-to-image map, 15 px), track that position's z-scan with (a) its own LUT and (b) the bead's LUT made
+    at the centre. Returns the rms deviation from the commanded z (offset removed) in nm for both, per position."""
+    seg_of = {(i, j): f"zf_{i}_{j}" for i in (-1, 0, 1) for j in (-1, 0, 1)}
+    luts, beads = {}, {}
+    for k, seg in seg_of.items():
+        build_lut(d, seg)
+        z = np.load(os.path.join(d, f"{seg}.lut.npz"))
+        luts[k] = [None if np.isnan(st).any() else calib.prep_bead(st, int(z["low"]), int(z["high"]),
+                   int(z["forget"]), float(z["z_step_um"]), 120) for st in z["stack"]]
+        with open(os.path.join(d, f"{seg}.beads.json"), encoding="utf-8") as f:
+            beads[k] = np.array([(b["x"], b["y"]) for b in json.load(f)["beads"]], float)
+    mk = marks(d)
+    out = {}
+    for (i, j), seg in seg_of.items():
+        if (i, j) == (0, 0):
+            continue
+        shift = i * grid_um[0] * PX_PER_UM_X + j * grid_um[1] * PX_PER_UM_Y
+        crops, idx, _ = load(d, seg)
+        half_crop = crops.shape[2] // 2
+        rows = []
+        for bc, pc in enumerate(beads[(0, 0)]):
+            dist = np.hypot(*(beads[(i, j)] - (pc + shift)).T)
+            if not len(dist) or dist.min() > 15 or luts[(0, 0)][bc] is None:
+                continue
+            bp = int(np.argmin(dist))
+            if luts[(i, j)][bp] is None:
+                continue
+            cmd, own, cen = [], [], []
+            for kz in range(-50, 51, 2):
+                b0, b1 = mk[f"{seg}_z{kz}_start"], mk[f"{seg}_z{kz}_end"]
+                for f in np.flatnonzero((idx[:, 0] > b0) & (idx[:, 0] <= b1))[::step]:
+                    try:
+                        _, _, rad = bead_profile(crops[f, bp], half_crop)
+                        zo = track.z_phase(rad, 60, luts[(i, j)][bp], track.DEFAULT)[0] * 0.1
+                        zc = track.z_phase(rad, 60, luts[(0, 0)][bc], track.DEFAULT)[0] * 0.1
+                    except (TypeError, ValueError, IndexError, np.linalg.LinAlgError):
+                        continue
+                    cmd.append(kz * 0.1)
+                    own.append(zo)
+                    cen.append(zc)
+            cmd, own, cen = map(np.array, (cmd, own, cen))
+            m = np.abs(cmd) <= 4.0                          # leave the 1 um ends, where the LUT itself is weak
+            dev = {nm: float(np.sqrt(np.mean(((v - cmd) - np.mean(v[m] - cmd[m]))[m] ** 2)) * 1000)
+                   for nm, v in (("own", own), ("centre", cen))}
+            slope = float(np.polyfit(cmd[m], cen[m], 1)[0])
+            rows.append({"bead_centre": bc, "bead_here": bp, "match_px": round(float(dist.min()), 1),
+                         "rms_own_nm": round(dev["own"], 1), "rms_centre_lut_nm": round(dev["centre"], 1),
+                         "slope_centre_lut": round(slope, 4)})
+        out[seg] = rows
+    return out
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("run")
@@ -432,6 +490,8 @@ def main():
         res["holds"] = holds(d, "ramp", 20, 5, cals, a.nm_px)
     if a.plan == "rotation":
         res["rotation"] = rotation(d, lut_clusters(os.path.join(a.run, "zscan")), a.nm_px)
+    if a.plan == "zscan_field":
+        res["zscan_field"] = zscan_field(d)
     if a.plan == "field":
         res.update(field(d))
     if a.plan == "drift":
