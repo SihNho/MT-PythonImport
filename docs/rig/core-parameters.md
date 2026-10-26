@@ -54,9 +54,10 @@ profile / preset / session); **Changed by** = who may change it; **Verified** = 
 |---|---|---|---|---|---|
 | Camera | JAI SP-5000M-USB, 1280 x 1024 (binning 2); presets "Experiment 90 Hz", "Force calibration (max fps)" | camera preset | user (presets) | - | rig-facts.md; ui-requirements U-camera presets |
 | Objective | MT 50x oil (nucleosome project); MT-TIRF 60x / 1.50 | rig preset | owner | - | rig-facts.md |
-| Pixel size | nominal ~200 nm/px at 50x (not measured); `.cal` 84 nm/px is stale (100x) and unused by LabVIEW | rig preset | measurement | **open** | rig-facts.md |
+| Pixel size | **about 203 nm/px at 50x, measured** (X 204.6 / Y 200.5 at 35 um; camera rotated about 2.3 deg against the stage); `.cal` 84 nm/px is stale (100x) and unused by LabVIEW | rig preset | measurement | 2026-10-26, ASI single-axis moves vs bead displacement | [results/2026-10-26-refbead.md](../results/2026-10-26-refbead.md) section 1 |
 | Focal-shift factor | 0.88 (source not recorded) | rig preset, applied in analysis | owner | open | rig-facts.md |
 | z calibration | 60 slices x 100 nm | calibration | user | - | rig-facts.md |
+| **z LUT band-pass and forget radius (50x)** | **initial values LOW 0 / HIGH 40 / forget 10 px** (LabVIEW panel so far 0 / 25 / 20); the user still picks them per bead, as now | calibration settings, stored per bead in the `.cal`; `mtpy.calib.DEFAULT_*` | user (per calibration) | offline 2026-10-27: z noise 7.25 -> 4.64 nm (fixed beads, 50x) | decision 0022; results 2026-10-26-refbead.md section 3b |
 
 ## Open
 - Machine-readable form and start-up comparison with the devices (0020 item 2) - not built yet.

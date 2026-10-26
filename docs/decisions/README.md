@@ -25,6 +25,7 @@ Each file records one decision: what was decided, why, and what follows from it.
 | [0019](0019-magnet-stall-returns-to-zero.md) | Magnet stall (controller error -1024): return the magnet to 0 mm at once - an extinguisher, not a working feature | 2026-10-25 |
 | [0020](0020-rig-core-parameters-register.md) | Stall threshold stays 1.0 mm; rig core parameters in one register, checked and controlled together by the program later | 2026-10-26 |
 | [0021](0021-camera-sdk-and-open-limits.md) | Camera through NI-IMAQdx first, SDK swappable later; rotor speed limit 150 (`SPD`); focus = mechanical limits; laser later; MT before MT-TIRF | 2026-10-26 |
+| [0022](0022-z-lut-initial-band-and-forget.md) | Initial z-LUT settings at 50x LOW 0 / HIGH 40 / forget 10 (forget removes the inner radii); no further edits to the V6 LabVIEW code | 2026-10-27 |
 
 The behavior specification of the LabVIEW program is in [../spec/README.md](../spec/README.md) and the device manuals are
 in [../manuals/README.md](../manuals/README.md).

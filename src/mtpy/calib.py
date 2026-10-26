@@ -6,6 +6,10 @@ frequency bins of the mirrored profile and the forget radius in pixels. Both can
 """
 import numpy as np
 
+# Initial values offered for a new calibration at 50x (decision 0022): forget removes the INNER radii, and at
+# 203 nm / px the first bright ring sits at 15-16 px, so forget 10 keeps it. The user still picks them per bead.
+DEFAULT_LOW, DEFAULT_HIGH, DEFAULT_FORGET = 0, 40, 10
+
 
 def windows(cross):
     """`make both cosine bandpass.vi`: the real-space cosine window (XY profiles) and the Hilbert band-pass (XY spectra)."""
