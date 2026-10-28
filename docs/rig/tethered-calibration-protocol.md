@@ -64,8 +64,8 @@ cd G:/Codes/LabVIEW2Scr && .venv/Scripts/python.exe tools/refbead_params.py rest
 ```
 3. Methods (current / QI / polar3 / spline / phasor) on the same frames: `tools/track_bench.py` with `ZSCAN` and
    `BEADS` pointed at the tether run (a `--run` option is added when the data exists).
-4. Force from the clamp fluctuations (x variance, 203 nm / px) against the equation's value: a check of the force
-   scale with the measured pixel size.
+4. The force is the equation's value for the magnet position (`mtpy.forcecal`, M-270 v3), not a number derived
+   from the extension or the fluctuations (owner 2026-10-29); the extension is only recorded as measured.
 
 ## Open until the data exists
 - Whether the bead pick rules hold for tethered beads at the clamp (ring contrast may differ).
