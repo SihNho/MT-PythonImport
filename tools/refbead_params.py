@@ -218,8 +218,46 @@ def sweep_run(run, seg, beads, zlim=4.0, half_test=True):
     return res
 
 
+def rest_noise(run, rest_seg, lut_seg, beads, ref, low=0, high=40, forget=10, cross=120, step=1):
+    """z noise of each bead in a rest segment (bead at the clamp) with the LUT built from `lut_seg` (any z-scan of the
+    same run: same or other magnet position / exposure). Returns per bead the std of z - z_ref (nm) at full rate
+    and after 1 s averaging, so a measurement at one exposure / force can be scored against LUTs taken at others
+    (owner 2026-10-28: the exposure must be the same in calibration and measurement; does the calibration force
+    change the noise at the measurement force?)."""
+    path = os.path.join(run, f"{lut_seg}.prof{cross}.npz")
+    if not os.path.exists(path):
+        crops, sl = slices(run, lut_seg)
+        fr = np.concatenate([x[2] for x in sl])
+        np.savez(path, prof=profiles(crops, fr, beads, cross), frames=fr, beads=beads, slice_name=[x[0] for x in sl],
+                 slice_z=[x[1] for x in sl], slice_n=[len(x[2]) for x in sl])
+    cals = build(load_cache(run, lut_seg, cross), beads, low, high, forget, cross)
+    if cals is None:
+        return None
+    crops, idx, _ = A.load(run, rest_seg)
+    fr = np.arange(0, len(crops), step)
+    prof = profiles(crops, fr, beads, cross)
+    z = np.array([[track_z(prof[f, b], cals[b][0], cals[b][1], cross) for b in range(len(beads))]
+                  for f in range(len(fr))])
+    rate = (len(idx) - 1) / (idx[-1, 1] - idx[0, 1]) / step
+    j = beads.index(ref)
+    d = (z - z[:, [j]]) * 1000
+    n1 = round(rate)
+    out = {}
+    for b, col in zip(beads, d.T):
+        if b == ref:
+            continue
+        col = col[np.isfinite(col)]
+        avg = col[:len(col) // n1 * n1].reshape(-1, n1).mean(1) if len(col) >= 2 * n1 else col
+        out[str(b)] = {"sd_nm": round(float(col.std()), 2), "sd_1s_nm": round(float(avg.std()), 2),
+                       "mean_um": round(float(np.nanmean(z[:, beads.index(b)])), 3)}
+    return {"rest": rest_seg, "lut": lut_seg, "rate_hz": round(rate, 2), "beads": out}
+
+
 if __name__ == "__main__":
-    if sys.argv[1] == "sweep-run":              # py tools/refbead_params.py sweep-run <run dir> <segment> <beads 0,3,5>
+    if sys.argv[1] == "rest-noise":             # py tools/refbead_params.py rest-noise <run> <rest seg> <lut seg> <beads> <ref>
+        print(json.dumps(rest_noise(sys.argv[2], sys.argv[3], sys.argv[4], [int(v) for v in sys.argv[5].split(",")],
+                                    int(sys.argv[6])), indent=1))
+    elif sys.argv[1] == "sweep-run":              # py tools/refbead_params.py sweep-run <run dir> <segment> <beads 0,3,5>
         sweep_run(sys.argv[2], sys.argv[3], [int(v) for v in sys.argv[4].split(",")])
     else:
         {"cache": cache, "sweep": sweep}[sys.argv[1]]()

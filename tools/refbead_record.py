@@ -130,18 +130,22 @@ def plan(name, exposure_us):
         return steps + [*asi("X", -dx), *asi("Y", -dy)]
     if name == "tether":                      # 12. tethered beads under force clamp (owner 2026-10-28). HIGH force
         # first, low force last ("high-force에서 low-force로 내려가는 걸 추천"): a bead left near the surface at low
-        # force may bind non-specifically, and such a trace is cut away more easily when it comes at the end. So the
-        # magnet goes to the clamp once, every exposure is recorded there (20 s at rest for the fluctuations, a
-        # 100 nm z-scan with 0.5 s per slice, a 50 nm scan), and only at the end the magnet returns to 0 mm, with
-        # a 10 s rest that shows which beads respond to the force (= tethered).
-        steps = [{"do": "camera", "rate_hz": 150.0, "exposure_us": TETHER_EXPOSURES_US[0]},
-                 {"do": "gate", "device": "pi", "command": f"MOV 1 {TETHER_MAGNET_MM:g}"}, {"do": "settle", "s": 3}]
-        for us in TETHER_EXPOSURES_US:
-            tag = f"e{us:g}"
-            steps += [{"do": "camera", "rate_hz": 150.0, "exposure_us": us}, {"do": "hold", "name": f"clamp_{tag}", "s": 20}]
-            steps += zscan(f"zs_{tag}", 50, 0.5) + [{"do": "stream", "name": None}]
-            if TETHER_FINE:
-                steps += zscan_fine(f"zf_{tag}", 0.5, 30, 0.5) + [{"do": "stream", "name": None}]
+        # force may bind non-specifically, and such a trace is cut away more easily when it comes at the end. The
+        # magnet visits every calibration position from the highest down (default 38 then 36.4 mm); at each, every
+        # exposure gets 20 s at rest (fluctuations = the measurement noise at that force) and a 100 nm z-scan with
+        # 0.5 s per slice (+ a 50 nm scan). Offline: the noise at one force with the LUT taken at the same or at the
+        # other position / exposure. Only at the end the magnet returns to 0 mm, with a 10 s rest that shows which
+        # beads respond to the force (= tethered).
+        steps = [{"do": "camera", "rate_hz": 150.0, "exposure_us": TETHER_EXPOSURES_US[0]}]
+        for mm in sorted(TETHER_CALIB_MM, reverse=True):
+            steps += [{"do": "gate", "device": "pi", "command": f"MOV 1 {mm:g}"}, {"do": "settle", "s": 3}]
+            for us in TETHER_EXPOSURES_US:
+                tag = f"m{mm:g}_e{us:g}"
+                steps += [{"do": "camera", "rate_hz": 150.0, "exposure_us": us},
+                          {"do": "hold", "name": f"clamp_{tag}", "s": 20}]
+                steps += zscan(f"zs_{tag}", 50, 0.5) + [{"do": "stream", "name": None}]
+                if TETHER_FINE:
+                    steps += zscan_fine(f"zf_{tag}", 0.5, 30, 0.5) + [{"do": "stream", "name": None}]
         tag = f"e{TETHER_EXPOSURES_US[0]:g}"
         steps += [{"do": "camera", "rate_hz": 150.0, "exposure_us": TETHER_EXPOSURES_US[0]},
                   {"do": "hold", "name": f"clamp_end_{tag}", "s": 10},
@@ -155,6 +159,7 @@ def plan(name, exposure_us):
 # equation when the touch position is 40.94 mm (F = 48.8 e^(-d/1.135) + 22.8 e^(-d/3.684) - 0.46, d = touch - pos);
 # the owner gives the position that pulls the tether to about 1600 nm.
 TETHER_MAGNET_MM = 36.4
+TETHER_CALIB_MM = (38.0, 36.4)    # calibration (and rest) positions, visited from the highest force down
 TETHER_EXPOSURES_US = (1909.0, 1000.0, 500.0)
 TETHER_FINE = True
 AT_UM = (0.0, 0.0)            # field offset for zfine_at, set by --at-um
@@ -461,12 +466,14 @@ def main():
     ap.add_argument("--dry", action="store_true")
     ap.add_argument("--min-sep", type=float, help="minimum distance to the nearest other spot (px)")
     ap.add_argument("--at-um", default="0,0", help="zfine_at: field offset dx,dy in um from the session start")
-    ap.add_argument("--magnet-mm", type=float, default=36.4, help="tether: clamp position (about 7 pN)")
+    ap.add_argument("--magnet-mm", type=float, default=36.4, help="tether: the measurement clamp position (about 7 pN)")
+    ap.add_argument("--calib-mm", default="38,36.4", help="tether: calibration positions, visited high to low")
     ap.add_argument("--exposures", default="1909,1000,500", help="tether: exposure times in us")
     ap.add_argument("--no-fine", action="store_true", help="tether: skip the 50 nm scans")
     a = ap.parse_args()
-    global AT_UM, MIN_SEP, TETHER_MAGNET_MM, TETHER_EXPOSURES_US, TETHER_FINE
+    global AT_UM, MIN_SEP, TETHER_MAGNET_MM, TETHER_CALIB_MM, TETHER_EXPOSURES_US, TETHER_FINE
     TETHER_MAGNET_MM = a.magnet_mm
+    TETHER_CALIB_MM = tuple(sorted({float(v) for v in a.calib_mm.split(",")} | {a.magnet_mm}, reverse=True))
     TETHER_EXPOSURES_US = tuple(float(v) for v in a.exposures.split(","))
     TETHER_FINE = not a.no_fine
     AT_UM = tuple(float(v) for v in a.at_um.split(","))
