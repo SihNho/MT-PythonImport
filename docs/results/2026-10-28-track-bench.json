@@ -89,6 +89,13 @@
    "t_z_ms": 0.729,
    "lost": 0.0
   },
+  "current+current+phase_spline": {
+   "z_noise_nm": 4.66,
+   "z_err_nm": 4.9,
+   "slope": 1.0,
+   "t_z_ms": 0.984,
+   "lost": 0.0
+  },
   "current+current+phasor": {
    "z_noise_nm": 9.57,
    "z_err_nm": 129.0,

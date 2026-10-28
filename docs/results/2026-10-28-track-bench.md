@@ -30,6 +30,7 @@ removed; **time** = per bead and frame, numpy (the current method's production f
 | current + current | **LabVIEW panel LUT 0 / 25 / 20** | 7.26 | 8.4 | 1.0001 | 0.12 |
 | current + current | current | 4.76 | 7.7 | 1.0001 | 0.12 |
 | current + current | **spline** | **4.47** | **4.9** | 1.0000 | 0.73 |
+| current + current | phase_spline (2026-10-29) | 4.66 | 4.9 | 1.0000 | 0.98 |
 | current + current | phasor | 9.57 | 129 | 1.0000 | 0.06 |
 | current + polar3 | current / spline | 4.74 / 4.48 | 7.7 / 4.9 | 1.000 | |
 | current + area4 | current / spline | 4.71 / 4.47 | 7.7 / 4.9 | 1.000 | |
@@ -41,6 +42,12 @@ removed; **time** = per bead and frame, numpy (the current method's production f
   the **z error from 7.7 to 4.9 nm**: the bias between the 100 nm slices is smaller than with the 5-slice phase fit.
   Nothing else gets worse except the numpy time (0.73 vs 0.12 ms per bead), which a numba version removes. It is
   the one candidate that meets 0023 item 4 on this data.
+- **`phase_spline`** (added 2026-10-29, owner's question: is the gain the interpolation or the SSD criterion?) keeps
+  the current method's phase criterion but interpolates the complex LUT along z and brings the weighted phase
+  difference to zero by bisection instead of the 5-point quadratic fit. Its z error is the same as `spline`'s
+  (4.9 nm) and its noise sits between the two (4.66 nm). So the bias of the current method comes from the
+  5-point quadratic root finding, not from the phase criterion; the continuous LUT removes it either way, and the
+  SSD fit is slightly quieter and cheaper (0.74 vs 0.98 ms numpy).
 - **`phasor`** (one frequency's phase) is far worse (9.6 nm, 129 nm error): the current method already uses the
   whole band's phase, and a single frequency is not monotonic over +-5 um.
 - **QI + any Z** gives 3-4x the z error (27 nm) at the same noise: the QI centre moves with defocus relative to the
