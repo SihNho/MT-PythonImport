@@ -114,76 +114,11 @@ def z_current(rad, cal):
 
 
 def z_spline(rad, cal):
-    """Continuous LUT: Catmull-Rom cubic interpolation of the prepped real profiles along z, SSD minimised by golden
-    section within +-1 slice of the best slice."""
-    prep, _ = track.prep_i_of_r(rad, HALF, int(cal["forget_radius"]), cal["cosband"])
-    R = cal["real"]
-    S = len(R)
-    idx = track.fit_prep_to_cal(prep, R)
-
-    def at(z):
-        i = int(np.floor(z))
-        t = z - i
-        p0, p1, p2, p3 = (R[min(max(i + k, 0), S - 1)] for k in (-1, 0, 1, 2))
-        return 0.5 * ((2 * p1) + (-p0 + p2) * t + (2 * p0 - 5 * p1 + 4 * p2 - p3) * t * t
-                      + (-p0 + 3 * p1 - 3 * p2 + p3) * t ** 3)
-
-    def ssd(z):
-        return float(((at(z) - prep) ** 2).sum())
-
-    lo, hi = max(idx - 1.0, 0.0), min(idx + 1.0, S - 1.0)
-    g = (np.sqrt(5) - 1) / 2
-    c, d = hi - g * (hi - lo), lo + g * (hi - lo)
-    fc, fd = ssd(c), ssd(d)
-    for _ in range(30):
-        if fc < fd:
-            hi, d, fd = d, c, fc
-            c = hi - g * (hi - lo)
-            fc = ssd(c)
-        else:
-            lo, c, fc = c, d, fd
-            d = lo + g * (hi - lo)
-            fd = ssd(d)
-    return (lo + hi) / 2
-
-
-def _catmull(R, z):
-    """Catmull-Rom interpolation of a stack R (S, n) along its first axis at a fractional index z."""
-    S = len(R)
-    i = int(np.floor(z))
-    t = z - i
-    p0, p1, p2, p3 = (R[min(max(i + k, 0), S - 1)] for k in (-1, 0, 1, 2))
-    return 0.5 * ((2 * p1) + (-p0 + p2) * t + (2 * p0 - 5 * p1 + 4 * p2 - p3) * t * t
-                  + (-p0 + 3 * p1 - 3 * p2 + p3) * t ** 3)
+    return track.z_spline(rad, HALF, cal, track.DEFAULT)[0]
 
 
 def z_phase_spline(rad, cal):
-    """The current method's phase criterion made continuous: the complex LUT (corkscrew) is interpolated along z
-    (Catmull-Rom) and the weighted phase difference theta(z) = sum(w arg(c_live / c_lut(z))) / sum(w) is brought to 0 by
-    bisection within +-1 slice of the best slice. Falls back to the 5-point quadratic fit when theta does not change
-    sign there (owner 2026-10-29: is the gain of `spline` the interpolation or the SSD criterion?)."""
-    prep, cork = track.prep_i_of_r(rad, HALF, int(cal["forget_radius"]), cal["cosband"])
-    C = cal["cork"]
-    S = len(C)
-    idx = track.fit_prep_to_cal(prep, cal["real"])
-
-    def theta(z):
-        c = _catmull(C, z)
-        w = np.abs(cork) * np.abs(c)
-        return float((w * np.angle(cork / c)).sum() / w.sum())
-
-    lo, hi = max(idx - 1.0, 0.0), min(idx + 1.0, S - 1.0)
-    tlo, thi = theta(lo), theta(hi)
-    if tlo * thi > 0:
-        return z_current(rad, cal)
-    for _ in range(30):
-        mid = (lo + hi) / 2
-        tm = theta(mid)
-        if tm * tlo > 0:
-            lo, tlo = mid, tm
-        else:
-            hi, thi = mid, tm
-    return (lo + hi) / 2
+    return track.z_phase_spline(rad, HALF, cal, track.DEFAULT)[0]
 
 
 class Phasor:

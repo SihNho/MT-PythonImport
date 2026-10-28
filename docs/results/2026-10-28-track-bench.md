@@ -55,6 +55,8 @@ removed; **time** = per bead and frame, numpy (the current method's production f
 
 ## What this means
 - Keep the current XY and radial stages.
+- 2026-10-29: all three Z methods are implemented on numba and CUDA (decision 0024,
+  [2026-10-29-z-executors.md](2026-10-29-z-executors.md)); the default stays `current`.
 - `spline` z is worth a numba port and a test on tethered beads (the prepared `tether` plan,
   [rig/tethered-calibration-protocol.md](../rig/tethered-calibration-protocol.md)) before any decision to adopt it.
 - One recording, one sample, fixed beads only. Moving beads (pixel bias, XY -> Z crosstalk) are the open case, and

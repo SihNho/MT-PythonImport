@@ -27,6 +27,7 @@ Each file records one decision: what was decided, why, and what follows from it.
 | [0021](0021-camera-sdk-and-open-limits.md) | Camera through NI-IMAQdx first, SDK swappable later; rotor speed limit 150 (`SPD`); focus = mechanical limits; laser later; MT before MT-TIRF | 2026-10-26 |
 | [0022](0022-z-lut-initial-band-and-forget.md) | Initial z-LUT settings at 50x LOW 0 / HIGH 40 / forget 10 (forget removes the inner radii); no further edits to the V6 LabVIEW code | 2026-10-27 |
 | [0023](0023-labview-is-the-baseline-not-the-standard.md) | LabVIEW is the baseline, not the standard: at least its performance, better if possible; the exact port stays as the reference; formats stay; alternatives measured on the reference-bead benchmarks | 2026-10-28 |
+| [0024](0024-three-z-methods-on-numba-and-cuda.md) | Three Z estimators (current / spline / phase_spline) kept as swappable slots on numpy, numba and CUDA, agreeing to 1e-9; default stays current until the tethered-bead data; the GPU executor works but is not yet faster | 2026-10-29 |
 
 The behavior specification of the LabVIEW program is in [../spec/README.md](../spec/README.md) and the device manuals are
 in [../manuals/README.md](../manuals/README.md).

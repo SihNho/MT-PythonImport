@@ -240,6 +240,75 @@ def z_phase(rad, half, cal, p):
     return quad_fit_phase(phase_in_neighborhood(cork, idx, cal["ampl"], cal["cork"]), idx), idx
 
 
+def catmull(R, z):
+    """Catmull-Rom interpolation of a stack R (S, n) along its first axis at the fractional index z (ends clamped)."""
+    S = len(R)
+    i = int(np.floor(z))
+    t = z - i
+    p0, p1, p2, p3 = (R[min(max(i + k, 0), S - 1)] for k in (-1, 0, 1, 2))
+    return 0.5 * ((2 * p1) + (-p0 + p2) * t + (2 * p0 - 5 * p1 + 4 * p2 - p3) * t * t
+                  + (-p0 + 3 * p1 - 3 * p2 + p3) * t ** 3)
+
+
+GOLDEN = (np.sqrt(5) - 1) / 2
+N_ITER = 30                                            # golden section / bisection steps within +-1 slice: 1e-6 slice
+
+
+def z_spline(rad, half, cal, p):
+    """Z stage 'spline' (2026-10-28 bench): the prepped real LUT interpolated along z (Catmull-Rom), the sum of squared
+    differences to the live profile minimised by golden section within +-1 slice of the best slice."""
+    prep, _ = prep_i_of_r(rad, half, int(cal["forget_radius"]), cal["cosband"])
+    R = cal["real"]
+    idx = fit_prep_to_cal(prep, R)
+
+    def ssd(z):
+        return float(((catmull(R, z) - prep) ** 2).sum())
+
+    lo, hi = max(idx - 1.0, 0.0), min(idx + 1.0, len(R) - 1.0)
+    c, d = hi - GOLDEN * (hi - lo), lo + GOLDEN * (hi - lo)
+    fc, fd = ssd(c), ssd(d)
+    for _ in range(N_ITER):
+        if fc < fd:
+            hi, d, fd = d, c, fc
+            c = hi - GOLDEN * (hi - lo)
+            fc = ssd(c)
+        else:
+            lo, c, fc = c, d, fd
+            d = lo + GOLDEN * (hi - lo)
+            fd = ssd(d)
+    return (lo + hi) / 2, idx
+
+
+def z_phase_spline(rad, half, cal, p):
+    """Z stage 'phase_spline' (2026-10-29 bench): the current method's phase criterion on a continuous LUT. The complex
+    LUT is interpolated along z and theta(z) = sum(w arg(c_live / c_lut(z))) / sum(w) is brought to 0 by bisection
+    within +-1 slice of the best slice; without a sign change there it falls back to the 5-point quadratic fit."""
+    prep, cork = prep_i_of_r(rad, half, int(cal["forget_radius"]), cal["cosband"])
+    C = cal["cork"]
+    idx = fit_prep_to_cal(prep, cal["real"])
+
+    def theta(z):
+        c = catmull(C, z)
+        w = np.abs(cork) * np.abs(c)
+        return float((w * np.angle(cork / c)).sum() / w.sum())
+
+    lo, hi = max(idx - 1.0, 0.0), min(idx + 1.0, len(C) - 1.0)
+    tlo, thi = theta(lo), theta(hi)
+    if tlo * thi > 0:
+        return z_phase(rad, half, cal, p)
+    for _ in range(N_ITER):
+        mid = (lo + hi) / 2
+        tm = theta(mid)
+        if tm * tlo > 0:
+            lo, tlo = mid, tm
+        else:
+            hi, thi = mid, tm
+    return (lo + hi) / 2, idx
+
+
+Z_METHODS = {"current": z_phase, "spline": z_spline, "phase_spline": z_phase_spline}
+
+
 def radial_current(sub, xc, yc, half, p):
     return radial_profile(sub, xc, yc, half, p.sgl_rad)
 

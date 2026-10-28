@@ -1,4 +1,4 @@
-"""numba executor of the current tracking method (decision 0002): all beads of one frame in one call, beads in
+"""numba executor of the tracking kernel (decision 0002) with the three Z stages of track.Z_METHODS: all beads of one frame in one call, beads in
 parallel, without the GIL. Same steps and constants as `track.py`, which stays the reference; the test
 tests/test_fast.py holds the two together. FFTs come from rocket-fft (numba bindings of NumPy's own pocketfft).
 """
@@ -6,7 +6,7 @@ import numba
 import numpy as np
 import rocket_fft  # noqa: F401  (registers np.fft for numba)
 
-from mtpy.track import DEFAULT, QUAD_WEIGHTS, lv_i32_div, lv_round
+from mtpy.track import DEFAULT, GOLDEN, N_ITER, QUAD_WEIGHTS, Z_METHODS, lv_i32_div, lv_round
 
 
 @numba.njit(cache=True, nogil=True)
@@ -122,7 +122,8 @@ def _solve3(A, b):
 
 
 @numba.njit(cache=True, nogil=True)
-def _z(rad, half, forget, cosband, real, ampl, cork_cal, qw):
+def _prep_z(rad, half, forget, cosband, real):
+    """prep I of r + best slice: (cork, prep, idx)."""
     nmir = 2 * half - 1
     mir = np.empty(nmir, dtype=np.complex128)
     for i in range(half - 1):
@@ -131,17 +132,23 @@ def _z(rad, half, forget, cosband, real, ampl, cork_cal, qw):
     n = min(nmir, cosband.size)
     cork = np.fft.ifft(np.fft.fft(mir)[:n] * cosband[:n])[half + forget - 1:]
     prep = cork.real
-    S = real.shape[0]
     best, idx = np.inf, 0
-    for s in range(S):
+    for s in range(real.shape[0]):
         d = 0.0
         for r in range(prep.size):
             e = real[s, r] - prep[r]
             d += e * e
         if d < best:
             best, idx = d, s
+    return cork, prep, idx
+
+
+@numba.njit(cache=True, nogil=True)
+def _z_quad(cork, idx, ampl, cork_cal, qw):
+    """Z 'current': weighted phase on 5 slices, weighted quadratic fit, P(0)."""
+    S = cork_cal.shape[0]
     if idx + 2 >= S:                                   # LabVIEW at the stack's upper edge: P(0) = 0
-        return float(idx), idx
+        return float(idx)
     lo = max(idx - 2, 0)
     ph = np.empty(5)
     for q in range(5):
@@ -160,12 +167,92 @@ def _z(rad, half, forget, cosband, real, ampl, cork_cal, qw):
             bb[i] += qw[q] * row[i] * y
             for j in range(3):
                 A[i, j] += qw[q] * row[i] * row[j]
-    return idx + _solve3(A, bb)[2], idx
+    return idx + _solve3(A, bb)[2]
+
+
+@numba.njit(cache=True, nogil=True)
+def _catmull(R, z, r):
+    """track.catmull for one profile element r of the stack R (S, L)."""
+    S = R.shape[0]
+    i = int(np.floor(z))
+    t = z - i
+    p0 = R[min(max(i - 1, 0), S - 1), r]
+    p1 = R[min(max(i, 0), S - 1), r]
+    p2 = R[min(max(i + 1, 0), S - 1), r]
+    p3 = R[min(max(i + 2, 0), S - 1), r]
+    return 0.5 * ((2 * p1) + (-p0 + p2) * t + (2 * p0 - 5 * p1 + 4 * p2 - p3) * t * t
+                  + (-p0 + 3 * p1 - 3 * p2 + p3) * t ** 3)
+
+
+@numba.njit(cache=True, nogil=True)
+def _ssd_at(prep, real, z):
+    d = 0.0
+    for r in range(prep.size):
+        e = _catmull(real, z, r) - prep[r]
+        d += e * e
+    return d
+
+
+@numba.njit(cache=True, nogil=True)
+def _theta_at(cork, cork_cal, z):
+    num = den = 0.0
+    for r in range(cork.size):
+        c = _catmull(cork_cal, z, r)
+        w = np.abs(cork[r]) * np.abs(c)
+        num += w * np.angle(cork[r] / c)
+        den += w
+    return num / den
+
+
+@numba.njit(cache=True, nogil=True)
+def _z_spline(prep, idx, real):
+    """Z 'spline' = track.z_spline: golden section on the SSD to the interpolated LUT within +-1 slice."""
+    lo, hi = max(idx - 1.0, 0.0), min(idx + 1.0, real.shape[0] - 1.0)
+    c, d = hi - GOLDEN * (hi - lo), lo + GOLDEN * (hi - lo)
+    fc, fd = _ssd_at(prep, real, c), _ssd_at(prep, real, d)
+    for _ in range(N_ITER):
+        if fc < fd:
+            hi, d, fd = d, c, fc
+            c = hi - GOLDEN * (hi - lo)
+            fc = _ssd_at(prep, real, c)
+        else:
+            lo, c, fc = c, d, fd
+            d = lo + GOLDEN * (hi - lo)
+            fd = _ssd_at(prep, real, d)
+    return (lo + hi) / 2
+
+
+@numba.njit(cache=True, nogil=True)
+def _z_phase_spline(cork, idx, ampl, cork_cal, qw):
+    """Z 'phase_spline' = track.z_phase_spline: bisection of the weighted phase on the interpolated LUT."""
+    lo, hi = max(idx - 1.0, 0.0), min(idx + 1.0, cork_cal.shape[0] - 1.0)
+    tlo, thi = _theta_at(cork, cork_cal, lo), _theta_at(cork, cork_cal, hi)
+    if tlo * thi > 0:
+        return _z_quad(cork, idx, ampl, cork_cal, qw)
+    for _ in range(N_ITER):
+        mid = (lo + hi) / 2
+        tm = _theta_at(cork, cork_cal, mid)
+        if tm * tlo > 0:
+            lo, tlo = mid, tm
+        else:
+            hi, thi = mid, tm
+    return (lo + hi) / 2
+
+
+@numba.njit(cache=True, nogil=True)
+def _z(rad, half, forget, cosband, real, ampl, cork_cal, qw, method):
+    cork, prep, idx = _prep_z(rad, half, forget, cosband, real)
+    if method == 1:
+        return _z_spline(prep, idx, real), idx
+    if method == 2:
+        return _z_phase_spline(cork, idx, ampl, cork_cal, qw), idx
+    return _z_quad(cork, idx, ampl, cork_cal, qw), idx
 
 
 @numba.njit(cache=True, nogil=True, parallel=True)
 def _track(image, xin, yin, good_in, cross, h, arm, n_end, n_pts, quirk, frame2_shifted, z_lo, z_hi_margin,
-           win_rs, win_h, forget, zstep, cosband, real, ampl, cork, nlen, qw, out, idx_out, good_out):
+           win_rs, win_h, forget, zstep, cosband, real, ampl, cork, nlen, qw, z_method, out, idx_out, good_out,
+           rad_out):
     half = cross // 2
     arm2 = int(np.rint(arm / 2))
     H, W = image.shape
@@ -191,8 +278,13 @@ def _track(image, xin, yin, good_in, cross, h, arm, n_end, n_pts, quirk, frame2_
         x = xin[b] + sx
         y = yin[b] + sy
         L = nlen[b]
-        zi, idx = _z(_radial(sub, h + sx, h + sy, half), half, forget[b], cosband[b], real[b, :, :L], ampl[b, :, :L],
-                     cork[b, :, :L], qw)
+        rad = _radial(sub, h + sx, h + sy, half)
+        if z_method < 0:                               # Z on the GPU (mtpy.gpu): hand the profile out, z later
+            rad_out[b, :] = rad
+            zi, idx = 0.0, 0
+        else:
+            zi, idx = _z(rad, half, forget[b], cosband[b], real[b, :, :L], ampl[b, :, :L], cork[b, :, :L], qw,
+                         z_method)
         S = real.shape[1]
         bad = zi > S - z_hi_margin or zi < z_lo or x < h or x > W - h or y < h or y > H - h or np.isnan(zi + x + y)
         out[b, 0], out[b, 1], out[b, 2] = x, y, zi * zstep[b]
@@ -203,7 +295,8 @@ def _track(image, xin, yin, good_in, cross, h, arm, n_end, n_pts, quirk, frame2_
 class FastKernel:
     """All beads of a frame at once. The calibration clusters are packed once; `track` is then one numba call."""
 
-    def __init__(self, cross, win_rs, win_h, cals, p=DEFAULT):
+    def __init__(self, cross, win_rs, win_h, cals, p=DEFAULT, z_method="current"):
+        self.z_method = list(Z_METHODS).index(z_method)   # 0 current, 1 spline, 2 phase_spline (track.Z_METHODS)
         nb = len(cals)
         S = len(cals[0]["real"])
         L = max(c["real"].shape[1] for c in cals)
@@ -234,5 +327,6 @@ class FastKernel:
         _track(image, np.asarray(xin, dtype=np.int64), np.asarray(yin, dtype=np.int64),
                np.asarray(good_in, dtype=np.bool_), self.cross, self.h, p.arm, self.n_end, p.n_pts, p.end_quirk,
                p.frame2_shifted, p.z_lo, p.z_hi_margin, self.win_rs, self.win_h, self.forget, self.zstep,
-               self.cosband, self.real, self.ampl, self.cork, self.nlen, QUAD_WEIGHTS, out, idx, good)
+               self.cosband, self.real, self.ampl, self.cork, self.nlen, QUAD_WEIGHTS, self.z_method, out, idx, good,
+               np.empty((0, 0)))
         return out, idx, good
