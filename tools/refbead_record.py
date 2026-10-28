@@ -128,20 +128,25 @@ def plan(name, exposure_us):
         steps += zscan_fine("zfine50", 0.5, 50) + [{"do": "stream", "name": None}]
         steps += zscan_fine("zfine20", 0.2, 20) + [{"do": "stream", "name": None}]
         return steps + [*asi("X", -dx), *asi("Y", -dy)]
-    if name == "tether":                      # 12. tethered beads under force clamp (owner 2026-10-28): per exposure,
-        # rest at 0 mm (who responds to the magnet), rest at the clamp (fluctuations), a 100 nm z-scan with 0.5 s per
-        # slice (75 frames: averaging and coarser steps are tested offline), and a 50 nm scan over +-3 um.
-        steps = [{"do": "gate", "device": "pi", "command": "MOV 1 0"}]
+    if name == "tether":                      # 12. tethered beads under force clamp (owner 2026-10-28). HIGH force
+        # first, low force last ("high-force에서 low-force로 내려가는 걸 추천"): a bead left near the surface at low
+        # force may bind non-specifically, and such a trace is cut away more easily when it comes at the end. So the
+        # magnet goes to the clamp once, every exposure is recorded there (20 s at rest for the fluctuations, a
+        # 100 nm z-scan with 0.5 s per slice, a 50 nm scan), and only at the end the magnet returns to 0 mm, with
+        # a 10 s rest that shows which beads respond to the force (= tethered).
+        steps = [{"do": "camera", "rate_hz": 150.0, "exposure_us": TETHER_EXPOSURES_US[0]},
+                 {"do": "gate", "device": "pi", "command": f"MOV 1 {TETHER_MAGNET_MM:g}"}, {"do": "settle", "s": 3}]
         for us in TETHER_EXPOSURES_US:
             tag = f"e{us:g}"
-            steps += [{"do": "camera", "rate_hz": 150.0, "exposure_us": us},
-                      {"do": "hold", "name": f"rest0_{tag}", "s": 10},
-                      {"do": "gate", "device": "pi", "command": f"MOV 1 {TETHER_MAGNET_MM:g}"}, {"do": "settle", "s": 3},
-                      {"do": "hold", "name": f"clamp_{tag}", "s": 20}]
+            steps += [{"do": "camera", "rate_hz": 150.0, "exposure_us": us}, {"do": "hold", "name": f"clamp_{tag}", "s": 20}]
             steps += zscan(f"zs_{tag}", 50, 0.5) + [{"do": "stream", "name": None}]
             if TETHER_FINE:
                 steps += zscan_fine(f"zf_{tag}", 0.5, 30, 0.5) + [{"do": "stream", "name": None}]
-            steps += [{"do": "gate", "device": "pi", "command": "MOV 1 0"}, {"do": "settle", "s": 3}]
+        tag = f"e{TETHER_EXPOSURES_US[0]:g}"
+        steps += [{"do": "camera", "rate_hz": 150.0, "exposure_us": TETHER_EXPOSURES_US[0]},
+                  {"do": "hold", "name": f"clamp_end_{tag}", "s": 10},
+                  {"do": "gate", "device": "pi", "command": "MOV 1 0"}, {"do": "settle", "s": 3},
+                  {"do": "hold", "name": f"rest0_{tag}", "s": 10}]
         return steps
     raise SystemExit(f"unknown plan {name!r}")
 

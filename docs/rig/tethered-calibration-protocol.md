@@ -5,14 +5,17 @@ band-pass, z step and frame averaging may matter differently than on fixed beads
 Everything below is ready to run the moment the owner asks; nothing here has touched the rig.
 
 ## What is recorded (plan `tether` in `tools/refbead_record.py`)
-Per exposure time (default 1909 / 1000 / 500 us at 150 Hz):
-1. magnet at 0 mm, 10 s at rest (`rest0_e<us>`): which beads respond to the magnet later = tethered;
-2. magnet to the clamp position (default 36.4 mm), 3 s settle, 20 s at rest (`clamp_e<us>`): fluctuations under
-   force, for noise and for a force check from the variance;
-3. z-scan +-5 um in 100 nm steps, **0.5 s (75 frames) per slice** (`zs_e<us>`): LUT and offline tests of frame
-   averaging (1..75) and z step (100 / 200 / 300 / 500 nm by sub-sampling);
-4. z-scan +-3 um in 50 nm steps, 0.5 s per slice (`zf_e<us>`; skipped with `--no-fine`);
-5. magnet back to 0 mm.
+**High force first, low force last** (owner 2026-10-28): a bead left near the surface at low force may bind
+non-specifically despite the PEG coating; with the low-force part at the end, such a trace is cut away without
+losing the rest. So the magnet goes to the clamp once and stays there for every exposure.
+1. magnet to the clamp position (default 36.4 mm), 3 s settle;
+2. per exposure time (default 1909 / 1000 / 500 us at 150 Hz):
+   - 20 s at rest (`clamp_e<us>`): fluctuations under force, for noise and a force check from the variance;
+   - z-scan +-5 um in 100 nm steps, **0.5 s (75 frames) per slice** (`zs_e<us>`): LUT and offline tests of frame
+     averaging (1..75) and z step (100 / 200 / 300 / 500 nm by sub-sampling);
+   - z-scan +-3 um in 50 nm steps, 0.5 s per slice (`zf_e<us>`; skipped with `--no-fine`);
+3. at the end, 10 s at the clamp (`clamp_end_*`), magnet to 0 mm, 10 s at rest (`rest0_*`): the beads that move
+   between the two are the tethered ones.
 About 7 min per exposure; 22 min for three. Raw crops 160 x 160 px per bead; about 8 GB per exposure for 15 beads.
 Band-pass and forget are offline parameters (stored per bead in the LUT), so they need no extra recording.
 
@@ -40,7 +43,7 @@ Stop conditions as always: a gate refusal stops the plan and `rig_session` clean
 released, camera closed); experiment / LabVIEW / another lock holder -> hands off.
 
 ## Analysis (offline, no rig)
-1. Tethered vs reference: in `rest0_*` and `clamp_*`, a bead whose mean z / xy moves between the two is tethered.
+1. Tethered vs reference: in `clamp_end_*` and `rest0_*`, a bead whose mean z / xy moves between the two is tethered.
 2. Per exposure, per z-scan segment, the parameter sweep with a tethered bead paired with a reference bead:
 ```bash
 cd G:/Codes/LabVIEW2Scr && .venv/Scripts/python.exe tools/refbead_params.py sweep-run G:/l2s_rig_data/<date>_tether/tether zs_e1909 <tethered crop col>,<reference crop col>
