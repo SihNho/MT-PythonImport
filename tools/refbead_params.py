@@ -74,8 +74,8 @@ def cache():
             print("cached", path, p.shape, flush=True)
 
 
-def load_cache(d, seg, cross):
-    c = np.load(os.path.join(d, f"{seg}.prof{cross}.npz"))
+def load_cache(d, seg, cross, path=None):
+    c = np.load(path or os.path.join(d, f"{seg}.prof{cross}.npz"))
     prof, n = c["prof"], c["slice_n"]
     edges = np.concatenate([[0], np.cumsum(n)])
     return [(str(c["slice_name"][i]), float(c["slice_z"][i]), prof[edges[i]:edges[i + 1]]) for i in range(len(n))]
@@ -182,12 +182,12 @@ def sweep_run(run, seg, beads, zlim=4.0, half_test=True):
     fr = np.concatenate([x[2] for x in sl])
     cache_ = {}
     for cross in CROSSES:
-        path = os.path.join(run, f"{seg}.prof{cross}.npz")
+        path = os.path.join(run, f"{seg}.prof{cross}.b{'-'.join(map(str, beads))}.npz")
         if not os.path.exists(path):
             pr = profiles(crops, fr, beads, cross)
             np.savez(path, prof=pr, frames=fr, beads=beads, slice_name=[x[0] for x in sl],
                      slice_z=[x[1] for x in sl], slice_n=[len(x[2]) for x in sl])
-        cache_[cross] = load_cache(run, seg, cross)
+        cache_[cross] = load_cache(run, seg, cross, path)
     cols = list(range(len(beads)))
     print(f"== {seg}: band-pass / forget (cross 120, 100 nm LUT, beads {beads})")
     for low, high, forget in ((0, 25, 20), (0, 30, 10), (0, 40, 10), (0, 40, 15), (0, 50, 10), (2, 40, 10)):
@@ -224,13 +224,13 @@ def rest_noise(run, rest_seg, lut_seg, beads, ref, low=0, high=40, forget=10, cr
     and after 1 s averaging, so a measurement at one exposure / force can be scored against LUTs taken at others
     (owner 2026-10-28: the exposure must be the same in calibration and measurement; does the calibration force
     change the noise at the measurement force?)."""
-    path = os.path.join(run, f"{lut_seg}.prof{cross}.npz")
+    path = os.path.join(run, f"{lut_seg}.prof{cross}.b{'-'.join(map(str, beads))}.npz")
     if not os.path.exists(path):
         crops, sl = slices(run, lut_seg)
         fr = np.concatenate([x[2] for x in sl])
         np.savez(path, prof=profiles(crops, fr, beads, cross), frames=fr, beads=beads, slice_name=[x[0] for x in sl],
                  slice_z=[x[1] for x in sl], slice_n=[len(x[2]) for x in sl])
-    cals = build(load_cache(run, lut_seg, cross), beads, low, high, forget, cross)
+    cals = build(load_cache(run, lut_seg, cross, path), beads, low, high, forget, cross)
     if cals is None:
         return None
     crops, idx, _ = A.load(run, rest_seg)
