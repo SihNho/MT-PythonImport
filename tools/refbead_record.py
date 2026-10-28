@@ -128,13 +128,34 @@ def plan(name, exposure_us):
         steps += zscan_fine("zfine50", 0.5, 50) + [{"do": "stream", "name": None}]
         steps += zscan_fine("zfine20", 0.2, 20) + [{"do": "stream", "name": None}]
         return steps + [*asi("X", -dx), *asi("Y", -dy)]
+    if name == "tether":                      # 12. tethered beads under force clamp (owner 2026-10-28): per exposure,
+        # rest at 0 mm (who responds to the magnet), rest at the clamp (fluctuations), a 100 nm z-scan with 0.5 s per
+        # slice (75 frames: averaging and coarser steps are tested offline), and a 50 nm scan over +-3 um.
+        steps = [{"do": "gate", "device": "pi", "command": "MOV 1 0"}]
+        for us in TETHER_EXPOSURES_US:
+            tag = f"e{us:g}"
+            steps += [{"do": "camera", "rate_hz": 150.0, "exposure_us": us},
+                      {"do": "hold", "name": f"rest0_{tag}", "s": 10},
+                      {"do": "gate", "device": "pi", "command": f"MOV 1 {TETHER_MAGNET_MM:g}"}, {"do": "settle", "s": 3},
+                      {"do": "hold", "name": f"clamp_{tag}", "s": 20}]
+            steps += zscan(f"zs_{tag}", 50, 0.5) + [{"do": "stream", "name": None}]
+            if TETHER_FINE:
+                steps += zscan_fine(f"zf_{tag}", 0.5, 30, 0.5) + [{"do": "stream", "name": None}]
+            steps += [{"do": "gate", "device": "pi", "command": "MOV 1 0"}, {"do": "settle", "s": 3}]
+        return steps
     raise SystemExit(f"unknown plan {name!r}")
 
 
+# tether plan parameters, set by --magnet-mm / --exposures / --no-fine. 36.4 mm = about 7 pN with the M-270 v3
+# equation when the touch position is 40.94 mm (F = 48.8 e^(-d/1.135) + 22.8 e^(-d/3.684) - 0.46, d = touch - pos);
+# the owner gives the position that pulls the tether to about 1600 nm.
+TETHER_MAGNET_MM = 36.4
+TETHER_EXPOSURES_US = (1909.0, 1000.0, 500.0)
+TETHER_FINE = True
 AT_UM = (0.0, 0.0)            # field offset for zfine_at, set by --at-um
 
 
-def zscan_fine(seg, step_units, half_units):
+def zscan_fine(seg, step_units, half_units, hold_s=0.2):
     """Relative focus steps of `step_units` (0.1 um units, may be decimal) from -half to +half and back to -half,
     then to the start. Every slice is marked with its commanded z (units) and direction; the way back cancels a
     linear focus drift when the two passes are averaged."""
@@ -148,11 +169,11 @@ def zscan_fine(seg, step_units, half_units):
                 steps.append({"do": "gate", "device": "asi", "command": f"R Z={st if sign > 0 else '-' + st}"})
             z = round(-half_units + (i if sign > 0 else n - i) * step_units, 3)
             steps += [{"do": "settle", "s": 0.3}, {"do": "mark", "name": f"{seg}_{way}{i}_start", "z_units": z},
-                      {"do": "wait", "s": 0.2}, {"do": "mark", "name": f"{seg}_{way}{i}_end", "z_units": z}]
+                      {"do": "wait", "s": hold_s}, {"do": "mark", "name": f"{seg}_{way}{i}_end", "z_units": z}]
     return steps + [{"do": "gate", "device": "asi", "command": f"R Z={half_units}"}, {"do": "settle", "s": 1}]
 
 
-def zscan(seg, half_units=50):
+def zscan(seg, half_units=50, hold_s=0.2):
     """Relative focus steps of 1 ASI unit (0.1 um) from -half to +half and back to the start; every slice is marked
     in events.jsonl (buffer numbers) and holds 0.2 s (30 frames at 150 Hz) after a 0.3 s settle."""
     steps = [{"do": "stream", "name": seg}, {"do": "gate", "device": "asi", "command": f"R Z={-half_units}"},
@@ -161,7 +182,7 @@ def zscan(seg, half_units=50):
         if k:
             steps.append({"do": "gate", "device": "asi", "command": "R Z=1"})
         steps += [{"do": "settle", "s": 0.3}, {"do": "mark", "name": f"{seg}_z{k - half_units}_start"},
-                  {"do": "wait", "s": 0.2}, {"do": "mark", "name": f"{seg}_z{k - half_units}_end"}]
+                  {"do": "wait", "s": hold_s}, {"do": "mark", "name": f"{seg}_z{k - half_units}_end"}]
     return steps + [{"do": "gate", "device": "asi", "command": f"R Z={-half_units}"}, {"do": "settle", "s": 1}]
 
 
@@ -428,15 +449,21 @@ def snap(args):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("cmd", choices=("show", "run", "snap"))
-    ap.add_argument("--plan", choices=("static", "field", "magnet", "rotation", "exposure", "drift", "zscan", "zscan_field", "zfine50", "zfine20", "exposure2", "search", "zfine_at"))
+    ap.add_argument("--plan", choices=("static", "field", "magnet", "rotation", "exposure", "drift", "zscan", "zscan_field", "zfine50", "zfine20", "exposure2", "search", "zfine_at", "tether"))
     ap.add_argument("--out", default=r"G:\l2s_rig_data\2026-10-26_refbead")
     ap.add_argument("--exposure-us", type=float, default=1909.0)   # = the .icd auto value; 3000 would saturate (max grey 200 at 1909)
     ap.add_argument("--beads", help="beads.json from `snap` (default: find them in the first frame)")
     ap.add_argument("--dry", action="store_true")
     ap.add_argument("--min-sep", type=float, help="minimum distance to the nearest other spot (px)")
     ap.add_argument("--at-um", default="0,0", help="zfine_at: field offset dx,dy in um from the session start")
+    ap.add_argument("--magnet-mm", type=float, default=36.4, help="tether: clamp position (about 7 pN)")
+    ap.add_argument("--exposures", default="1909,1000,500", help="tether: exposure times in us")
+    ap.add_argument("--no-fine", action="store_true", help="tether: skip the 50 nm scans")
     a = ap.parse_args()
-    global AT_UM, MIN_SEP
+    global AT_UM, MIN_SEP, TETHER_MAGNET_MM, TETHER_EXPOSURES_US, TETHER_FINE
+    TETHER_MAGNET_MM = a.magnet_mm
+    TETHER_EXPOSURES_US = tuple(float(v) for v in a.exposures.split(","))
+    TETHER_FINE = not a.no_fine
     AT_UM = tuple(float(v) for v in a.at_um.split(","))
     MIN_SEP = a.min_sep if a.min_sep is not None else MIN_SEP
     if a.cmd == "show":

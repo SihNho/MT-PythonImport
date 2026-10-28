@@ -171,5 +171,55 @@ def sweep():
         json.dump(res, f, indent=1)
 
 
+def sweep_run(run, seg, beads, zlim=4.0, half_test=True):
+    """The same parameter sweep on any z-scan segment (e.g. the tether plan's `zs_e1909`): band / forget, cross,
+    frames per LUT slice, LUT step by sub-sampling the slices. `beads` are crop columns; with a reference bead among
+    them the pairwise differential removes the common focus drift, and for a tethered bead paired with a reference
+    it is std(tethered - reference) / sqrt 2, i.e. tracking noise plus the bead's own z fluctuation, the same for
+    every method on the same frames (a relative comparison, decision 0023 item 4)."""
+    res = {}
+    crops, sl = slices(run, seg)
+    fr = np.concatenate([x[2] for x in sl])
+    cache_ = {}
+    for cross in CROSSES:
+        path = os.path.join(run, f"{seg}.prof{cross}.npz")
+        if not os.path.exists(path):
+            pr = profiles(crops, fr, beads, cross)
+            np.savez(path, prof=pr, frames=fr, beads=beads, slice_name=[x[0] for x in sl],
+                     slice_z=[x[1] for x in sl], slice_n=[len(x[2]) for x in sl])
+        cache_[cross] = load_cache(run, seg, cross)
+    cols = list(range(len(beads)))
+    print(f"== {seg}: band-pass / forget (cross 120, 100 nm LUT, beads {beads})")
+    for low, high, forget in ((0, 25, 20), (0, 30, 10), (0, 40, 10), (0, 40, 15), (0, 50, 10), (2, 40, 10)):
+        cals = build(cache_[120], beads, low, high, forget, 120)
+        if cals is None:
+            continue
+        n, e = score(cache_[120], cals, 120, cols, zlim=zlim, second_half=half_test)
+        res[f"band L{low} H{high} f{forget}"] = (n, e)
+        print(f"  LOW {low:2d} HIGH {high:2d} forget {forget:2d}: noise {n:5.2f} nm  slice error {e:6.1f} nm", flush=True)
+    print("== frames averaged per LUT slice (0/40/10)")
+    for k in (1, 5, 15, 37):
+        cals = build(cache_[120], beads, 0, 40, 10, 120, n_first=k)
+        if cals is None:
+            continue
+        n, e = score(cache_[120], cals, 120, cols, zlim=zlim, second_half=half_test)
+        res[f"frames {k}"] = (n, e)
+        print(f"  {k:2d} frames: noise {n:5.2f} nm  slice error {e:6.1f} nm", flush=True)
+    print("== LUT step by sub-sampling the slices (0/40/10)")
+    for every in (1, 2, 3, 5):
+        cals = build(cache_[120], beads, 0, 40, 10, 120, every=every)
+        if cals is None:
+            continue
+        n, e = score(cache_[120], cals, 120, cols, zlim=zlim, second_half=half_test)
+        res[f"step x{every}"] = (n, e)
+        print(f"  every {every} slice: noise {n:5.2f} nm  slice error {e:6.1f} nm", flush=True)
+    with open(os.path.join(run, f"{seg}.params.json"), "w", encoding="utf-8") as f:
+        json.dump(res, f, indent=1)
+    return res
+
+
 if __name__ == "__main__":
-    {"cache": cache, "sweep": sweep}[sys.argv[1]]()
+    if sys.argv[1] == "sweep-run":              # py tools/refbead_params.py sweep-run <run dir> <segment> <beads 0,3,5>
+        sweep_run(sys.argv[2], sys.argv[3], [int(v) for v in sys.argv[4].split(",")])
+    else:
+        {"cache": cache, "sweep": sweep}[sys.argv[1]]()
