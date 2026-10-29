@@ -26,3 +26,10 @@ tethered-bead data before choosing.
    The default executor stays numba; float32 is not an optimisation but a change of the acceptance criterion, so it
    would need the owner's decision.
 4. The existing fused CUDA kernel of MT_LabVIEW (0002, 0003 item 4) is unchanged and unused here.
+5. **GPU executor kept as a candidate, not developed further (owner 2026-10-29: "이 부분은 인제스트하고 후보만 두고 있자").**
+   Measured on this PC: tens of beads - the CPU wins outright; hundreds of beads - the GPU starts to pay
+   (owner: "수 백개 트래킹을 한다면 GPU를 쓰는게 이득이겠고, 수십개 레벨이면 CPU가 압도적"). Kernel fusion, pinned staging and one
+   asynchronous stream are already in; the remaining cost is the WDDM per-call latency (about 0.7 ms per frame) and
+   float64 on a GeForce (1/32 rate). An in-kernel FFT (numba, length 120) or a C/CUDA kernel (decision 0002 would
+   need revising) are the next steps only if a measured case needs the GPU; the executors stay unmixed: a frame is
+   tracked XY -> radial -> Z entirely on one processor (owner 2026-10-29).

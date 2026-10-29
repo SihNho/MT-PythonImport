@@ -64,6 +64,11 @@ Ways out, none taken here:
 - an FFT instead of the direct DFT (120 = 8 x 15, mixed radix) would cut the three passes by a few times;
 - the radial atomics (0.26 ms) could be replaced by a warp-level combine of equal bins.
 
+## Owner's reading (2026-10-29)
+CPU for tens of beads, GPU worth it only at hundreds; the GPU executor is kept as a candidate and not developed
+further now (decision 0024 item 5). Fusion, pinned memory and the asynchronous stream are already applied; what is
+left is the WDDM call latency and the FP64 rate of the card, neither of which code can remove.
+
 ## What this means
 - `make_kernel(beads, z_method="current", gpu=False)` keeps today's behaviour; `gpu=True` is a complete,
   numerically identical alternative executor for every stage, not a faster one on this machine.
