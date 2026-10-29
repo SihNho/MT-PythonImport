@@ -220,7 +220,8 @@ class DeviceService:
         raise DeviceError(self.name, what, hint) from cause
 
     def open(self):
-        self.call(self.device.open, what="open")
+        # a real driver may need longer than the reply timeout to open (IMAQdx reloads the camera file)
+        self.call(self.device.open, what="open", timeout_s=getattr(self.device, "open_timeout_s", None))
         self.connected, self.connected_since = True, time.time()
         if self.origin is None:
             self.origin = self.call(self.device.session_origin, what="read session-start position")

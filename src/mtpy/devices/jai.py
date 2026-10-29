@@ -44,6 +44,7 @@ class JaiCamera(Device):
     name, model, hint = SimCamera.name, SimCamera.model, SimCamera.hint
     timestamp_source = "PC receive time (s since acquisition start; the JAI has no hardware timestamp, 0005)"
     settings_kinds = SimCamera.settings_kinds
+    open_timeout_s = 30.0                   # IMAQdxOpenCamera reloads the .icd and took > 5 s on the rig (2026-10-29)
     check_setting, tol, limits = SimCamera.check_setting, SimCamera.tol, SimCamera.limits
 
     def __init__(self, ring_size=64):

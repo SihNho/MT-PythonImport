@@ -13,6 +13,7 @@ Nothing moves; the simulated motors are not touched.
 import argparse
 import ctypes
 import json
+import os
 import sys
 import threading
 import time
@@ -108,11 +109,12 @@ def main(argv=None):
             (out / f"{name}.summary.json").write_text(json.dumps(result, indent=1, default=str), encoding="utf-8")
             print("SUMMARY " + json.dumps({k: result.get(k) for k in ("error", "frame_rate_hz", "rows", "drags", "cleanup")},
                                           default=str), flush=True)
-            app.quit()
+            # app.quit() from this thread did not end the loop on the rig (2026-10-29 run 2 hung until the wrapper's
+            # time limit); the summary is written, the camera closed, so end the process here
+            os._exit(1 if result.get("error") else 0)
 
     threading.Thread(target=job, daemon=True).start()
     app.exec()
-    return 1 if result.get("error") else 0
 
 
 if __name__ == "__main__":
