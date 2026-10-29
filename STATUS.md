@@ -1,4 +1,4 @@
-# Status (2026-10-26)
+# Status (2026-10-29)
 
 Short and current. Details live in the linked documents; the history is in git and `dev/cycles.md`.
 
@@ -8,8 +8,13 @@ Short and current. Details live in the linked documents; the history is in git a
 - **Phase 5 (API, safety, simulators, data, protocols, walking skeleton): done** - WP1-WP6, each reviewed in Claude-GPT
   discussions until they converged ([dev/cycles.md](dev/cycles.md)). Branch `phase5-skeleton`, api 0.10.1, 229 tests
   passing on simulators. Not merged into `main` yet (owner to decide).
-- **Next: phase 6 (real device drivers on the rig)**, then phase 8 (GUI: PySide6 + pyqtgraph, LGPL / MIT, no paid
-  licences - camera through the free JAI SDK + Harvesters, not NI-IMAQdx).
+- **Phase 8 first build (GUI, simulators): done 2026-10-29** ([docs/design/gui.md](docs/design/gui.md)): `python -m mtpy.gui
+  --sim-dev` runs the whole flow on the simulators (connect, beads, acquisition with live tracking, protocol,
+  recording, z scan, export). Owner's order (2026-10-29): GUI first, then phases 6 and 7 on the rig (motor limits
+  checked explicitly), then the tethered-bead calibration and the ABBA comparison.
+- Three Z estimators on numpy / numba / CUDA (decision 0024); the fused GPU kernel ties the CPU at best on the
+  RTX 2060 (float64 at 1/32 rate) - numba stays the default.
+- **Next: phase 6 (real camera on the rig)**, then phase 7 (motors, own motion gate).
 
 ## Decided since phase 5 (owner, 2026-10-25 / 26)
 | # | Decision |
@@ -20,7 +25,7 @@ Short and current. Details live in the linked documents; the history is in git a
 | [0019](docs/decisions/0019-magnet-stall-returns-to-zero.md) | stall (controller error -1024): return to 0 mm once, error window + record, else lock - an extinguisher |
 | [0020](docs/decisions/0020-rig-core-parameters-register.md) | stall threshold stays 1.0 mm; rig core parameters in one register ([docs/rig/core-parameters.md](docs/rig/core-parameters.md)) |
 
-## Rig (state: disassembled since 2026-10-25 03:48, owner)
+## Rig (state: assembled; 2026-10-29 owner: a channel is mounted - H2A tailless, heavily aggregated, bench use only; no experiment running)
 - Rig safety profile **v5**: magnet 0..39 mm and 15 mm/s, both rig-verified (speed write 10 <-> 15 shown to take
   effect); rotor, focus unverified -> refused. ASI +-2 mm from the session start.
 - PI controller read: stall threshold 1.0 mm; normal lag at 15 mm/s about 0.05 mm (1/20). Stage model unknown.

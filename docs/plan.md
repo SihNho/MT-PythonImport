@@ -63,5 +63,11 @@ Collected in the 2026-10-22..24 discussions; each needs the owner's go.
 - **Reused from MT_LabVIEW** (owned there, pinned by hash here): the NumPy tracking reference, the CUDA DLL, the camera
   ctypes layer, the motor protocols, the recorded frames.
 - **Open:** does a recorded z-scan stack for phase 4 exist? Unchecked.
+- **Order revised 2026-10-29 (owner): phase 8 (GUI) is built first on the simulators, then phases 6 and 7 on the rig**
+  ("지금 그냥 프로그램 빌드를 해보는건 어떤지?", "GUI 빌드 해보고 Phase 6, 7 까지 진행해보면 좋겠다. (모터 리밋은 확실히 체크하고)").
+  Design, protocol and detail are to be fixed by running the program. The motor limits get an explicit check in
+  phase 7. The tethered-bead calibration and the ABBA comparison (phases 4 / 9) follow when a sample allows;
+  the channel mounted on 2026-10-29 (H2A tailless, heavily aggregated) serves as a basic bench only. Phase 10a
+  continues alongside as the MT-TIRF hardware is finished.
 - Change log: 2026-10-22 agreed; 2026-10-24 revised (phases 4, 5, 7, 8 completed with 0010-0015 and U1-U37; phase 10
   split into 10a / 10b / 10c; rig-measurement list; requirement-to-phase table).

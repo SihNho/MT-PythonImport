@@ -7,7 +7,11 @@ dependencies = ["numpy", "h5py>=3.8"]
 
 [project.optional-dependencies]
 fast = ["numba", "rocket-fft"]
-dev = ["mtpy[fast]", "pillow", "pytest", "ruff"]
+gui = ["PySide6", "pyqtgraph"]
+dev = ["mtpy[fast,gui]", "pillow", "pytest", "ruff"]
+
+[project.scripts]
+mtpy-gui = "mtpy.gui.__main__:main"
 
 [build-system]
 requires = ["setuptools>=61"]

@@ -125,7 +125,7 @@ class SlowKernel:
 
 
 def test_slow_tracker_drops_are_pipeline_drops_camera_not_blocked(cam, monkeypatch):
-    monkeypatch.setattr(api.acq, "_make_kernel", lambda beads: SlowKernel())
+    monkeypatch.setattr(api.acq, "_make_kernel", lambda beads, *_: SlowKernel())
     monkeypatch.setattr(api.beads, "_selected", Beads((1,), np.array([[640.0, 512.0]]), [], 120, None, None, "test"))
     st = _run(135, record=True, ring_capacity=8)
     seg = st["segments"][0]
@@ -256,7 +256,7 @@ class StubKernel:
 
 def _stub_beads(monkeypatch, delay_s=0.0):
     """One bead at (640, 512), cross 120 -> tracking window half-size 72 px."""
-    monkeypatch.setattr(api.acq, "_make_kernel", lambda beads: StubKernel(delay_s))
+    monkeypatch.setattr(api.acq, "_make_kernel", lambda beads, *_: StubKernel(delay_s))
     monkeypatch.setattr(api.beads, "_selected", Beads((1,), np.array([[640.0, 512.0]]), [], 120, None, None, "test"))
 
 

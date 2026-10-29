@@ -148,8 +148,10 @@ def _seg_event(action, seg):
 
 
 def start(record=False, name=None, sink=None, ring_capacity=64, folder=None, roles=None,
-          motor_poll_s=MOTOR_POLL_S):
+          motor_poll_s=MOTOR_POLL_S, z_method="current", gpu=False):
     """Start acquisition (and tracking of the selected beads, if any). record=True also starts recording.
+    z_method / gpu (decision 0024): the Z estimator (track.Z_METHODS) and the executor (numba, or the fused CUDA
+    kernel) for this acquisition; both are logged with the start event.
 
     name: the run name. sink: a `mtpy.acq.ResultSink`. folder (WP4): with no sink given, the recorded data go to the
     HDF5 v1 file `<folder>/<name>.h5` (`mtpy.data.HDF5Writer`; name None -> `run_<local time>`; an existing file is
@@ -185,7 +187,7 @@ def start(record=False, name=None, sink=None, ring_capacity=64, folder=None, rol
         _, _, w, h = s["roi"]
         if not beads.fit((h, w)):
             raise NotReady(f"the selected beads do not fit the camera ROI {tuple(s['roi'])}; select beads again")
-        kernel = _make_kernel(beads)
+        kernel = _make_kernel(beads, z_method, gpu)
         # warm-up: numba compilation / cache load and its thread pool start here, not on the first frame
         kernel.track(np.zeros((h, w), dtype=np.uint8), np.rint(beads.xy0[:, 0]).astype(np.int64),
                      np.rint(beads.xy0[:, 1]).astype(np.int64), np.ones(len(beads.ids), dtype=bool))
@@ -197,7 +199,7 @@ def start(record=False, name=None, sink=None, ring_capacity=64, folder=None, rol
         seg = pipe.begin_segment(s)
         if record:
             set_recording(True, name, _settings=s)       # the read above is the snapshot: nothing ran in between
-        events.log("acquisition", action="start", name=name, record=bool(record),
+        events.log("acquisition", action="start", name=name, record=bool(record), z_method=z_method, gpu=bool(gpu),
                    beads=list(pipe.bead_ids), cal=beads.source if beads is not None else None)
         _seg_event("begin", seg)
         if pipe.motor_poll is not None:

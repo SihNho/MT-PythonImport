@@ -473,7 +473,7 @@ def test_api_recording_started_later_keeps_rate_and_settings(cam, tmp_path):
 
 
 def test_api_drops_and_gaps_visible_in_file(cam, tmp_path, monkeypatch):
-    monkeypatch.setattr(api.acq, "_make_kernel", lambda beads: SlowKernel())
+    monkeypatch.setattr(api.acq, "_make_kernel", lambda beads, *_: SlowKernel())
     monkeypatch.setattr(api.beads, "_selected", Beads((1,), np.array([[640.0, 512.0]]), [], 120, None, None, "test"))
     cam.device.drop_every = 10
     api.acq.start(record=True, name="drops", folder=tmp_path, ring_capacity=8)
