@@ -40,6 +40,8 @@ def _config(tmp_path, monkeypatch, test_limits, profile_version=None):
         p = json.loads(path.read_text(encoding="utf-8"))
         for q, (lo, hi) in TEST_LIMITS.items():
             p["limits"][q].update(min=lo, max=hi, verified=True, source="TEST ONLY")
+            if q == "focus_z_um":                 # v6 is absolute (0025); the tests keep the session-relative window
+                p["limits"][q]["relative_to"] = "session_start"
         p["unverified"], p["by"] = [], "TEST ONLY (tests/test_devices.py)"
         path.write_text(json.dumps(p), encoding="utf-8")
     safety.load_active()
@@ -152,12 +154,16 @@ def v4_or_v5_rig(request, tmp_path, monkeypatch):
 def test_profiles_v4_and_v5_magnet_position_moves_up_to_15_mm_s_rotor_focus_refused(v4_or_v5_rig):
     """Profiles v4 (rig check 2026-10-25) and v5 (decision 0017, same position and speed limits): a magnet POSITION
     move at <= 15 mm/s (given or read back) runs in the simulator; > 15 mm/s is refused and nothing moves; > 39 mm is
-    coerced to 39 mm (decision 0018 item 5); rotor and focus are still refused (unverified / unset)."""
-    assert safety.profile()["version"] in (4, 5)
+    coerced to 39 mm (decision 0018 item 5); the rotor is still refused (unverified); focus unset before v6."""
+    assert safety.profile()["version"] in (4, 5, 6)
     with pytest.raises(SafetyRefused, match="not verified"):
         api.rotor.rotate(1.0)
-    with pytest.raises(SafetyRefused, match="no limit set"):
-        api.focus.move_to(1.0)
+    if safety.profile()["version"] < 6:
+        with pytest.raises(SafetyRefused, match="no limit set"):
+            api.focus.move_to(1.0)
+    else:                                       # v6 (decision 0025): focus window +-75 um from the ASI controller
+        with pytest.raises(SafetyRefused, match="outside the allowed range"):
+            api.focus.move_to(80.0)
     for speed in (15.5, 16.0):
         with pytest.raises(SafetyRefused, match=r"magnet_speed_mm_s .* outside the allowed range \[0, 15\]"):
             api.magnet.move_to(1.0, speed_mm_s=speed)
@@ -173,11 +179,11 @@ def test_profiles_v4_and_v5_magnet_position_moves_up_to_15_mm_s_rotor_focus_refu
 def test_shipped_v5_force_inside_the_reachable_range_runs(shipped_rig):
     """Decision 0017 on the shipped v5: a force is converted through the table to a position inside [0, 39] mm and
     runs; the reachable range of a table that ends inside the limit is the table's own range."""
-    assert safety.profile()["version"] == 5 and "magnet_force_pN" not in safety.profile()["limits"]
+    assert safety.profile()["version"] == 6 and "magnet_force_pN" not in safety.profile()["limits"]
     api.magnet.use_force_table(SYNTHETIC_TABLE)
     r = api.magnet.force_range()
     assert r["force_pN"] == (0.1, 10.0) and r["position_mm"] == (0.0, 20.0) and r["position_limit_mm"] == (0.0, 39.0)
-    assert r["limited_by"] == ("position limit", "table end") and r["profile_version"] == 5
+    assert r["limited_by"] == ("position limit", "table end") and r["profile_version"] == 6
     assert r["table"] == "synthetic test table"
     n = len(events.events())
     assert api.magnet.set_force(1.0).wait(5) == pytest.approx(10.0, abs=0.01)
@@ -202,7 +208,7 @@ def test_table_force_above_the_reachable_range_is_coerced_to_the_limit_end(shipp
     assert c.request["value"] == 25.0 and c.extra["applied"] == pytest.approx(23.04)
     assert c.extra["calibration"] == "wide test table" and c.extra["position_mm"] == 39.0
     assert "above the reachable range [0.1, 23.04] pN" in c.extra["reason"]
-    assert "set to 23.04 pN at the position limit (39 mm)" in c.extra["reason"] and "rig safety profile v5" in c.extra["reason"]
+    assert "set to 23.04 pN at the position limit (39 mm)" in c.extra["reason"] and "rig safety profile v6" in c.extra["reason"]
     assert api.magnet.coerce_force(31.0)["applied_pN"] == pytest.approx(23.04)
     m = api.magnet.set_force(23.0)
     assert not m.coerced and m.wait(10) == pytest.approx(20 + 25 * 22 / 29, abs=0.01)
@@ -922,3 +928,16 @@ def test_real_camera_preset_readback_and_recording(tmp_path, monkeypatch):
     finally:
         api.devices.disconnect()
     assert dx.acquiring is False and cam.cam is None                   # cleanup: streaming stopped, session closed
+
+
+def test_disconnect_reports_a_failed_close(rig):
+    """Phase 7 (RULES.md 2.5): a device whose close fails - a real motor's session end - makes disconnect() raise
+    after every other device is closed, instead of swallowing it (run 1 on the rig, 2026-10-30)."""
+    dev = rig["magnet"].device
+
+    def bad_close():
+        raise ConnectionError("PI magnet return: POS 5, not within 0.01 of 0 mm; limits NOT released")
+    dev.close = bad_close
+    with pytest.raises(DeviceError, match="cleanup incomplete.*limits NOT released"):
+        api.devices.disconnect()
+    assert api.devices.status() == {}

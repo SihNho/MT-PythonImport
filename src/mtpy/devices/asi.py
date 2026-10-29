@@ -22,7 +22,21 @@ _shared = {}                         # port name -> Line: the stage and the focu
 def _line(name):
     if name not in _shared:
         _shared[name] = Line.open(name, BAUD, b"\r", b"\r\n", 0.8)
+        _shared[name].users = 0
+    _shared[name].users += 1
     return _shared[name]
+
+
+def _release(line):
+    """The stage and the focus share the port: it closes with the last of them."""
+    if getattr(line, "users", 0) > 1:
+        line.users -= 1
+        return
+    line.users = 0
+    for k, v in list(_shared.items()):
+        if v is line:
+            del _shared[k]
+    line.close()
 
 
 def _num(reply, key):
@@ -88,10 +102,14 @@ class AsiStage(Device):
                 raise PermissionError(f"the profile's {q} is not a verified session-relative window: no ASI session")
             half[k] = (float(e["min"]), float(e["max"]))
         L = self.line or _line(self.port_name)
-        pos = {k: self._where(L, k) * UNIT_MM for k in ("X", "Y")}
-        sl = {k: pos[k] + half[k][0] for k in half}
-        su = {k: pos[k] + half[k][1] for k in half}
-        self._write_limits(L, sl, su)
+        try:
+            pos = {k: self._where(L, k) * UNIT_MM for k in ("X", "Y")}
+            sl = {k: pos[k] + half[k][0] for k in half}
+            su = {k: pos[k] + half[k][1] for k in half}
+            self._write_limits(L, sl, su)
+        except BaseException:
+            _release(L)          # audit 2026-10-30 item 3: no port or user-count leak on a failed open
+            raise
         self.line, self.sl, self.su = L, sl, su
 
     def close(self):
@@ -103,19 +121,23 @@ class AsiStage(Device):
             self._write_limits(L, {"X": -RELEASE, "Y": -RELEASE}, rel)
         finally:
             self.line, self.sl, self.su = None, None, None
+            _release(L)
 
-    def _checked_move(self, L, axis, target_units):
+    def _checked_move(self, L, targets):
+        """targets {axis: units}: every check for every axis BEFORE the first write (audit item 8: no partial move)."""
         gate.permitted("an ASI move")
         rb = self._read_limits(L)
         for k in ("X", "Y"):
             if abs(rb[k][0] - self.sl[k]) > TOL or abs(rb[k][1] - self.su[k]) > TOL:
                 raise ValueError(f"ASI SL/SU {rb} are not the session's SL {self.sl} SU {self.su}")
-        lo, hi = self.sl[axis] / UNIT_MM, self.su[axis] / UNIT_MM
-        if not lo <= target_units <= hi:
-            raise ValueError(f"ASI target {axis}={target_units:.0f} outside the controller window {lo:.0f}..{hi:.0f}")
-        reply = L.ask(f"M {axis}={target_units:.0f}")
-        if not reply.startswith(":A"):
-            raise ValueError(f"ASI M {axis}: reply {reply!r}")
+        for axis, t in targets.items():
+            lo, hi = self.sl[axis] / UNIT_MM, self.su[axis] / UNIT_MM
+            if not lo <= t <= hi:
+                raise ValueError(f"ASI target {axis}={t:.0f} outside the controller window {lo:.0f}..{hi:.0f}")
+        for axis, t in targets.items():
+            reply = L.ask(f"M {axis}={t:.0f}")
+            if not reply.startswith(":A"):
+                raise ValueError(f"ASI M {axis}: reply {reply!r}")
 
     def identity(self):
         L = self._io()
@@ -136,9 +158,7 @@ class AsiStage(Device):
         return self.position()
 
     def move_to(self, xy, speed=None):
-        L = self._io()
-        for axis, v in zip("XY", xy):
-            self._checked_move(L, axis, round(float(v) / UNIT_MM))
+        self._checked_move(self._io(), {axis: round(float(v) / UNIT_MM) for axis, v in zip("XY", xy)})
 
     def moving(self):
         L = self._io()
@@ -196,6 +216,7 @@ class AsiFocus(Device):
                 raise ConnectionError(f"ASI SL/SU Z changed during the session: {sl} / {su} mm")
         finally:
             self.line, self.window = None, None
+            _release(L)
 
     def _z_units(self, L):
         v = _num(L.ask("W Z"), "")

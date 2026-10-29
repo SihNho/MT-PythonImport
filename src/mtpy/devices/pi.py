@@ -108,7 +108,9 @@ class PiMagnet(Device):
                 try:
                     self._write_limits(L, lo, hi)
                     self._reference(L)
-                    self._write_limits(L, lo, hi)           # the limits must have survived the referencing
+                    tmn, tmx = self._limits(L)               # read only: an SPA write un-references the axis (FRF 0)
+                    if abs(tmn - lo) > TOL or abs(tmx - hi) > TOL:
+                        raise ConnectionError(f"PI limits {tmn} / {tmx} did not survive the reference move")
                     break
                 except ConnectionError as e:
                     last = e
@@ -181,6 +183,9 @@ class PiMagnet(Device):
     def move_to(self, target, speed=None):
         L = self._io()
         if speed is not None:
+            vmax = safety.profile()["limits"]["magnet_speed_mm_s"]["max"]      # audit item 7: the driver's own cap
+            if vmax is None or not 0 < speed <= vmax:
+                raise ValueError(f"PI VEL {speed!r} outside the profile's 0..{vmax} mm/s")
             L.say(f"VEL 1 {speed:g}")
             v, err = _num(L.ask("VEL?")), _num(L.ask("ERR?"))
             if err or v is None or abs(v - speed) > 1e-3:

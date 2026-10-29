@@ -16,11 +16,15 @@ Short and current. Details live in the linked documents; the history is in git a
   RTX 2060 (float64 at 1/32 rate) - numba stays the default.
 - **Phase 6 (real JAI camera through the API) done 2026-10-29** ([docs/results/2026-10-29-phase6-camera.md](docs/results/2026-10-29-phase6-camera.md)):
   150 Hz with the GUI, 0 of 44 984 frames lost.
-- **Phase 7 started 2026-10-30:** the project's motion gate = the real PI / ASI / Autonics drivers
-  (`src/mtpy/devices/pi.py`, `asi.py`, `autonics.py`, backend `real-motors`), tested against fake controllers
-  (`tests/test_gate.py`). **Waiting for the owner's approval of [docs/design/motion-gate.md](docs/design/motion-gate.md)
-  before anything is sent to a motor** (RULES.md 3); until then V6 `tools/motor_gate.py` is the only motion path.
-- **Next: owner approves the gate -> magnet, stage, rotor, focus on the rig under the lock, independent motor-limit check.**
+- **Phase 7 motion gate approved and run on the rig 2026-10-30** (decision [0025](docs/decisions/0025-motion-gate-approved.md),
+  [docs/results/2026-10-30-phase7-motors.md](docs/results/2026-10-30-phase7-motors.md)): real PI / ASI / Autonics
+  drivers (`src/mtpy/devices/pi.py`, `asi.py`, `autonics.py`, backend `real-motors`); run 2: 31 steps, 0 failed -
+  magnet 0..39 mm, stage +-0.5 mm, focus +-1 um, rotor +-0.5 turn moved and read back; every out-of-envelope
+  request refused before a write; magnet homed and both controllers released at disconnect (independent readback).
+  Profile **v6**: `focus_z_um` = the ASI controller's SL/SU Z (-75..+75 um). Independent audit: PASS per path on the
+  working tree; open items listed in the results page.
+- **Next:** protocols on hardware (force ramps, rotation, 3-state clamp, autofocus), the rotor profile entry
+  (owner to verify +-5 turns), the stop / watchdog paths exercised on the rig, then the tethered-bead calibration.
 
 ## Decided since phase 5 (owner, 2026-10-25 / 26)
 | # | Decision |

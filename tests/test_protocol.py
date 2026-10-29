@@ -195,7 +195,7 @@ def test_check_coerces_out_of_range_force_and_position_in_the_checked_plan(rig):
     warns = [str(d) for d in rep["warnings"]]
     to = [w for w in warns if w.startswith("fe.mtprot:5:18: warning: coerced: 'to' 25 pN -> 10 pN")]
     assert len(to) == 1 and "above the reachable range [0.1, 10] pN of 'synthetic test table'" in to[0]
-    assert "set to 10 pN at the table end (20 mm)" in to[0] and "rig safety profile v5" in to[0]
+    assert "set to 10 pN at the table end (20 mm)" in to[0] and "rig safety profile v6" in to[0]
     assert any(w.startswith("fe.mtprot:7:9: warning: coerced: 'mm' 40 mm -> 39 mm") for w in warns)
     assert any(w.startswith("fe.mtprot:8:9: warning: coerced: 'mm' -3 mm -> 0 mm") for w in warns)
     assert [(c["line"], c["key"], c["requested"], c["applied"]) for c in rep["coerced"]] == [
@@ -211,7 +211,7 @@ def test_shipped_profile_v5_runs_position_moves_and_force_steps_in_range(shipped
     the default equation has no touch position is a check warning and run() refuses it; with a table, `hold` / `ramp`
     inside the reachable range pass the check and run; out of range they are coerced in the checked plan (line and
     column named) and the run moves to the limit end."""
-    assert api.safety.profile()["version"] == 5
+    assert api.safety.profile()["version"] == 6
     s = parse(HEAD + "move mm=2\nzero t=0.1\n", "v5.mtprot")
     rep = api.protocol.check(s, devices=False)
     assert rep["ok"], [str(d) for d in rep["errors"]]

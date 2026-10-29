@@ -34,15 +34,19 @@ def connect(rig_preset):
 
 def disconnect():
     """Close every device and end the service threads (end of session; the session-start origins are dropped)."""
+    failed = []
     try:
         for svc in _services.values():
             try:
                 svc.shutdown()
-            except DeviceError:
-                pass
+            except DeviceError as e:
+                failed.append(str(e))
     finally:
         _services.clear()
-        events.log("devices", action="disconnect")
+        events.log("devices", action="disconnect", failed=failed)
+    if failed:
+        # phase 7: a real motor's close is the session end (magnet home, limits released) - a failure must be seen
+        raise DeviceError("devices", "disconnect", "cleanup incomplete: " + "; ".join(failed))
 
 
 def service(name):

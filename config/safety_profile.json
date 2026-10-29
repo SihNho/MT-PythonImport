@@ -1,12 +1,11 @@
 {
-  "version": 5,
-  "base_version": 4,
-  "created": "2026-10-25T10:48:30",
-  "by": "rig-admin (AI session, owner decision 0017)",
-  "reason": "decision 0017 (owner 2026-10-25): no separate maximum force; magnet_force_pN removed - the force limit is derived from the magnet position limit through the force table in use. Every other limit identical to v4",
+  "version": 6,
+  "base_version": 5,
+  "created": "2026-10-30T08:13:38",
+  "by": "rig-admin (phase 7 run)",
+  "reason": "decision 0025",
   "allow_unverified": false,
   "unverified": [
-    "focus_z_um",
     "rotor_speed_turns_s",
     "rotor_turns"
   ],
@@ -44,12 +43,12 @@
       "source": "unverified - the gate caps the SPD argument at 100 (native units, pulses/s = SPD x multiplier); not converted to turns/s yet"
     },
     "focus_z_um": {
-      "min": null,
-      "max": null,
+      "min": -75.0,
+      "max": 75.0,
       "unit": "um",
-      "relative_to": "session_start",
-      "verified": false,
-      "source": "unverified - focus window not stated yet"
+      "relative_to": null,
+      "verified": true,
+      "source": "ASI Tiger SL Z? / SU Z? read on the rig 2026-10-30 (decision 0025, owner: 'Focus Z lock\uc740 \ud558\ub4dc\uc6e8\uc5b4 \ub9ac\ubc0b \ub530\ub77c\uac08\uac83'); +1 um driver move read back inside them (tools/phase7_motors.py)"
     },
     "stage_x_mm": {
       "min": -2.0,
@@ -69,10 +68,12 @@
     }
   },
   "recommissioning": {
-    "by": "rig-admin (AI session, owner decision 0017)",
-    "t": 1792892910.2656384,
-    "checked": {},
-    "notes": "No limit was added or changed: magnet_force_pN (unset, verified:false) was removed, which needs no rig check (a removed limit only refuses; the force is now bounded by the verified magnet_position_mm limit [0, 39] mm). Nothing was moved or read back on the rig.",
+    "by": "rig-admin (phase 7 run)",
+    "t": 1793315618.071972,
+    "checked": {
+      "focus_z_um": true
+    },
+    "notes": "",
     "not_checked_unverified": []
   }
 }

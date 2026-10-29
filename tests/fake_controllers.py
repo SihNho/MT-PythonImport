@@ -53,9 +53,9 @@ class FakePi(_Port):
             return str(e)
         w = c.split()
         if w[0] == "SPA" and w[2] == "0x15":
-            self.tmx = float(w[3])
+            self.tmx, self.frf = float(w[3]), 0        # an SPA write un-references the axis (rig, 2026-09-18 / 2026-10-30)
         elif w[0] == "SPA" and w[2] == "0x30":
-            self.tmn = float(w[3])
+            self.tmn, self.frf = float(w[3]), 0
         elif w[0] == "SVO":
             self.svo = int(w[2])
         elif w[0] == "RON":

@@ -8,6 +8,7 @@ from mtpy.devices import asi, autonics, gate, pi
 from mtpy.devices.gate import Line
 
 LIMITS = {"magnet_position_mm": {"min": 0.0, "max": 39.0, "relative_to": None, "verified": True},
+          "magnet_speed_mm_s": {"min": 0.0, "max": 15.0, "relative_to": None, "verified": True},
           "stage_x_mm": {"min": -2.0, "max": 2.0, "relative_to": "session_start", "verified": True},
           "stage_y_mm": {"min": -2.0, "max": 2.0, "relative_to": "session_start", "verified": True},
           "rotor_turns": {"min": -5.0, "max": 5.0, "relative_to": "session_start", "verified": False}}
@@ -79,6 +80,9 @@ def test_pi_stop_and_speed_write():
     dev.open()
     dev.move_to(3.0, speed=10.0)
     assert ctl.vel == 10.0 and "VEL 1 10" in ctl.log
+    with pytest.raises(ValueError, match="outside the profile"):
+        dev.move_to(3.0, speed=16.0)
+    assert ctl.vel == 10.0
     dev.stop()
     assert ctl.halted == 1
 
@@ -105,6 +109,45 @@ def _asi():
     line = Line(ctl, b"\r", 0.1)
     line.eol_in = b"\r\n"
     return ctl, asi.AsiStage(line=line), asi.AsiFocus(line=line)
+
+
+def test_asi_shared_port_closes_with_the_last_device_and_not_on_a_failed_open(monkeypatch):
+    def shared(c):
+        ln = Line(c, b"\r", 0.1)
+        ln.eol_in = b"\r\n"
+        ln.users = 0
+        return ln
+
+    def use(ln):
+        ln.users += 1
+        return ln
+    ctl = FakeAsi()
+    line = shared(ctl)
+    monkeypatch.setattr(asi, "_line", lambda name: use(line))
+    st, fz = asi.AsiStage(), asi.AsiFocus()
+    st.open()
+    fz.open()
+    st.close()
+    assert not ctl.closed
+    fz.close()
+    assert ctl.closed
+    ctl2 = FakeAsi()
+    line2 = shared(ctl2)
+    monkeypatch.setattr(asi, "_line", lambda name: use(line2))
+    real = ctl2.handle
+    ctl2.handle = lambda c: ":N-1" if c.startswith("SU ") else real(c)
+    with pytest.raises(ConnectionError):
+        asi.AsiStage().open()
+    assert ctl2.closed and line2.users == 0
+
+
+def test_asi_stage_refuses_the_whole_move_before_any_axis_is_sent():
+    ctl, st, _ = _asi()
+    st.open()
+    n = len(ctl.log)
+    with pytest.raises(ValueError, match="outside"):
+        st.move_to((-1.5, 5.0))            # x fine, y outside: nothing may be sent
+    assert not any(c.startswith("M ") for c in ctl.log[n:]) and ctl.p["X"] == -18475
 
 
 def test_asi_stage_window_set_relative_and_released():
