@@ -4,6 +4,8 @@ Owner 2026-10-29: build the program first and fix design, protocol and detail by
 ("디자인 부분이나 아니면 프로토콜, 디테일한 부분 등은 실행해보면서 수정하는게 빠를 것 같음"); phases 6 and 7 (real devices) follow.
 
 ## Run
+Double-click `MT Tracker (simulators).cmd` (TEST-ONLY limits) or `MT Tracker.cmd` (shipped profile) in the repository
+root; the owner never types scripts into a terminal (2026-10-30). The same from a terminal:
 ```
 .venv\Scripts\python.exe -m mtpy.gui --sim-dev          # simulators; TEST-ONLY focus / rotor limits on a config copy
 .venv\Scripts\python.exe -m mtpy.gui                    # simulators on the shipped safety profile (focus moves refused)
