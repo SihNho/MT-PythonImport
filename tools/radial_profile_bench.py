@@ -329,7 +329,7 @@ def replay(out):
     win_rs, win_h, cals = load_harness_inputs()
     cal = read_cal(FIXTURE / "cal002")
     profs = cal["stack"][:, :, HALF - 1:]
-    src, resid = compensated_sources(profs, (0,))
+    src, _resid = compensated_sources(profs, (0,))
     V = build_variants(src, cal, cals, (0,))
     frames = sorted(int(p.stem[3:]) for p in FIXTURE.glob("img*.tif"))
     names = list(V)

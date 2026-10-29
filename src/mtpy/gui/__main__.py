@@ -1,4 +1,7 @@
-"""`python -m mtpy.gui [--fixture DIR] [--out DIR] [--sim-dev] [--screenshot PNG]`
+"""`python -m mtpy.gui [--backend sim|real] [--fixture DIR] [--out DIR] [--sim-dev] [--screenshot PNG]`
+
+--backend   sim (default): every device simulated; real: the JAI camera through IMAQdx, the other devices simulated
+            (phase 6). `real` needs the rig lock: run inside V6 tools/rig_session.py --no-motor-session.
 
 --fixture   folder of recorded frames (img*.tif) and a `cal*` file for the simulated camera (default: $MTPY_DATA/test)
 --out       folder for run files (default: <cwd>/runs)
@@ -41,6 +44,7 @@ def main(argv=None):
         "MTPY_DATA", r"G:\Data\SiHyeong\20260906 Kimlab - 50bp 16X WT 90Hz 1p2 Ramp_Newbatch")) / "test"))
     ap.add_argument("--out", default=str(Path.cwd() / "runs"))
     ap.add_argument("--sim-dev", action="store_true")
+    ap.add_argument("--backend", choices=("sim", "real"), default="sim")
     ap.add_argument("--screenshot", default=None)
     a = ap.parse_args(argv)
     from PySide6.QtCore import QTimer
@@ -49,7 +53,7 @@ def main(argv=None):
     from .app import MainWindow
     cfg = sim_dev_config() if a.sim_dev else None
     app = QApplication(sys.argv[:1])
-    w = MainWindow(fixture=a.fixture, out=a.out, sim_dev=cfg)
+    w = MainWindow(fixture=a.fixture, out=a.out, sim_dev=cfg, backend=a.backend)
     w.show()
     if a.screenshot:
         def shot():

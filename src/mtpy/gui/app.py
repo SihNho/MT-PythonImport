@@ -113,16 +113,18 @@ def _row(*widgets):
 class MainWindow(QMainWindow):
     event_in = Signal(object)
 
-    def __init__(self, fixture, out, sim_dev=None):
+    def __init__(self, fixture, out, sim_dev=None, backend="sim"):
         super().__init__()
         self.fixture, self.out, self.sim_dev = Path(fixture), Path(out), sim_dev
+        self.backend_arg = backend
         self.pool = QThreadPool.globalInstance()
         self._workers = set()                          # alive until done / failed: the pool would delete them first
         self.history = deque(maxlen=20000)            # (t, mag, force, xyz (nb, 3))
         self.t0 = time.time()
         self.bead_ids, self.roles, self.cal_path = [], {}, None
         self.display_on = True
-        self.setWindowTitle("MT Tracker (Python) - simulators" + ("  [SIM-DEV PROFILE]" if sim_dev else ""))
+        self.setWindowTitle("MT Tracker (Python) - " + ("REAL CAMERA, other devices simulated" if backend == "real"
+                                                          else "simulators") + ("  [SIM-DEV PROFILE]" if sim_dev else ""))
         self.resize(1500, 950)
         self._build()
         self.event_in.connect(self._on_event)
@@ -240,9 +242,14 @@ class MainWindow(QMainWindow):
     def _panel_setup(self):
         w = QWidget()
         f = QFormLayout(w)
+        self.backend = QComboBox()
+        self.backend.addItem("sim: every device simulated", "sim")
+        self.backend.addItem("real: JAI camera through IMAQdx under the rig lock; motors simulated (phase 6)", "real")
+        self.backend.setCurrentIndex(self.backend.findData(self.backend_arg))
+        f.addRow("Backend", self.backend)
         self.ed_fixture = QLineEdit(str(self.fixture))
         f.addRow("Simulator fixture", _row(self.ed_fixture, QPushButton("Browse...", clicked=self._browse_fixture)))
-        f.addRow(_row(QPushButton("Connect (sim)", clicked=self._connect),
+        f.addRow(_row(QPushButton("Connect", clicked=self._connect),
                       QPushButton("Disconnect", clicked=self._disconnect),
                       QPushButton("Run self-check", clicked=self._self_check)))
         self.dev_table = QTableWidget(0, 3)
@@ -421,9 +428,9 @@ class MainWindow(QMainWindow):
             self.ed_fixture.setText(d)
 
     def _connect(self):
-        preset = {"backend": "sim"}
+        preset = {"backend": self.backend.currentData()}
         fx = Path(self.ed_fixture.text())
-        if fx.is_dir():
+        if preset["backend"] == "sim" and fx.is_dir():
             preset["fixture"] = str(fx)
             cals = sorted(fx.glob("cal*"))
             if cals and not self.ed_cal.text():
@@ -452,6 +459,8 @@ class MainWindow(QMainWindow):
     def _apply_preset(self):
         preset = {"name": "gui", "roi": (0, 0, 1280, 1024), "rate_Hz": self.cam_rate.currentData(),
                   "exposure_ms": self.cam_exp.value(), "gain_dB": self.cam_gain.value()}
+        if self.backend.currentData() == "real":
+            preset.pop("gain_dB")                  # read-only on the JAI until its gain unit is verified (jai.py)
         self._call(lambda: api.camera.apply_preset(preset, confirm=True), "camera preset",
                    lambda r: self.readback.setText(f"camera: {r}"))
 

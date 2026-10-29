@@ -827,8 +827,98 @@ def test_set_force_needs_a_ready_calibration(rig):
     assert m.applied_pN == 10.0 and m.wait(10) == pytest.approx(20.0, abs=0.01)
 
 
-def test_real_backend_not_implemented_and_not_connected():
-    with pytest.raises(NotImplementedError, match="phases 6/7"):
-        api.devices.connect({"backend": "real"})
+def test_unknown_backend_not_implemented_and_not_connected():
+    with pytest.raises(NotImplementedError, match="phase 7"):
+        api.devices.connect({"backend": "ebus"})
     with pytest.raises(NotReady, match="connect"):
         api.magnet.position()
+
+
+def test_real_backend_refuses_the_camera_without_the_rig_lock(tmp_path, monkeypatch):
+    """Phase 6: `real` = the JAI camera (lock required, U8 shows why) + simulated motors."""
+    _config(tmp_path, monkeypatch, True)
+    monkeypatch.delenv("RIGLOCK_TOKEN", raising=False)
+    try:
+        st = api.devices.connect({"backend": "real"})
+        assert st["magnet"]["state"] == "connected" and st["camera"]["state"] == "disconnected"
+        assert "RIGLOCK_TOKEN" in st["camera"]["last_error"]["hint"]
+    finally:
+        api.devices.disconnect()
+
+
+class _FakeImaqdx:
+    """`imaqdx.ImaqdxCamera` as the JAI answers it (attribute names and .icd defaults from the manual)."""
+    name, model, serial = "cam1", "SP-5000M-USB", "000014FB0067A270"
+
+    def __init__(self):
+        from mtpy.devices import jai
+        from mtpy.devices.imaqdx import ACQ, IMG
+        self.a = {ACQ + "ExposureTime": 1909.0, ACQ + "ExposureAuto": "Continuous", ACQ + "AcquisitionFrameRate": 90.0009,
+                  jai.GAIN: 16.0, IMG + "OffsetX": 0, IMG + "OffsetY": 0, IMG + "Width": 1280, IMG + "Height": 1024,
+                  jai.DEV + "DeviceFirmwareVersion": "0.2.0.0"}
+        self.rate_key, self.acquiring, self.stopped = ACQ + "AcquisitionFrameRate", False, threading.Event()
+
+    def open(self):
+        pass
+
+    def get(self, n, t):
+        return self.a[n]
+
+    def set(self, n, t, v):
+        self.a[n] = 1e6 / round(1e6 / v) if n == self.rate_key else v     # 1 us period steps, as the camera
+
+    def start(self, n_buffers):
+        self.t0, self.acquiring = time.perf_counter(), True
+        self.stopped.clear()
+
+    def frame(self, b):
+        due = self.t0 + b / self.a[self.rate_key]
+        while time.perf_counter() < due:
+            if self.stopped.is_set():
+                raise RuntimeError("acquisition stopped")
+            if due - time.perf_counter() > 0.002:          # spin the last 2 ms: Windows sleep is 1-2 ms coarse
+                time.sleep(0.0005)
+        return b, time.time(), np.full((1024, 1280), 90, np.uint8)
+
+    def stop_streaming(self):
+        self.stopped.set()
+
+    def stop(self):
+        self.stopped.set()
+        self.acquiring = False
+
+    close = stop
+
+
+def test_real_camera_preset_readback_and_recording(tmp_path, monkeypatch):
+    """The JAI device behind the same API as the simulator: preset read back (U15), per-frame PC timestamps and the
+    frame-rate triple in the run file."""
+    import h5py
+
+    from mtpy.devices import jai
+    _config(tmp_path, monkeypatch, True)
+    monkeypatch.setattr(jai, "ImaqdxCamera", _FakeImaqdx)
+    monkeypatch.setattr(jai, "_permitted", lambda: None)
+    with events.as_caller("gui"):
+        api.devices.connect({"backend": "real"})
+    try:
+        cam = api.devices.service("camera").device
+        dx = cam.cam
+        got = api.camera.apply_preset({"name": "tracking 150 Hz", "rate_Hz": 150.0, "exposure_ms": 5.0})
+        assert got["rate_Hz"] == pytest.approx(149.9925, abs=1e-4) and got["exposure_ms"] == 5.0
+        assert cam.cam.a[jai.ACQ + "ExposureAuto"] == "Off"
+        with pytest.raises(DeviceError, match="read-only"):
+            api.camera.set_gain(2.0)
+        api.acq.start(record=True, name="jai", folder=tmp_path)
+        api.acq.wait_frames(30, 5.0)
+        st = api.acq.stop()
+        assert st["camera_gaps"] == 0 and st["frames_received"] >= 30 and cam.error is None
+        with h5py.File(tmp_path / "jai.h5", "r") as f:
+            triple = f["metadata/run/frame_rate_hz"][()]
+            assert triple[0] == 150.0 and triple[1] == pytest.approx(149.9925, abs=1e-4)
+            assert triple[2] == pytest.approx(150.0, rel=0.05)
+            assert "PC receive time" in f["mt/t_camera"].attrs["source"]
+            assert np.all(np.diff(f["mt/t_camera"][()]) > 0)
+    finally:
+        api.devices.disconnect()
+    assert dx.acquiring is False and cam.cam is None                   # cleanup: streaming stopped, session closed

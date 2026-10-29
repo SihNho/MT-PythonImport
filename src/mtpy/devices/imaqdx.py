@@ -108,6 +108,12 @@ class ImaqdxCamera:
         t = time.time()
         return act.value, t, np.frombuffer(self._buf.raw, np.uint8).reshape(self.shape)
 
+    def stop_streaming(self):
+        """StopAcquisition only: a GetImageData waiting on another thread returns (with an error); stop() then frees
+        the ring. Safe to call twice."""
+        if self.acquiring:
+            self.dx.IMAQdxStopAcquisition(self.sess)
+
     def stop(self):
         if self.acquiring:
             self.acquiring = False
