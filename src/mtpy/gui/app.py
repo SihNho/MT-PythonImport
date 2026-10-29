@@ -123,7 +123,7 @@ class MainWindow(QMainWindow):
         self.t0 = time.time()
         self.bead_ids, self.roles, self.cal_path = [], {}, None
         self.display_on = True
-        self.setWindowTitle("MT Tracker (Python) - " + ("REAL CAMERA, other devices simulated" if backend == "real"
+        self.setWindowTitle("MT Tracker (Python) - " + ("REAL CAMERA, other devices simulated" if backend == "real" else "REAL CAMERA AND MOTORS" if backend == "real-motors"
                                                           else "simulators") + ("  [SIM-DEV PROFILE]" if sim_dev else ""))
         self.resize(1500, 950)
         self._build()
@@ -245,6 +245,7 @@ class MainWindow(QMainWindow):
         self.backend = QComboBox()
         self.backend.addItem("sim: every device simulated", "sim")
         self.backend.addItem("real: JAI camera through IMAQdx under the rig lock; motors simulated (phase 6)", "real")
+        self.backend.addItem("real-motors: camera + PI / ASI / Autonics through the motion gate (phase 7)", "real-motors")
         self.backend.setCurrentIndex(self.backend.findData(self.backend_arg))
         f.addRow("Backend", self.backend)
         self.ed_fixture = QLineEdit(str(self.fixture))

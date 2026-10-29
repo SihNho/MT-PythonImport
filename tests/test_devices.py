@@ -828,7 +828,7 @@ def test_set_force_needs_a_ready_calibration(rig):
 
 
 def test_unknown_backend_not_implemented_and_not_connected():
-    with pytest.raises(NotImplementedError, match="phase 7"):
+    with pytest.raises(NotImplementedError, match="does not exist"):
         api.devices.connect({"backend": "ebus"})
     with pytest.raises(NotReady, match="connect"):
         api.magnet.position()

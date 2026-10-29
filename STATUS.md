@@ -1,4 +1,4 @@
-# Status (2026-10-29)
+# Status (2026-10-30)
 
 Short and current. Details live in the linked documents; the history is in git and `dev/cycles.md`.
 
@@ -14,7 +14,13 @@ Short and current. Details live in the linked documents; the history is in git a
   checked explicitly), then the tethered-bead calibration and the ABBA comparison.
 - Three Z estimators on numpy / numba / CUDA (decision 0024); the fused GPU kernel ties the CPU at best on the
   RTX 2060 (float64 at 1/32 rate) - numba stays the default.
-- **Next: phase 6 (real camera on the rig)**, then phase 7 (motors, own motion gate).
+- **Phase 6 (real JAI camera through the API) done 2026-10-29** ([docs/results/2026-10-29-phase6-camera.md](docs/results/2026-10-29-phase6-camera.md)):
+  150 Hz with the GUI, 0 of 44 984 frames lost.
+- **Phase 7 started 2026-10-30:** the project's motion gate = the real PI / ASI / Autonics drivers
+  (`src/mtpy/devices/pi.py`, `asi.py`, `autonics.py`, backend `real-motors`), tested against fake controllers
+  (`tests/test_gate.py`). **Waiting for the owner's approval of [docs/design/motion-gate.md](docs/design/motion-gate.md)
+  before anything is sent to a motor** (RULES.md 3); until then V6 `tools/motor_gate.py` is the only motion path.
+- **Next: owner approves the gate -> magnet, stage, rotor, focus on the rig under the lock, independent motor-limit check.**
 
 ## Decided since phase 5 (owner, 2026-10-25 / 26)
 | # | Decision |

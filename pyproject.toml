@@ -8,7 +8,8 @@ dependencies = ["numpy", "h5py>=3.8"]
 [project.optional-dependencies]
 fast = ["numba", "rocket-fft"]
 gui = ["PySide6", "pyqtgraph"]
-dev = ["mtpy[fast,gui]", "pillow", "pytest", "ruff"]
+real = ["pyserial"]
+dev = ["mtpy[fast,gui,real]", "pillow", "pytest", "ruff"]
 
 [project.scripts]
 mtpy-gui = "mtpy.gui.__main__:main"

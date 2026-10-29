@@ -2,9 +2,10 @@
 scripts, plug-ins or the AI gateway.
 
 `make(rig)` builds the devices named by a rig preset: `{"backend": "sim"}` (every device simulated) or
-`{"backend": "real"}` (phase 6: the real JAI camera through IMAQdx under the rig lock, `jai.py`; the motors, Arduino
-and lights stay simulated until phase 7). Real drivers (PI C-863, ASI Tiger, Autonics PMC-2HS, Arduino, OBIS) must
-take the shared rig lock and go through the approved motion gate (CLAUDE.md "The rig").
+`{"backend": "real"}` (phase 6: the real JAI camera through IMAQdx under the rig lock, `jai.py`; motors simulated) or
+`{"backend": "real-motors"}` (phase 7: the camera and the PI / ASI / Autonics drivers `pi.py`, `asi.py`,
+`autonics.py` = the project's motion gate, docs/design/motion-gate.md; Arduino and lights still simulated). Real
+drivers take the shared rig lock before every send (CLAUDE.md "The rig").
 
 Import order (WP6, the WP3 carry "mtpy.api <-> mtpy.devices cycle"): `mtpy.devices.base` uses `mtpy.api.estop` /
 `events`, and `mtpy.api` uses this package. `mtpy.api` is therefore loaded first here, and `mtpy.api.camera` takes
@@ -28,8 +29,16 @@ def make(rig):
     if backend == "real":
         from .jai import JaiCamera
         return {**make_rig(), "camera": JaiCamera()}
-    raise NotImplementedError(f"device backend {backend!r} does not exist (real motors come in phase 7); "
-                              "use the rig preset {'backend': 'sim'} or {'backend': 'real'}")
+    if backend == "real-motors":
+        # phase 7: the motion gate (docs/design/motion-gate.md) - only after the owner's approval of that page
+        from .asi import AsiFocus, AsiStage
+        from .autonics import AutonicsRotor
+        from .jai import JaiCamera
+        from .pi import PiMagnet
+        return {**make_rig(), "camera": JaiCamera(), "magnet": PiMagnet(), "stage": AsiStage(), "focus": AsiFocus(),
+                "rotor": AutonicsRotor()}
+    raise NotImplementedError(f"device backend {backend!r} does not exist; use the rig preset "
+                              "{'backend': 'sim'}, {'backend': 'real'} (camera) or {'backend': 'real-motors'}")
 
 
 __all__ = ["IMMEDIATE", "NAMES", "NEEDS_PAUSE", "Device", "DeviceService", "Motion", "make"]
