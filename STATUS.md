@@ -34,6 +34,11 @@ Short and current. Details live in the linked documents; the history is in git a
   without the V6 wrapper. Same day on the rig: owner's motor sequence (results/2026-10-30-motor-sequence.md), iXon
   first contact, shutter freed by cycling, 47.5 fps max at VS 3.3 us (results/2026-10-30-emccd-*.md),
   camera parameter catalogue (design/camera-parameters.md).
+- **2026-10-30/31 (iXon cooler):** CoolerOFF does not stop this camera's cooler; the close warms it up through the
+  set point (SetTemperature(top) + CoolerON, judged by the temperature alone, fails fast when it does not move) and
+  the open reads the state a previous owner left and adopts a cold sensor as the set point (owner 2026-10-31:
+  check the configuration status at device start; results/2026-10-30-ixon-cooler.md). GUI items still open:
+  "Close anyway" from the Disconnect button leaves the process alive; a failed device close is reopened by the next.
 - **Next:** protocols on hardware (force ramps, rotation, 3-state clamp, autofocus), the stop / watchdog paths
   exercised on the rig, then the tethered-bead calibration.
 - **Queued (owner 2026-10-30):** lock the camera settings while a z scan runs (the GUI must not change exposure,

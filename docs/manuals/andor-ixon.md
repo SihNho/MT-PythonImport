@@ -67,8 +67,15 @@ file bytes on 2026-10-22, no LabVIEW; **names only - its wiring was never read**
 ## Safety envelope and what to restore after a job
 
 - No motion. The rig lock applies (the iXon is listed as a rig device in RULES.md section 2).
-- **Before `ShutDown`**: `AbortAcquisition`, close the shutter, `CoolerOFF`, then wait until the sensor has warmed up
-  (Andor's guidance for SDK2 cameras: above about -20 deg C) before `ShutDown`; a fast warm-up stresses the sensor.
+- **Before `ShutDown`**: `AbortAcquisition`, close the shutter, then warm the sensor above -20 deg C **through the
+  set point** (`SetTemperature(top of range)` + `CoolerON`; the camera regulates the rate), then `CoolerOFF`,
+  `ShutDown`. On the rig's Ultra 897 `CoolerOFF` (also after `SetCoolerMode(0)`) returned success and the sensor
+  stayed at -80 C for 30 min; `IsCoolerOn` stayed 1 and the `GetTemperature` status said "off" while cooling, so
+  only the temperature trajectory is trusted (results/2026-10-30-ixon-cooler.md). The -20 C rule is marked
+  "Classic & ICCD only" in the SDK 2.104 manual; kept for the Ultra until the owner decides otherwise.
+- **At open**: read `GetTemperature` first; a sensor below -20 C (left cooling by LabVIEW or a crashed process) is
+  adopted as the set point and recorded in the identity (`found_at_open`), so the read-back is true and the close
+  warms it up (owner 2026-10-31).
 - Light: high EM gain with bright light can damage the EM register; keep EM gain off or low until the light level is
   known, and keep gain > 300 locked (`SetEMAdvanced` off) unless the owner decides otherwise.
 - Restore: shutter closed, cooler off and warmed, `ShutDown` called, process gone. A crashed process that never called

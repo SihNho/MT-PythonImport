@@ -14,7 +14,11 @@ sensor temperature; every other parameter later. So `settings()` / `set()` cover
 - `temperature_C`: `SetTemperature` + `CoolerON`, within `GetTemperatureRange`; the SDK has no set-point getter, so
   the read-back is the value kept here; `sensor_temperature_C` and `cooler` (the GetTemperature status) are read.
 A set while acquiring aborts the acquisition, applies, and starts again (the SDK refuses writes while acquiring).
-Close = abort, cooler off, wait until the sensor is warmer than -20 C (Andor's guidance; `close_timeout_s`), ShutDown.
+Open reads the state a previous owner left (LabVIEW, a crash): a sensor below -20 C is adopted as the set point so
+the read-back is true and close() warms it up (owner 2026-10-31: check the state at start, reset, then connect).
+Close = abort, warm-up by the camera's own regulation (set point = top of the range + CoolerON, judged by the
+temperature only), CoolerOFF above -20 C, ShutDown. On this iXon CoolerOFF alone does not stop the cooler (rig
+2026-10-30: -80 C for 30 min after CoolerOFF; IsCoolerOn and the GetTemperature status were wrong both ways).
 Opens only under the rig lock, like the JAI (`jai._permitted`). The simulator `SimEmccd` is this class on `FakeAndor`.
 """
 import ctypes
@@ -91,6 +95,7 @@ class FakeAndor:
         self.exposure_s, self.cycle_s, self.gain, self.gain_mode, self.ft = 0.1, 0.0, 0, 0, 0
         self.set_c, self.cooler, self.acquiring, self.initialized, self.shut = 20, False, False, False, False
         self.t_start, self.read_to, self.shutter = 0.0, 0, 2
+        self.stuck_c = None                   # when set: the sensor reads this whatever the cooler is told
         self.calls = []
 
     def _period(self):
@@ -118,6 +123,9 @@ class FakeAndor:
         elif name == "GetEMGainRange":
             args[0]._obj.value, args[1]._obj.value = (0, 255) if self.gain_mode == 0 else (1, 300)
         elif name == "GetTemperature":
+            if self.stuck_c is not None:
+                args[0]._obj.value = self.stuck_c
+                return 20037
             args[0]._obj.value = self.set_c if self.cooler else 20
             return 20036 if self.cooler else 20034
         elif name == "GetEMCCDGain":
@@ -194,6 +202,7 @@ class IxonCamera(Device):
                                        "em_gain", "temperature_C")}
     open_timeout_s = 60.0                   # Initialize loads the firmware (seconds)
     close_timeout_s = 900.0                 # the warm-up wait before ShutDown
+    stall_s = 60.0                          # a warm-up that moves less than 2 C in this time has failed
     needs_lock = True
 
     def __init__(self, sdk=None):
@@ -242,6 +251,13 @@ class IxonCamera(Device):
                                "port": "USB", "driver": f"Andor SDK2 {DLL} (mtpy.devices.ixon)"}
             self.detector = self._get("GetDetector", c_int, c_int)
             self.temp_range = self._get("GetTemperatureRange", c_int, c_int)
+            rc, t = self._get("GetTemperature", c_int)
+            self.identity_d["found_at_open"] = {"sensor_temperature_C": t, "cooler": TEMP_STATUS[rc]}
+            if t < WARM_C:
+                # left cooling by a previous owner (rig 2026-10-30: -80 C, status "off"): make it our set point
+                sdk("SetTemperature", max(t, self.temp_range[0]))
+                sdk("CoolerON")
+                self._set_c, self.cooler_on = max(t, self.temp_range[0]), True
             w, h_ = self.detector
             # smCamera's fixed set-up (manual section 3); frame transfer OFF by default (exposure and rate independent)
             for call in (("SetReadMode", 4), ("SetAcquisitionMode", 5), ("SetFrameTransferMode", self._ft),
@@ -328,17 +344,34 @@ class IxonCamera(Device):
             return
         try:
             self.stop_acquisition()             # abort and shutter closed
+            self._warm_up()
             sdk("CoolerOFF")
             self.cooler_on = False
-            t_end = time.monotonic() + self.close_timeout_s - 5.0
-            while self._get("GetTemperature", c_int)[1] < WARM_C:
-                if time.monotonic() > t_end:
-                    raise TimeoutError(f"sensor still below {WARM_C} C after the warm-up wait; ShutDown not called "
-                                       "(the cooler is off: wait, then disconnect again)")
-                time.sleep(2.0)
             sdk("ShutDown")
         finally:
             self.sdk = None
+
+    def _warm_up(self):
+        """Bring the sensor above WARM_C through the camera's own regulation: set point = top of the range + CoolerON
+        (rig 2026-10-30: -80 -> +17 C in 4 min; CoolerOFF and SetCoolerMode(0) had changed nothing in 30 min).
+        Judged by the temperature trajectory alone; fails fast when it does not move."""
+        t = self._get("GetTemperature", c_int)[1]
+        if t >= WARM_C:
+            return
+        hi = self.temp_range[1]
+        self.sdk("SetTemperature", hi)
+        self.sdk("CoolerON")
+        t0, now = t, time.monotonic()
+        t_stall, t_end = now + self.stall_s, now + self.close_timeout_s - 5.0
+        while t < WARM_C:
+            now = time.monotonic()
+            if now > t_stall and t - t0 < 2.0:
+                raise TimeoutError(f"sensor {t} C did not warm up within {self.stall_s:.0f} s of SetTemperature({hi}) + "
+                                   f"CoolerON (was {t0} C); ShutDown not called")
+            if now > t_end:
+                raise TimeoutError(f"sensor still below {WARM_C} C ({t} C) after the warm-up wait; ShutDown not called")
+            time.sleep(2.0)
+            t = self._get("GetTemperature", c_int)[1]
 
     def identity(self):
         self._io()
