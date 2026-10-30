@@ -273,7 +273,7 @@ class MainWindow(QMainWindow):
         g4 = QGroupBox("EMCCD (Andor iXon Ultra): core parameters, each read back")
         g4f = QFormLayout(g4)
         self.em_exp = _spin(0.01, 10000.0, 1.0, 30.0, 2, " ms")
-        self.em_rate = _spin(0.01, 1000.0, 1.0, 20.0, 2, " Hz")
+        self.em_rate = _spin(0.01, 1000.0, 1.0, 18.0, 2, " Hz")     # 30 ms + 24.59 ms readout (frame transfer off) -> 18.3 Hz max
         self.em_mode = QComboBox()
         for i, m in enumerate(("8 bit DAC", "12 bit DAC", "linear", "real EM gain")):
             self.em_mode.addItem(f"{i}: {m}", i)
