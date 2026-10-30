@@ -1,13 +1,12 @@
 {
-  "version": 6,
-  "base_version": 5,
-  "created": "2026-10-30T08:13:38",
-  "by": "rig-admin (phase 7 run)",
-  "reason": "decision 0025",
+  "version": 7,
+  "base_version": 6,
+  "created": "2026-10-30T09:19:31",
+  "by": "rig-admin (phase 7 rotor run)",
+  "reason": "rotor window verified on the rig",
   "allow_unverified": false,
   "unverified": [
-    "rotor_speed_turns_s",
-    "rotor_turns"
+    "rotor_speed_turns_s"
   ],
   "limits": {
     "magnet_position_mm": {
@@ -31,8 +30,8 @@
       "max": 5.0,
       "unit": "turns",
       "relative_to": "session_start",
-      "verified": false,
-      "source": "unverified for the application - development-gate envelope, owner 2026-10-19 '-5 .. +5 turns' from the session-start position (motor_limits.json rotor half_width_pulses 2500 at 500 pulses per turn)"
+      "verified": true,
+      "source": "+-5 turns from the session start, driven to both edges and read back on the rig 2026-10-30 (window {'window_pulses': (97500, 102500), 'pulses_per_turn': 500, 'unit': 'turns'}); one pulse past the edge refused (tools/phase7_rotor.py; owner 2026-10-30)"
     },
     "rotor_speed_turns_s": {
       "min": 0.0,
@@ -68,10 +67,10 @@
     }
   },
   "recommissioning": {
-    "by": "rig-admin (phase 7 run)",
-    "t": 1793315618.071972,
+    "by": "rig-admin (phase 7 rotor run)",
+    "t": 1793319571.9155328,
     "checked": {
-      "focus_z_um": true
+      "rotor_turns": true
     },
     "notes": "",
     "not_checked_unverified": []

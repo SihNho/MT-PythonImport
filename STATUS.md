@@ -21,10 +21,11 @@ Short and current. Details live in the linked documents; the history is in git a
   drivers (`src/mtpy/devices/pi.py`, `asi.py`, `autonics.py`, backend `real-motors`); run 2: 31 steps, 0 failed -
   magnet 0..39 mm, stage +-0.5 mm, focus +-1 um, rotor +-0.5 turn moved and read back; every out-of-envelope
   request refused before a write; magnet homed and both controllers released at disconnect (independent readback).
-  Profile **v6**: `focus_z_um` = the ASI controller's SL/SU Z (-75..+75 um). Independent audit: PASS per path on the
+  Profile **v6**: `focus_z_um` = the ASI controller's SL/SU Z (-75..+75 um); **v7**: `rotor_turns` +-5 turns verified
+  on the rig (both edges, one pulse past refused), rotor moves through the API allowed. Independent audit: PASS per path on the
   working tree; open items listed in the results page.
-- **Next:** protocols on hardware (force ramps, rotation, 3-state clamp, autofocus), the rotor profile entry
-  (owner to verify +-5 turns), the stop / watchdog paths exercised on the rig, then the tethered-bead calibration.
+- **Next:** protocols on hardware (force ramps, rotation, 3-state clamp, autofocus), the stop / watchdog paths
+  exercised on the rig, then the tethered-bead calibration.
 
 ## Decided since phase 5 (owner, 2026-10-25 / 26)
 | # | Decision |

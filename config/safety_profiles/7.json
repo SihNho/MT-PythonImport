@@ -1,0 +1,78 @@
+{
+  "version": 7,
+  "base_version": 6,
+  "created": "2026-10-30T09:19:31",
+  "by": "rig-admin (phase 7 rotor run)",
+  "reason": "rotor window verified on the rig",
+  "allow_unverified": false,
+  "unverified": [
+    "rotor_speed_turns_s"
+  ],
+  "limits": {
+    "magnet_position_mm": {
+      "min": 0.0,
+      "max": 39.0,
+      "unit": "mm",
+      "relative_to": null,
+      "verified": true,
+      "source": "PI C-863.11 TMN 0 / TMX 39 written by MT_LabVIEW tools/motor_gate.py (tools/bench/motor_limits.json pi lo_mm/hi_mm, 2026-09-18, owner at the rig)"
+    },
+    "magnet_speed_mm_s": {
+      "min": 0.0,
+      "max": 15.0,
+      "unit": "mm/s",
+      "relative_to": null,
+      "verified": true,
+      "source": "owner decision 0016 (15 mm/s); rig check 2026-10-25 on the real PI C-863.11, V6 card pivel15r (PASS, 3/3 gates), log V6 tools/bench/pi_vel15_check_20261025.log: VEL? = 15 (original 15), MOV 1 30 -> POS 30.00000 ERR 0 ONT 1, MOV 1 0 -> POS 0.00000 ERR 0"
+    },
+    "rotor_turns": {
+      "min": -5.0,
+      "max": 5.0,
+      "unit": "turns",
+      "relative_to": "session_start",
+      "verified": true,
+      "source": "+-5 turns from the session start, driven to both edges and read back on the rig 2026-10-30 (window {'window_pulses': (97500, 102500), 'pulses_per_turn': 500, 'unit': 'turns'}); one pulse past the edge refused (tools/phase7_rotor.py; owner 2026-10-30)"
+    },
+    "rotor_speed_turns_s": {
+      "min": 0.0,
+      "max": null,
+      "unit": "turns/s",
+      "relative_to": null,
+      "verified": false,
+      "source": "unverified - the gate caps the SPD argument at 100 (native units, pulses/s = SPD x multiplier); not converted to turns/s yet"
+    },
+    "focus_z_um": {
+      "min": -75.0,
+      "max": 75.0,
+      "unit": "um",
+      "relative_to": null,
+      "verified": true,
+      "source": "ASI Tiger SL Z? / SU Z? read on the rig 2026-10-30 (decision 0025, owner: 'Focus Z lock\uc740 \ud558\ub4dc\uc6e8\uc5b4 \ub9ac\ubc0b \ub530\ub77c\uac08\uac83'); +1 um driver move read back inside them (tools/phase7_motors.py)"
+    },
+    "stage_x_mm": {
+      "min": -2.0,
+      "max": 2.0,
+      "unit": "mm",
+      "relative_to": "session_start",
+      "verified": true,
+      "source": "ASI SL/SU = session-start position +- 2.0 mm (motor_limits.json asi half_width_mm, owner 2026-10-15)"
+    },
+    "stage_y_mm": {
+      "min": -2.0,
+      "max": 2.0,
+      "unit": "mm",
+      "relative_to": "session_start",
+      "verified": true,
+      "source": "ASI SL/SU = session-start position +- 2.0 mm (motor_limits.json asi half_width_mm, owner 2026-10-15)"
+    }
+  },
+  "recommissioning": {
+    "by": "rig-admin (phase 7 rotor run)",
+    "t": 1793319571.9155328,
+    "checked": {
+      "rotor_turns": true
+    },
+    "notes": "",
+    "not_checked_unverified": []
+  }
+}
