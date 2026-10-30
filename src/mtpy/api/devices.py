@@ -18,7 +18,8 @@ CLOSE_ORDER = ("magnet", "rotor", "stage", "focus", "emccd", "camera", "arduino"
 # Owner 2026-10-30: "MT, MT-TIRF 모드 구분이 필요함" / "Arduino는 mt-tirf 용도". MT = tracking alone (the JAI and
 # the motors); MT-TIRF = everything (plan phase 10a: the iXon, the Arduino sync box, the lasers / light gating). The
 # mode chooses which devices a connect opens and is written into every run file; the default keeps today's behaviour.
-MODES = {"MT": ("camera", "magnet", "rotor", "stage", "focus"), "MT-TIRF": _devices.NAMES}
+MODES = {"MT": ("camera", "magnet", "rotor", "stage", "focus"),
+         "MT-TIRF": ("camera", "magnet", "rotor", "stage", "focus", "arduino", "light", "emccd")}   # = devices.NAMES (literal: import order)
 DEFAULT_MODE = "MT-TIRF"
 _mode = None
 

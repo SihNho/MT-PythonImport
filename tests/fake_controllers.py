@@ -119,14 +119,25 @@ class FakeRotor(_Port):
     """PMC-2HS: CR-terminated, writes have no reply, POS = 8 hex digits per axis (two's complement)."""
     eol_in = b"\r"
 
-    def __init__(self, pos=-10):
+    def __init__(self, pos=-10, soft_limits=(-8388608, 8388607), mode2=0x0800):
         super().__init__()
         self.pos, self.spd, self.stopped = pos, 100, 0
+        self.soft_limits, self.mode2 = soft_limits, mode2       # as read on the rig 2026-10-30 (defaults, E4 = 0800)
 
     def handle(self, c):
         w = c.split()
         if c == "POS":
             return f"POS {self.pos & 0xFFFFFFFF:08X},00000000"
+        if c == "IXR X7A":
+            return f"IXR X7A, {self.soft_limits[1] & 0xFFFFFFFF:08X}"
+        if c == "IXR X7B":
+            return f"IXR X7B, {self.soft_limits[0] & 0xFFFFFFFF:08X}"
+        if c == "IHR XE4":
+            return f"IHR XE4, {self.mode2:04X}"
+        if c == "IHR XE6":
+            return "IHR XE6, 000A"
+        if c == "ERD X":
+            return "ERD X4000"
         if c == "SPD":
             return f"SPD {self.spd},100"
         if c == "VER":

@@ -93,11 +93,36 @@ where it is).
 7. Two FTDI FT232R ports exist (COM5 rotor, COM6 unknown). Identify the rotor by its FTDI serial `AI03Q9JZA`, not by
    COM number. The strings `Rot, COM3 9600` / `Rot, COM2 115200` in the VI are a legacy ring, not this machine.
 
+## Controller soft limits - read on the rig 2026-10-30 (`tools/rotor_limits_probe.py`, read-only)
+
+Owner: "로터도 하드웨어 리밋 따라가자". Manual DRW170814AB p. 78 confirms the addresses: `IXR X7A` soft limit +, `IXR X7B`
+soft limit - (4-byte pulses), `IHR XE4` operation mode 2 (REG72; digit 6 "Soft Limit" 0 = enable, 1 = disable, the
+manual itself marks the logic as reversed), `IHR XE6` speed multiplier. Behaviour (3.2.6): when enabled and the
+position passes a limit the controller decelerates to a stop, `ERD` bits 9 / 8 report it, and the only way out is a
+move in the other direction; home search ignores the limit.
+
+| query | reply | meaning |
+|---|---|---|
+| `POS` | `POS 000186A0,00000000` | 100 000 pulses = 200 turns (the usual rest position) |
+| `IXR X7A` | `IXR X7A, 007FFFFF` | soft limit + = +8 388 607: factory default, not in use |
+| `IXR X7B` | `IXR X7B, FF800000` | soft limit - = -8 388 608: factory default, not in use |
+| `IHR XE4` | `IHR XE4, 0800` | operation mode 2 word; how its digits map onto the 16-bit word is not confirmed |
+| `IHR XE6` | `IHR XE6, 000A` | speed multiplier 10 - confirms the driver's assumption (open question 2 closed) |
+| `ERD X` | `ERD X4000` | error word 0x4000 (bit 14 "program error" by the manual's table; the rotor works, meaning unclear) |
+| `VER` | `VER 20081001-0000001-1-1` | firmware |
+
+So today the controller holds no effective limit: "following the hardware limit" needs the limits set in the
+controller first (its own panel / teaching unit, or a one-time parameter write with the owner's word and a readback).
+The driver (`autonics.py`) now reads 7A / 7B / E4 at every open, cuts the session window to the controller's limits
+when they are set, refuses to open when the rotor already sits outside them, and reports them in `limits()`
+(`controller_soft_limits_in_use`). At the factory defaults the profile window (+-5 turns) is the only limit.
+
 ## Open questions for the owner
 
 1. Exact model (PMC-2HS-232 or -USB), and is anything connected to the Y axis?
-2. The speed multiplier stored in the controller (EEPROM) - read-only `IHR` probe needed to confirm 10.
+2. ~~The speed multiplier stored in the controller~~ read 2026-10-30: 10.
 3. What initial string does `Configure.vi` send?
 4. Where should the rotor be left at the end of a job (in place, or back to the start position)?
-5. Should the controller's EEPROM soft limit be installed for the released program?
+5. Should the controller's EEPROM soft limit be installed for the released program? Owner 2026-10-30: yes, the
+   rotor follows the controller's limit - the values and who writes them (panel or a one-time serial write) are open.
 6. Which physical direction (seen from the camera) is positive degrees?

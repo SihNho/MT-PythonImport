@@ -205,3 +205,29 @@ def test_rotor_signed_hex_window_and_refusals():
     assert ctl.stopped == 1
     r.close()
     assert ctl.closed
+
+
+def test_rotor_follows_the_controller_soft_limits():
+    """Owner 2026-10-30: the rotor follows the controller's own limits. Read at open (IXR X7A / X7B); the session
+    window is cut to them; at the factory defaults they do not bind and limits() says so."""
+
+    def rotor(ctl):
+        line = Line(ctl, b"\r", 0.1)
+        line.eol_in = b"\r"
+        return autonics.AutonicsRotor(line=line)
+
+    r = rotor(FakeRotor(100000))
+    r.open()
+    assert r.window == (97500, 102500) and r.limits()["controller_soft_limits_in_use"] is False
+    assert r.limits()["controller_soft_limits_pulses"] == (-8388608, 8388607) and r.limits()["operation_mode2"] == "0800"
+    r.close()
+    ctl = FakeRotor(100000, soft_limits=(99000, 101000))
+    r = rotor(ctl)
+    r.open()
+    assert r.window == (99000, 101000) and r.limits()["controller_soft_limits_in_use"] is True
+    with pytest.raises(ValueError, match="outside the session window"):
+        r.move_to(203.0)                    # 101500 pulses: inside +-5 turns, outside the controller's limit
+    assert not any(c.startswith("PAB") for c in ctl.log)
+    r.close()
+    with pytest.raises(PermissionError, match="outside the controller"):
+        rotor(FakeRotor(100000, soft_limits=(100500, 101000))).open()      # the rotor sits outside its limits

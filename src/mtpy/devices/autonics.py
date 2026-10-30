@@ -2,9 +2,12 @@
 (docs/design/motion-gate.md; V6 docs/rotor-protocol.md). Same interface as `sim.motors.SimRotor` (turns).
 
 Protocol: ASCII, CR-terminated; writes have NO reply; `POS` -> 'POS hhhhhhhh,hhhhhhhh' (8 hex digits per axis, two's
-complement), 500 pulses per turn. The envelope is RELATIVE and enforced here, not by the controller (its soft limit
-is EEPROM-only and its addresses unconfirmed): the window is the position read at open +- the profile's turns.
-Nothing is ever written to the controller except 'SPD <n>' (<= MAX_SPD), 'PAB <pulses>' (X only) and 'STO X'.
+complement), 500 pulses per turn. The envelope: the position read at open +- the profile's turns, CUT to the
+controller's own soft limits (owner 2026-10-30: "로터도 하드웨어 리밋 따라가자"), which are read at open - IXR X7A soft
+limit +, IXR X7B soft limit - (pulses, absolute), IHR XE4 operation mode 2 (manual DRW170814AB p. 78; probe
+2026-10-30: factory defaults +8388607 / -8388608 = no effective limit until the owner sets them on the controller).
+Nothing is ever written to the controller except 'SPD <n>' (<= MAX_SPD), 'PAB <pulses>' (X only) and 'STO X'; the
+soft-limit parameters are only read.
 """
 import time
 
@@ -17,6 +20,20 @@ from .gate import Line
 PORT, BAUD = "COM5", 9600
 PULSES_PER_TURN = 500
 MAX_SPD = 100                        # the main VI's 'Rot Speed' default; pps = SPD x the controller's multiplier
+
+
+SOFT_LIMIT_DEFAULTS = (-8388608, 8388607)        # factory values (manual 3.3.10 / 3.3.11): limit not in use
+
+
+def _param(reply, cmd):
+    """'IXR X7A, 007FFFFF' -> signed int (4-byte) / 'IHR XE4, 0800' -> int; None when unreadable."""
+    if not reply.startswith(cmd.split()[0]) or "," not in reply:
+        return None
+    try:
+        v = int(reply.split(",")[1].strip(), 16)
+    except ValueError:
+        return None
+    return v - (1 << 32) if cmd.startswith("IXR") and v >= (1 << 31) else v
 
 
 def _pos(reply):
@@ -44,6 +61,8 @@ class AutonicsRotor(Device):
     def __init__(self, port=None, line=None):
         self.line, self.port_name = line, port or PORT
         self.window = None                   # (lo, hi) pulses
+        self.soft_limits = None              # (minus, plus) pulses as the controller holds them; None = unreadable
+        self.mode2 = None                    # operation mode 2 word (IHR XE4); digit 6 = soft limit enable, reversed
 
     def _io(self):
         if self.line is None:
@@ -66,8 +85,15 @@ class AutonicsRotor(Device):
         time.sleep(0.2)
         p = self._read(L)
         self.line = L
-        self.window = (p + round(float(e["min"]) * PULSES_PER_TURN),
-                       p + round(float(e["max"]) * PULSES_PER_TURN))
+        lo, hi = (p + round(float(e["min"]) * PULSES_PER_TURN), p + round(float(e["max"]) * PULSES_PER_TURN))
+        minus, plus = (_param(L.ask("IXR X7B"), "IXR"), _param(L.ask("IXR X7A"), "IXR"))
+        self.mode2 = _param(L.ask("IHR XE4"), "IHR")
+        if minus is not None and plus is not None:
+            self.soft_limits = (minus, plus)
+            lo, hi = max(lo, minus), min(hi, plus)      # the controller's limit always wins over the profile window
+            if not lo <= p <= hi:
+                raise PermissionError(f"rotor at {p} pulses is outside the controller's soft limits {minus}..{plus}")
+        self.window = (lo, hi)
 
     def close(self):
         if self.line is not None:
@@ -83,7 +109,10 @@ class AutonicsRotor(Device):
         return {"position": self.position(), "speed": self.speed(), "unit": self.unit}
 
     def limits(self):
-        return {"window_pulses": self.window, "pulses_per_turn": PULSES_PER_TURN, "unit": self.unit}
+        return {"window_pulses": self.window, "pulses_per_turn": PULSES_PER_TURN, "unit": self.unit,
+                "controller_soft_limits_pulses": self.soft_limits,
+                "controller_soft_limits_in_use": self.soft_limits is not None and self.soft_limits != SOFT_LIMIT_DEFAULTS,
+                "operation_mode2": None if self.mode2 is None else f"{self.mode2:04X}"}
 
     def probe(self):
         return {"position": self.position()}
