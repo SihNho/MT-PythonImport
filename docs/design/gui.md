@@ -16,8 +16,8 @@ root; the owner never types scripts into a terminal (2026-10-30). The same from 
 
 ## What the first build has (src/mtpy/gui)
 One window after the mock-up ([mockups/2026-10-23-main-window](../mockups/2026-10-23-main-window/README.md)):
-top bar (device summary, display pause, acquisition start / stop, Record, STOP, Acknowledge), six steps, camera view
-with the bead boxes, any-axis live graphs (x / y / z per bead, magnet, force against time, magnet or force; follow
+top bar (device summary, display pause, acquisition start / stop, Record, STOP, Acknowledge), six steps, two camera
+screens side by side (owner 2026-10-30: the JAI with the bead boxes, the EMCCD with its snap or Live frames), any-axis live graphs (x / y / z per bead, magnet, force against time, magnet or force; follow
 30 s; bead chips), the event list (without the 20 Hz motor readings) and the status line (frames, fps, recording,
 magnet position and live force, protocol state, e-stop).
 

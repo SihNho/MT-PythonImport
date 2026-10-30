@@ -33,6 +33,7 @@ from PySide6.QtWidgets import (
     QPushButton,
     QSlider,
     QSpinBox,
+    QSplitter,
     QStackedWidget,
     QTableWidget,
     QTableWidgetItem,
@@ -196,15 +197,28 @@ class MainWindow(QMainWindow):
         self.step_title.setText(TITLES[STEPS[i][0]])
 
     def _camera_view(self):
+        """Two screens side by side (owner 2026-10-30: the JAI and the EMCCD each on their own): left the tracking
+        camera with the bead boxes, right the iXon (snap, or live while its Live button is down)."""
         self.view = pg.GraphicsLayoutWidget()
         vb = self.view.addViewBox(lockAspect=True, invertY=True)
         self.img_item = pg.ImageItem()
         vb.addItem(self.img_item)
         self.boxes = []
         self.vb = vb
-        self.cam_label = pg.LabelItem("no frame", justify="left")
+        self.cam_label = pg.LabelItem("JAI: no frame", justify="left")
         self.view.addItem(self.cam_label, row=1, col=0)
-        return self.view
+        self.em_view = pg.GraphicsLayoutWidget()
+        evb = self.em_view.addViewBox(lockAspect=True, invertY=True)
+        self.em_img = pg.ImageItem()
+        evb.addItem(self.em_img)
+        self.em_label = pg.LabelItem("EMCCD: no frame", justify="left")
+        self.em_view.addItem(self.em_label, row=1, col=0)
+        split = QSplitter(Qt.Horizontal)
+        split.addWidget(self.view)
+        split.addWidget(self.em_view)
+        split.setSizes([3, 2])
+        self._em_busy = False
+        return split
 
     def _graphs(self):
         w = QWidget()
@@ -284,8 +298,9 @@ class MainWindow(QMainWindow):
         g4f.addRow("EM gain mode", self.em_mode)
         g4f.addRow("EM gain", self.em_gain)
         g4f.addRow("Temperature set point (cooler on)", self.em_temp)
+        self.btn_em_live = QPushButton("Live", checkable=True, clicked=self._toggle_emccd_live)
         g4f.addRow(_row(QPushButton("Apply and read back", clicked=self._apply_emccd),
-                        QPushButton("Snap one frame", clicked=self._snap_emccd)))
+                        QPushButton("Snap one frame", clicked=self._snap_emccd), self.btn_em_live))
         self.em_cycles = _spin(1, 1000, 10, 100, 0, " cycles")
         self.em_pause = _spin(0.0, 5.0, 0.1, 0.1, 2, " s")
         g4f.addRow("Shutter", _row(QPushButton("Open", clicked=lambda: self._shutter(1)),
@@ -514,10 +529,43 @@ class MainWindow(QMainWindow):
 
     def _snap_emccd(self):
         def show(img):
-            self.img_item.setImage(img.T, autoLevels=True)
+            self._show_emccd(img, "snap")
             self.em_readback.setText(f"emccd frame {img.shape[1]} x {img.shape[0]}: min {img.min()} max {img.max()} "
                                      f"mean {img.mean():.1f}")
         self._call(api.emccd.snap, "emccd snap", show)
+
+    def _show_emccd(self, img, what):
+        self.em_img.setImage(img.T, autoLevels=True)
+        self.em_label.setText(f"EMCCD {what}  {img.shape[1]} x {img.shape[0]}  mean {img.mean():.1f}")
+
+    def _toggle_emccd_live(self):
+        if self.btn_em_live.isChecked():
+            self._call(api.emccd.start, "emccd live")
+        else:
+            self._call(api.emccd.stop, "emccd live stop")
+
+    def _em_tick(self):
+        """Part of the 30 Hz tick: while Live is down, fetch the frames not yet read and show the last one."""
+        if not self.btn_em_live.isChecked() or self._em_busy:
+            return
+        self._em_busy = True
+
+        def show(r):
+            self._em_busy = False
+            if r is not None:
+                _first, last, frames = r
+                self._show_emccd(frames[-1], f"live  frame {last}  (+{len(frames)})")
+
+        def failed(msg):
+            self._em_busy = False
+            self.btn_em_live.setChecked(False)
+            self._fail("emccd live", msg)
+        wk = Worker(api.emccd.read_new)
+        wk.setAutoDelete(False)
+        self._workers.add(wk)
+        wk.signals.failed.connect(lambda msg: (self._workers.discard(wk), failed(msg)))
+        wk.signals.done.connect(lambda r: (self._workers.discard(wk), show(r)))
+        self.pool.start(wk)
 
     # ------------------------------------------------------------------ explore
     def _move_magnet(self):
@@ -748,6 +796,7 @@ class MainWindow(QMainWindow):
             snap = api.acq.display() if api.acq.running() else None
         except api.NotReady:
             snap = None
+        self._em_tick()
         if snap is None:
             return
         res = snap.result
@@ -756,7 +805,7 @@ class MainWindow(QMainWindow):
             if res is not None and res.xyz is not None:
                 self._draw_boxes(res.xyz[:, :2], res.good)
             r = snap.record
-            self.cam_label.setText(f"frame {r.buffer_number}  seg {r.segment}  t {r.t_camera_s:.3f} s  "
+            self.cam_label.setText(f"JAI frame {r.buffer_number}  seg {r.segment}  t {r.t_camera_s:.3f} s  "
                                    f"{r.rate_Hz:.1f} Hz  {'REC' if r.recording else ''}")
         if res is not None and res.xyz is not None and getattr(self, "_last_seq", None) != snap.seq:
             self._last_seq = snap.seq
