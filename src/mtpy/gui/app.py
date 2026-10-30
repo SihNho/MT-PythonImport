@@ -740,7 +740,13 @@ class MainWindow(QMainWindow):
             self.cal_status.setText(f"done: {len(cal['xy'])} beads, {slices} slices x {step:.0f} nm -> {path}")
             self.ed_cal.setText(str(path))
             self._load_cal_list()
-        self._call(job, "z scan", done)
+        wk = Worker(job)                 # a failed scan is shown in the Calibrate label, not only in the status bar
+        wk.setAutoDelete(False)
+        self._workers.add(wk)
+        wk.signals.failed.connect(lambda msg: (self._workers.discard(wk), self.cal_status.setText(f"FAILED: {msg}"),
+                                               self._fail("z scan", msg)))
+        wk.signals.done.connect(lambda r: (self._workers.discard(wk), done(r)))
+        self.pool.start(wk)
 
     # ------------------------------------------------------------------ acquisition / recording
     def _toggle_acq(self):
