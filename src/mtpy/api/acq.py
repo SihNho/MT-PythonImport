@@ -354,6 +354,14 @@ def wait_frames(n, timeout_s):
     return n
 
 
+def average(n, timeout_s=10.0):
+    """The mean image (float64) of the next n camera frames, at the camera rate (not the display tap)."""
+    try:
+        return _require().average(n, timeout_s)
+    except TimeoutError as e:
+        raise Timeout(f"{e}; see api.acq.status()") from None
+
+
 def mark(text):
     """A free-text `mark` event with the newest frame's segment and buffer number. Returns the event."""
     return events.log("mark", text=str(text), **_require().last_record())

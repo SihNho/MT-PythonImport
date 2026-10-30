@@ -1,32 +1,15 @@
 """Calibration z scan from the GUI (spec F3.02): step the focus, average frames at each slice, take each bead's
-radial profile as the tracker does, write a LabVIEW-compatible `.cal` (lvfiles.write_cal). Frames come from the
-display tap of the running acquisition (api.acq.display), so acquisition must be running; the focus moves go through
+radial profile as the tracker does, write a LabVIEW-compatible `.cal` (lvfiles.write_cal). Frames are averaged at
+the camera rate by the running acquisition (api.acq.average), so acquisition must be running; the focus moves go through
 api.focus (refused unless the safety profile has a focus window).
 shortcut: the simulated camera's image does not change with focus, so a .cal made on the simulator is flat (every
 slice alike); it exercises the flow only. Real slices come with phase 6."""
-import time
 from datetime import datetime
 
 import numpy as np
 
 from mtpy import api, calib, track
 from mtpy.lvfiles import write_cal
-
-
-def mean_image(n_avg, timeout_s=10.0):
-    """The mean of the next n_avg distinct display snapshots (float64)."""
-    acc, seen, t_end = None, set(), time.monotonic() + timeout_s
-    while len(seen) < n_avg:
-        snap = api.acq.display()
-        if snap is None or snap.seq in seen:
-            if time.monotonic() > t_end:
-                raise TimeoutError(f"only {len(seen)} of {n_avg} frames in {timeout_s} s: is acquisition running?")
-            time.sleep(0.005)
-            continue
-        seen.add(snap.seq)
-        img = snap.image.astype(np.float64)
-        acc = img if acc is None else acc + img
-    return acc / n_avg
 
 
 def bead_profile(image, x, y, cross):
@@ -51,7 +34,7 @@ def run(path, xy, slices=60, step_nm=100.0, n_avg=20, cross=120, nm_per_px=84.0,
     try:
         for s in range(slices):
             api.focus.move_to(z0 + (s - slices // 2) * step_um).wait(10)
-            img = mean_image(n_avg)
+            img = api.acq.average(n_avg)
             for b, (x, y) in enumerate(xy):
                 stack[b, s] = bead_profile(img, x, y, cross)[2]
             if progress:

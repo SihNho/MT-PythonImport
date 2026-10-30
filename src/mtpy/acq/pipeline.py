@@ -145,6 +145,7 @@ class Pipeline:
         self.frames_received = self.frames_produced = self.frames_tracked = 0
         self.tracking_errors, self.last_tracking_error = 0, None
         self.sink_failures, self.sink_error = 0, None
+        self._avg = None  # [acc, frames left, Event] while average() collects
         self._latest = None
         self._cam_on, self._worker_on = threading.Event(), threading.Event()
         self._threads, self._unsubscribe = [], None
@@ -289,6 +290,24 @@ class Pipeline:
             if rec.recording:
                 self._out.put(("frame", res))
             self.display.offer(rec, image, res)
+            req = self._avg
+            if req is not None:
+                img = image.astype(np.float64)
+                req[0] = img if req[0] is None else req[0] + img
+                req[1] -= 1
+                if req[1] == 0:
+                    self._avg = None
+                    req[2].set()
+
+    def average(self, n, timeout_s):
+        """The mean (float64) of the next n frames the worker sees, at the camera rate: the z scan averages this way,
+        not from the 30 Hz display tap (owner 2026-10-30: the GUI is an output)."""
+        req = [None, n, threading.Event()]
+        self._avg = req
+        if not req[2].wait(timeout_s):
+            self._avg = None
+            raise TimeoutError(f"only {n - req[1]} of {n} frames in {timeout_s:g} s")
+        return req[0] / n
 
     # --- sink thread ------------------------------------------------------------------------------------------------
     def _on_event(self, ev):

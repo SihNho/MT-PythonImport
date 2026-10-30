@@ -196,6 +196,20 @@ def test_recording_on_off_events_and_guard_flag(cam):
     assert off - on >= 20 and len(sink.frames) < st["frames_received"] and all(r.record.recording for r in sink.frames)
 
 
+def test_average_runs_at_the_camera_rate_not_the_display_tap(cam):
+    api.camera.set_rate(150.0)
+    api.acq.start()
+    api.acq.wait_frames(15, 5)
+    t0 = time.perf_counter()
+    img = api.acq.average(60)                                     # 60 frames: 0.4 s at 150 fps, 2 s from the tap
+    dt = time.perf_counter() - t0
+    shape = api.acq.display().image.shape
+    api.acq.stop()
+    assert img.dtype == np.float64 and img.shape == shape and dt < 1.2
+    with pytest.raises(NotReady):
+        api.acq.average(1)
+
+
 def test_display_tap_about_30_Hz_and_does_not_slow_acquisition(cam):
     api.camera.set_rate(150.0)
     api.acq.start()
