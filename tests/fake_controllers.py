@@ -65,7 +65,7 @@ class FakePi(_Port):
         elif w[0] == "VEL":
             self.vel = float(w[2])
         elif w[0] == "HLT":
-            self.halted += 1
+            self.halted, self.err = self.halted + 1, 10      # ERR 10 "stopped by command" stays until read (rig 2026-10-30)
         elif w[0] == "MOV":
             t = float(w[2])
             if not self.svo or not self.frf:

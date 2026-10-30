@@ -84,7 +84,9 @@ def test_pi_stop_and_speed_write():
         dev.move_to(3.0, speed=16.0)
     assert ctl.vel == 10.0
     dev.stop()
-    assert ctl.halted == 1
+    assert ctl.halted == 1 and ctl.err == 10
+    dev.close()                      # the home move after an e-stop must not fail on the stale ERR 10
+    assert ctl.pos == 0.0 and (ctl.tmn, ctl.tmx) == (0.0, 52.0)
 
 
 def test_pi_open_needs_a_verified_profile_limit(monkeypatch):

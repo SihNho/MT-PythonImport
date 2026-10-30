@@ -156,6 +156,7 @@ class PiMagnet(Device):
             time.sleep(0.3)
             if _num(L.ask("SVO?")) != 1:
                 raise ValueError("PI ERR 5: the servo could not be enabled")
+        L.ask("ERR?")        # drains a stale code (ERR 10 after HLT) so only this move is judged (rig 2026-10-30)
         L.say(f"MOV 1 {target:.5f}")
         err = _num(L.ask("ERR?"))
         if err:
