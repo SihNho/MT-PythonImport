@@ -206,6 +206,8 @@ class MainWindow(QMainWindow):
         vb.addItem(self.img_item)
         self.boxes = []
         self.vb = vb
+        self.picks, self.pick_items = [], []            # bead positions picked by clicking (px), their boxes
+        self.view.scene().sigMouseClicked.connect(self._on_view_click)
         self.cam_label = pg.LabelItem("JAI: no frame", justify="left")
         self.view.addItem(self.cam_label, row=1, col=0)
         self.em_view = pg.GraphicsLayoutWidget()
@@ -369,6 +371,9 @@ class MainWindow(QMainWindow):
     def _panel_beads(self):
         w = QWidget()
         f = QFormLayout(w)
+        self.picks_info = QLabel("no picks: left click beads on the JAI image (acquisition running, no beads selected)")
+        self.picks_info.setWordWrap(True)
+        f.addRow("Pick on image", _row(self.picks_info, QPushButton("Clear picks", clicked=self._clear_picks)))
         self.ed_cal = QLineEdit("")
         f.addRow(".cal file", _row(self.ed_cal, QPushButton("Browse...", clicked=self._browse_cal),
                                    QPushButton("Load list", clicked=self._load_cal_list)))
@@ -625,6 +630,7 @@ class MainWindow(QMainWindow):
                                 f"{cal['date']}")
 
     def _select_beads(self):
+        self._clear_picks()
         ids = [self.bead_list.item(i).data(Qt.UserRole) for i in range(self.bead_list.count())
                if self.bead_list.item(i).checkState() == Qt.Checked]
         refs = {int(s) for s in self.role_ref.text().replace(" ", "").split(",") if s}
@@ -655,6 +661,44 @@ class MainWindow(QMainWindow):
         self.plot.addLegend(offset=(10, 10))
         self.curves = {}
 
+    def _on_view_click(self, ev):
+        """Pick beads on the JAI image (owner 2026-10-30: tracking before the TIRF set-up): left click adds a bead
+        at the click, right click removes the nearest pick; the picks are what the z scan calibrates."""
+        if not self.vb.sceneBoundingRect().contains(ev.scenePos()) or self.bead_ids:
+            return
+        pt = self.vb.mapSceneToView(ev.scenePos())
+        x, y = float(pt.x()), float(pt.y())
+        if ev.button() == Qt.RightButton:
+            if self.picks:
+                k = min(range(len(self.picks)), key=lambda i: (self.picks[i][0] - x) ** 2 + (self.picks[i][1] - y) ** 2)
+                if abs(self.picks[k][0] - x) < 40 and abs(self.picks[k][1] - y) < 40:
+                    del self.picks[k]
+        elif ev.button() == Qt.LeftButton:
+            self.picks.append((x, y))
+        self._draw_picks()
+
+    def _draw_picks(self):
+        for it in self.pick_items:
+            self.vb.removeItem(it)
+        self.pick_items = []
+        h = 36
+        for k, (x, y) in enumerate(self.picks):
+            pen = pg.mkPen("#FBBF24", width=2, style=Qt.DashLine)
+            r = pg.QtWidgets.QGraphicsRectItem(x - h, y - h, 2 * h, 2 * h)
+            r.setPen(pen)
+            t = pg.TextItem(f"pick {k + 1}", color="#FBBF24")
+            t.setPos(x - h, y - h - 18)
+            self.vb.addItem(r)
+            self.vb.addItem(t)
+            self.pick_items += [r, t]
+        self.picks_info.setText(f"{len(self.picks)} picked (left click on the image adds, right click removes); "
+                                "Calibrate scans them" if self.picks else
+                                "no picks: left click beads on the JAI image (acquisition running, no beads selected)")
+
+    def _clear_picks(self):
+        self.picks = []
+        self._draw_picks()
+
     def _draw_boxes(self, xy, good):
         for b in self.boxes:
             self.vb.removeItem(b)
@@ -675,8 +719,8 @@ class MainWindow(QMainWindow):
     # ------------------------------------------------------------------ calibration
     def _run_zscan(self):
         beads = api.beads.selected()
-        if beads is None:
-            self._fail("z scan", "select beads first (their positions are scanned)")
+        if not self.picks and beads is None:
+            self._fail("z scan", "pick beads on the image or select beads first (their positions are scanned)")
             return
         if not api.acq.running():
             self._fail("z scan", "start acquisition first (frames come from the display)")
@@ -685,7 +729,7 @@ class MainWindow(QMainWindow):
         path.parent.mkdir(parents=True, exist_ok=True)
         slices, step, avg, cross = (self.cal_slices.value(), self.cal_step.value(), self.cal_avg.value(),
                                     self.cal_cross.value())
-        xy = beads.xy0.copy()
+        xy = np.array(self.picks, dtype=np.float64) if self.picks else beads.xy0.copy()
         self.cal_status.setText("running...")
 
         def job():
