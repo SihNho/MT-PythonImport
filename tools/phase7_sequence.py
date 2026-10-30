@@ -41,6 +41,8 @@ def main(argv=None):
     ap = argparse.ArgumentParser()
     ap.add_argument("--out", required=True)
     ap.add_argument("--backend", default="real-motors")
+    ap.add_argument("--rotor-turns", type=float, default=10.0, help="rotor amplitude (owner 2026-10-30: 10, then 5)")
+    ap.add_argument("--rotor-only", action="store_true")
     a = ap.parse_args(argv)
     out = Path(a.out)
     out.mkdir(parents=True, exist_ok=True)
@@ -56,15 +58,18 @@ def main(argv=None):
             if bad:
                 raise RuntimeError(f"not connected: {bad}")
             # --- PI magnet 0 -> 30 -> 0 at 15 mm/s, no dwell
-            step("magnet at 0 mm", lambda: api.magnet.move_to(0.0, 15.0).wait(30))
-            for p in (30.0, 0.0):
-                step(f"magnet {p:g} mm @ 15 mm/s", lambda p=p: api.magnet.move_to(p, 15.0).wait(30))
+            if not a.rotor_only:
+                step("magnet at 0 mm", lambda: api.magnet.move_to(0.0, 15.0).wait(30))
+                for p in (30.0, 0.0):
+                    step(f"magnet {p:g} mm @ 15 mm/s", lambda p=p: api.magnet.move_to(p, 15.0).wait(30))
             # --- rotor -10 -> +10 -> 0 (relative to now); outside the +-5 window the API refuses
             r0 = step("rotor position (turns)", api.rotor.position)["result"]
-            for t in (-10.0, 10.0, 0.0):
+            for t in (-a.rotor_turns, a.rotor_turns, 0.0):
                 step(f"rotor to {t:+g} turns from start",
                      lambda t=t: api.rotor.rotate(t - (api.rotor.position() - r0)).wait(60))
             # --- focus +2 -> -2 -> 0 um relative to now
+            if a.rotor_only:
+                raise StopIteration
             z0 = step("focus position (um)", api.focus.position)["result"]
             for dz in (2.0, -2.0, 0.0):
                 step(f"focus {dz:+g} um", lambda dz=dz: api.focus.move_to(z0 + dz).wait(10))
@@ -74,6 +79,8 @@ def main(argv=None):
                 for d in (0.5, -0.5, 0.0):
                     tgt = (x0 + d, y0) if axis == "x" else (x0, y0 + d)
                     step(f"stage {axis} {d:+g} mm", lambda tgt=tgt: api.stage.move_to(*tgt).wait(30))
+    except StopIteration:
+        pass
     except Exception:  # noqa: BLE001
         R["error"] = traceback.format_exc()
         print("ERROR " + R["error"], flush=True)

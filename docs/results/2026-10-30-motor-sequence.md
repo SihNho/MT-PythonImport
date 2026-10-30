@@ -29,4 +29,16 @@ read-back step). The rotor +-10 turns was outside the window the owner verified 
 Widening the window is a rig-admin change that needs the owner's word and a readback at the new edges
 (`tools/phase7_rotor.py`).
 
+## Rotor at +-5 turns (owner 2026-10-30: "Run +-5 turns")
+
+`tools/phase7_sequence.py --rotor-only --rotor-turns 5`, lock held 09:34:37-09:35:11, released.
+
+| move | request | read back | s |
+|---|---|---|---|
+| rotor | start 200 -> -5 turns | 195.0 turns | 3.2 |
+| rotor | -> +5 turns | 205.0 turns | 5.7 |
+| rotor | -> 0 | 200.0 turns | 3.2 |
+
+Both edges of the verified window reached and read back exactly; the window itself stays +-5 turns.
+
 Not covered: the EMCCD (run separately the same day), the magnet speed above 15 mm/s (profile maximum).
