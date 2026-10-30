@@ -53,16 +53,19 @@ class Motor:
         return self.pos
 
 
-def test_shipped_config_is_v6_with_the_focus_window_from_the_controller(monkeypatch):
-    """Decision 0025: the shipped active profile is v6 (base v5, rig 2026-10-30): `focus_z_um` = the ASI controller's
-    SL/SU Z (+-75 um, absolute, verified by readback), everything else as v5. Decision 0017 (v5): `magnet_force_pN`
+def test_shipped_config_is_v7_focus_window_from_the_controller_rotor_verified(monkeypatch):
+    """v7 (rig 2026-10-30): `rotor_turns` +-5 turns verified (both edges driven, one pulse past refused). Decision
+    0025 (v6): `focus_z_um` = the ASI controller's SL/SU Z (+-75 um, absolute, verified by readback), else as v5. Decision 0017 (v5): `magnet_force_pN`
     removed (the force limit is derived from the magnet position limit), nothing checked on the rig, every other
     limit identical to v4; v1-v5 stay in the history."""
     monkeypatch.setattr(safety, "CONFIG", REPO_CONFIG)
     p = safety.load_active()
-    v4, v5, v6 = (json.loads((REPO_CONFIG / "safety_profiles" / f"{v}.json").read_text(encoding="utf-8")) for v in (4, 5, 6))
-    assert p["version"] == 6 and p["base_version"] == 5 and safety.versions() == [1, 2, 3, 4, 5, 6]
-    assert safety._thaw(p) == v6 and v6["allow_unverified"] is False
+    v4, v5, v6, v7 = (json.loads((REPO_CONFIG / "safety_profiles" / f"{v}.json").read_text(encoding="utf-8")) for v in (4, 5, 6, 7))
+    assert p["version"] == 7 and p["base_version"] == 6 and safety.versions() == [1, 2, 3, 4, 5, 6, 7]
+    assert safety._thaw(p) == v7 and v7["allow_unverified"] is False and v6["allow_unverified"] is False
+    assert v7["limits"]["rotor_turns"]["verified"] is True and v7["recommissioning"]["checked"] == {"rotor_turns": True}
+    assert v7["unverified"] == ["rotor_speed_turns_s"] and safety.check("rotor_turns", 204.0, 200.0) is True
+    assert {q: e for q, e in v7["limits"].items() if q != "rotor_turns"} == {q: e for q, e in v6["limits"].items() if q != "rotor_turns"}
     assert v6["limits"]["focus_z_um"] == {"min": -75.0, "max": 75.0, "unit": "um", "relative_to": None, "verified": True,
                                           "source": v6["limits"]["focus_z_um"]["source"]}
     assert "0025" in v6["limits"]["focus_z_um"]["source"] and "focus_z_um" not in v6["unverified"]
@@ -76,7 +79,7 @@ def test_shipped_config_is_v6_with_the_focus_window_from_the_controller(monkeypa
     assert v5["recommissioning"]["checked"] == {} and v5["recommissioning"]["not_checked_unverified"] == []
     assert "0017" in v5["reason"]
     assert safety.check("magnet_position_mm", 39.0) is True and safety.check("magnet_speed_mm_s", 15.0) is True
-    with pytest.raises(SafetyRefused, match="magnet_force_pN is not in the rig safety profile v6"):
+    with pytest.raises(SafetyRefused, match="magnet_force_pN is not in the rig safety profile v7"):
         safety.check("magnet_force_pN", 1.0)
 
 

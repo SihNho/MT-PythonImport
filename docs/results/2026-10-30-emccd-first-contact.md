@@ -20,7 +20,7 @@ set_gain_mode, set_gain, set_temperature, apply_preset, settings, snap), the GUI
 | after open | exposure 0.001 ms, rate 40.665 Hz (= 1 / readout), EM gain mode 0, EM gain 0, cooler off, sensor 14 C |
 | readout time | **24.59 ms** per frame at 512 x 512, EM amplifier, HS speed index 0, fastest recommended VS speed (measured at open as kinetic cycle - exposure with the cycle at its fastest) |
 | ranges | EM gain 1..222 in mode 0 (0 = off is accepted; the camera reads 0 at open), temperature -120..20 C |
-| shutter | `SetShutter(1, 0, 0, 0)` and `(1, 0, 10, 10)` answer 20068 (`DRV_P3INVALID`): no internal shutter is set; recorded in the identity, not an error |
+| shutter | `SetShutter(1, 0, 0, 0)` and `(1, 0, 10, 10)` answer 20068 (`DRV_P3INVALID`); the camera does have an internal shutter and accepts 50 ms transfer times, see [2026-10-30-emccd-50fps.md](2026-10-30-emccd-50fps.md) |
 
 ## 2. The five parameters, set and read back (run 4)
 

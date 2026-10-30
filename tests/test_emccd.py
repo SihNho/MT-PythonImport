@@ -62,3 +62,43 @@ def test_emccd_preset_reapplied_after_reconnect_and_snap(rig):
     assert api.emccd.settings()["acquiring"]
     with pytest.raises(ValueError, match="only the fields"):
         api.emccd.apply_preset({"name": "x", "roi": (0, 0, 1, 1)})
+
+
+def test_emccd_frame_transfer_mode_and_reading_frames(rig):
+    sdk = rig["emccd"].device.sdk
+    assert api.emccd.set_frame_transfer(1) == 1
+    assert rig["emccd"].device.readout_ms == pytest.approx(15.0)
+    with pytest.raises(SafetyRefused, match=r"outside \[0.01, 66.6\d+\] Hz"):      # 1 / 15 ms
+        api.emccd.set_rate(100.0)
+    with pytest.raises(SafetyRefused, match=r"set the rate instead"):
+        api.emccd.set_exposure(5.0)
+    assert api.emccd.set_rate(50.0) == pytest.approx(50.0, rel=0.01)
+    assert api.emccd.settings()["exposure_ms"] == pytest.approx(20.0, rel=0.01)      # exposure = period
+    api.emccd.start()
+    import time
+    time.sleep(0.25)
+    first, last, frames = api.emccd.read_new()
+    assert first == 1 and last >= 8 and frames.shape == (last, 512, 512)
+    time.sleep(0.1)
+    first2, last2, _f = api.emccd.read_new()
+    assert first2 == last + 1 and api.emccd.total_acquired() >= last2
+    api.emccd.stop()
+    assert not api.emccd.settings()["acquiring"] and sdk.read_to == last2
+    assert api.emccd.set_frame_transfer(0) == 0 and rig["emccd"].device.readout_ms == pytest.approx(17.9)
+
+
+def test_emccd_shutter_closed_until_start_and_closed_again_at_stop(rig):
+    dev = rig["emccd"].device
+    assert dev.has_shutter and api.emccd.settings()["shutter"] == 2 and dev.sdk.shutter == 2
+    api.emccd.start()
+    assert api.emccd.settings()["shutter"] == 1 and dev.sdk.shutter == 1
+    api.emccd.stop()
+    assert dev.sdk.shutter == 2
+    r0 = dev.readout_ms
+    assert api.emccd.set_shutter(0) == 0 and dev.readout_ms == pytest.approx(r0 + 100.0)   # auto: transfer times
+    with pytest.raises(SafetyRefused, match=r"not 0 \(auto\)"):
+        api.emccd.set_shutter(3)
+    api.emccd.set_shutter(1)
+    sdk = dev.sdk
+    rig["emccd"].close()
+    assert sdk.shutter == 2 and sdk.shut

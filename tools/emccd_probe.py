@@ -71,7 +71,11 @@ def main(argv=None):
                     np.save(out / f"{name}.npy", img)
                     return {"shape": img.shape, "min": int(img.min()), "max": int(img.max()),
                             "mean": float(img.mean()), "file": str(out / f"{name}.npy")}
-                step("snap", snap)
+                step("snap (shutter opened by the start)", snap)
+                step("shutter closed", lambda: api.emccd.set_shutter(2))
+                step("snap shutter closed", snap)
+                step("shutter open", lambda: api.emccd.set_shutter(1))
+                step("snap shutter open", snap)
                 step("exposure x0.5", lambda: api.emccd.set_exposure(a.exposure_ms * 0.5))
                 step("snap x0.5", snap)
                 step("settings after", api.emccd.settings)

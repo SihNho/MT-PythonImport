@@ -47,9 +47,15 @@ The rig is back at its initial condition; rig_session: no LabVIEW was running, l
   real COM3 / COM4 WITHOUT the rig lock (read-only queries: TMN?/TMX?/POS?/ERR?, SL/SU, W; nothing written). The
   readback is now skipped for the sim backend.
 
+## Rotor window verified (09:18, `tools/phase7_rotor.py`, 14 steps, 0 failed; owner: "반영하도록 하고")
+Driver-direct from the start 200.0 turns: +5 -> 205.0, back 200.0, -5 -> 195.0, back 200.0 (3.5 s per 5 turns);
++5.002 turns (one pulse past the edge, 102 501) refused before a write. Profile **v7**: `rotor_turns` +-5 turns
+(session-relative) verified by these readbacks. Through the API: rotate(+1) -> 201.0, rotate(-1) -> 200.0,
+rotate(+6) refused by the profile. Disconnect clean, lock released.
+
 ## Still open
-- `rotor_turns` stays unverified in the profile (API refuses rotor moves; the gate's +-5 turn window held on the rig).
-  The rotor speed conversion assumes the controller multiplier 10 (`autonics.py`, shortcut comment).
+- The rotor speed conversion assumes the controller multiplier 10 (`autonics.py`, shortcut comment);
+  `rotor_speed_turns_s` stays unverified (a given speed is refused; None = SPD 100 as the main VI).
 
 ## Independent motor-limit audit (separate checker session, read-only, same day)
 

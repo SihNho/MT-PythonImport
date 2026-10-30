@@ -9,14 +9,14 @@ from . import events
 from ._act import acting
 from .devices import service
 
-FIELDS = ("em_gain_mode", "em_gain", "exposure_ms", "rate_Hz", "temperature_C")      # the order they are applied in
+FIELDS = ("frame_transfer", "shutter", "em_gain_mode", "em_gain", "exposure_ms", "rate_Hz", "temperature_C")   # applied in this order
 
 
 def _set(name, value, rate_Hz=None, exposure_ms=None):
     svc = service("emccd")
     dev = svc.require()
     s = svc.call(dev.settings, what="read settings")
-    rate = s["rate_Hz"] if rate_Hz is None else rate_Hz
+    rate = s["rate_requested_Hz"] if rate_Hz is None else rate_Hz      # None: no rate requested yet
     exp = s["exposure_ms"] if exposure_ms is None else exposure_ms
 
     def check(v):
@@ -25,6 +25,18 @@ def _set(name, value, rate_Hz=None, exposure_ms=None):
     return acting(f"emccd_{name}", value, lambda v: svc.call(dev.set, name, v, what=f"set {name} {v!r}"),
                   lambda: svc.call(dev.get, name, what=f"read {name}"), dev.tol(name, value), device="emccd",
                   check=check)
+
+
+def set_frame_transfer(on):
+    """0: period = exposure + readout (exposure and rate independent). 1: the exposure overlaps the readout, so the
+    exposure equals the frame period and only the rate is set (up to 1 / readout)."""
+    return _set("frame_transfer", on)
+
+
+def set_shutter(mode):
+    """Internal shutter 0 auto (the SDK adds both 50 ms transfer times to every frame), 1 open, 2 closed. start()
+    opens it and stop() / disconnect close it, as the LabVIEW program did (owner 2026-10-30)."""
+    return _set("shutter", mode)
 
 
 def set_exposure(exposure_ms):
@@ -70,6 +82,28 @@ def apply_preset(preset):
     svc.preset = dict(preset)
     events.log("preset", device="emccd", name=preset["name"], readback=got)
     return got
+
+
+def start():
+    """Shutter open, then the run-till-abort acquisition into the SDK's circular buffer (read it with read_new())."""
+    svc = service("emccd")
+    svc.call(svc.require().start_acquisition, what="start acquisition")
+
+
+def stop():
+    svc = service("emccd")
+    svc.call(svc.require().stop_acquisition, what="stop acquisition")
+
+
+def read_new():
+    """(first, last, frames n x h x w uint16) not yet read, or None; a jump in first over the last read = loss."""
+    svc = service("emccd")
+    return svc.call(svc.require().read_new, what="read new frames")
+
+
+def total_acquired():
+    svc = service("emccd")
+    return svc.call(svc.require().total_acquired, what="frames acquired")
 
 
 def snap():
