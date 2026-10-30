@@ -18,7 +18,7 @@ def permitted(what="the device"):
     token = os.environ.get("RIGLOCK_TOKEN")
     if not token:
         raise PermissionError(f"no RIGLOCK_TOKEN: {what} opens only under the rig lock "
-                              "(V6 tools/rig_session.py --no-motor-session -- <this program>)")
+                              "(api.devices.connect takes it, decision 0026)")
     if RIG_DIR not in sys.path:
         sys.path.insert(0, RIG_DIR)
     import riglock

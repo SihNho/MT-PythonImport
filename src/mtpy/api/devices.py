@@ -9,11 +9,12 @@ backends raise NotImplementedError until phases 6/7. Example:
 """
 from mtpy import devices as _devices
 
-from . import estop, events
+from . import estop, events, rig
 from ._act import acting, precheck
 from .errors import DeviceError, NotReady
 
 _services = {}
+CLOSE_ORDER = ("magnet", "rotor", "stage", "focus", "emccd", "camera", "arduino", "light")   # docs/design/shutdown.md
 
 
 def connect(rig_preset):
@@ -21,7 +22,14 @@ def connect(rig_preset):
     status(). NotReady if already connected; NotImplementedError for a backend other than 'sim'."""
     if _services:
         raise NotReady("devices are already connected; api.devices.disconnect() first")
-    built = _devices.make(rig_preset)
+    backend = rig_preset.get("backend")
+    if backend != "sim":
+        rig.acquire(f"mtpy {backend}")             # decision 0026: the program holds the rig lock itself
+    try:
+        built = _devices.make(rig_preset)
+    except Exception:
+        rig.release()
+        raise
     for name, dev in built.items():
         _services[name] = svc = _devices.DeviceService(dev)
         try:
@@ -32,21 +40,38 @@ def connect(rig_preset):
     return status()
 
 
+def close(name):
+    """Close one device and end its service thread (a step of the shutdown sequence, docs/design/shutdown.md).
+    DeviceError when its cleanup fails: the device then STAYS listed, so a retry closes it again (the rig is not
+    clean until it is gone)."""
+    svc = _services.get(name)
+    if svc is None:
+        return
+    if not svc._thread.is_alive():          # an earlier close failed and ended the service: reopen, then close again
+        svc = _services[name] = _devices.DeviceService(svc.device)
+        svc.open()
+    svc.shutdown()
+    _services.pop(name, None)
+
+
 def disconnect():
-    """Close every device and end the service threads (end of session; the session-start origins are dropped)."""
+    """Close every device in CLOSE_ORDER and end the service threads (end of session; the session-start origins are
+    dropped); then release the rig lock - only when every cleanup succeeded (RULES.md 3)."""
     failed = []
     try:
-        for svc in _services.values():
+        for name in sorted(_services, key=lambda n: CLOSE_ORDER.index(n) if n in CLOSE_ORDER else len(CLOSE_ORDER)):
             try:
-                svc.shutdown()
+                close(name)
             except DeviceError as e:
                 failed.append(str(e))
     finally:
         _services.clear()
         events.log("devices", action="disconnect", failed=failed)
     if failed:
-        # phase 7: a real motor's close is the session end (magnet home, limits released) - a failure must be seen
+        # phase 7: a real motor's close is the session end (magnet home, limits released) - a failure must be seen;
+        # the rig lock stays held so the lock file says the rig is not clean (RULES.md 3)
         raise DeviceError("devices", "disconnect", "cleanup incomplete: " + "; ".join(failed))
+    rig.release()
 
 
 def service(name):

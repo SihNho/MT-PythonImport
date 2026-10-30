@@ -2,7 +2,7 @@
 
 --backend   sim (default): every device simulated; real: the JAI camera (IMAQdx) and the Andor iXon EMCCD (SDK2), motors simulated
             (phase 6); real-motors: camera + PI / ASI / Autonics through the motion gate (phase 7). Both real
-            backends need the rig lock: run inside V6 tools/rig_session.py --no-motor-session.
+            backends take the shared rig lock themselves at Connect (decision 0026).
 
 --fixture   folder of recorded frames (img*.tif) and a `cal*` file for the simulated camera (default: $MTPY_DATA/test)
 --out       folder for run files (default: <cwd>/runs)

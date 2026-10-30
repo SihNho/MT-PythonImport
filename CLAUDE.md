@@ -15,9 +15,10 @@ User 2026-10-21: "그 규칙들이 LabVIEW2Scr 프로젝트에서도 적용되�
    Another live holder -> wait; experiment / stale / error -> stop.
 3. **Cleanup always returns the rig to its initial condition** (devices closed, motor limits released with readback),
    also after a failure and when the user declares an experiment mid-job. Cleanup failed -> keep the lock, report.
-4. **Motion only through a gate that checks the lock and enforces the envelope.** Until this project has its own gate
-   approved by the user, every motion goes through V6 `tools/motor_gate.py` (CLI) and every rig job through V6
-   `tools/rig_session.py`. Never open a motor port directly.
+4. **Motion only through a gate that checks the lock and enforces the envelope.** The program has its own: the motion
+   gate (decision 0025) and the rig lock taken by `api.devices.connect` (decision 0026); it never runs under the V6
+   wrapper. Shell scripts and agent jobs still go through V6 `tools/motor_gate.py` (CLI) and V6 `tools/rig_session.py`.
+   Never open a motor port directly.
 5. **Never** change `RIGLOCK_DIR` / `RIGLOCK_TOKEN`, edit `rig_lock.*` by hand, take over a stale lock or break the
    mutex without the user's own words; no recovery during an experiment.
 6. **No serial / VISA call on the frame acquisition path.**

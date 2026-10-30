@@ -7,7 +7,6 @@ camera thread losing frames while the window is dragged.
 """
 import contextlib
 import time
-import traceback
 from collections import deque
 from pathlib import Path
 
@@ -47,6 +46,7 @@ from mtpy.lvfiles import read_cal
 from mtpy.track import Z_METHODS
 
 from . import zscan
+from .shutdown import run_shutdown
 
 pg.setConfigOptions(imageAxisOrder="row-major", background="k", foreground="w")
 
@@ -465,7 +465,8 @@ class MainWindow(QMainWindow):
         self._call(lambda: (estop.clear(), api.devices.connect(preset))[1], "connect", self._show_devices)
 
     def _disconnect(self):
-        self._call(api.devices.disconnect, "disconnect", lambda _: self._show_devices({}))
+        run_shutdown(self)
+        self._show_devices(api.devices.status())
 
     def _self_check(self):
         def show(res):
@@ -861,18 +862,16 @@ class MainWindow(QMainWindow):
                                  f"{extra}")
 
     def closeEvent(self, e):
+        # the shutdown sequence (gui/shutdown.py) runs with the window still open; "Close anyway" closes it uncleaned
+        if api.devices.status():
+            self.timer.stop()
+            self.slow.stop()
+            run_shutdown(self)
+            self._show_devices(api.devices.status())
+            if api.devices.status():            # closed anyway: the rig lock is kept, the log says so
+                events.log("gui", action="closed_uncleaned", devices=sorted(api.devices.status()))
         self.timer.stop()
         self.slow.stop()
         with contextlib.suppress(Exception):
             self._unsub()
-        try:
-            with events.as_caller("gui"):
-                if api.protocol.running():
-                    api.protocol.stop()
-                    api.protocol.wait(10)
-                if api.acq.running():
-                    api.acq.stop()
-                api.devices.disconnect()
-        except Exception:  # noqa: BLE001
-            traceback.print_exc()
         super().closeEvent(e)

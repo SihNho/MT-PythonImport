@@ -24,6 +24,12 @@ Short and current. Details live in the linked documents; the history is in git a
   Profile **v6**: `focus_z_um` = the ASI controller's SL/SU Z (-75..+75 um); **v7**: `rotor_turns` +-5 turns verified
   on the rig (both edges, one pulse past refused), rotor moves through the API allowed. Independent audit: PASS per path on the
   working tree; open items listed in the results page.
+- **2026-10-30 (owner: "Shutdown + lock"):** decision 0026 - the program holds the shared rig lock itself
+  (`api.rig`, taken by `devices.connect` for real backends, released only after a clean `disconnect`) and shuts
+  down through a visible step dialog (`gui/shutdown.py`, design/shutdown.md); `MT Tracker (rig).cmd` runs the GUI
+  without the V6 wrapper. Same day on the rig: owner's motor sequence (results/2026-10-30-motor-sequence.md), iXon
+  first contact, shutter freed by cycling, 47.5 fps max at VS 3.3 us (results/2026-10-30-emccd-*.md),
+  camera parameter catalogue (design/camera-parameters.md).
 - **Next:** protocols on hardware (force ramps, rotation, 3-state clamp, autofocus), the stop / watchdog paths
   exercised on the rig, then the tethered-bead calibration.
 
@@ -36,7 +42,7 @@ Short and current. Details live in the linked documents; the history is in git a
 | [0019](docs/decisions/0019-magnet-stall-returns-to-zero.md) | stall (controller error -1024): return to 0 mm once, error window + record, else lock - an extinguisher |
 | [0020](docs/decisions/0020-rig-core-parameters-register.md) | stall threshold stays 1.0 mm; rig core parameters in one register ([docs/rig/core-parameters.md](docs/rig/core-parameters.md)) |
 
-## Rig (state: assembled; 2026-10-29 owner: a channel is mounted - H2A tailless, heavily aggregated, bench use only; no experiment running)
+## Rig (state: assembled; 2026-10-30 owner: experiment over, a channel with reference and magnetic beads together is mounted)
 - Rig safety profile **v5**: magnet 0..39 mm and 15 mm/s, both rig-verified (speed write 10 <-> 15 shown to take
   effect); rotor, focus unverified -> refused. ASI +-2 mm from the session start.
 - PI controller read: stall threshold 1.0 mm; normal lag at 15 mm/s about 0.05 mm (1/20). Stage model unknown.

@@ -1,5 +1,6 @@
 """WP2: device services, simulators and the device functions of the public API (no hardware, no G: data needed)."""
 import json
+import os
 import shutil
 import threading
 import time
@@ -844,16 +845,13 @@ def test_unknown_backend_not_implemented_and_not_connected():
         api.magnet.position()
 
 
-def test_real_backend_refuses_the_camera_without_the_rig_lock(tmp_path, monkeypatch):
-    """Phase 6: `real` = the JAI camera (lock required, U8 shows why) + simulated motors."""
+def test_real_backend_refuses_without_the_rig_lock(tmp_path, monkeypatch, fake_riglock):
+    """Phase 6 / decision 0026: a real backend takes the rig lock first; refused -> NotReady, nothing opened."""
     _config(tmp_path, monkeypatch, True)
-    monkeypatch.delenv("RIGLOCK_TOKEN", raising=False)
-    try:
-        st = api.devices.connect({"backend": "real"})
-        assert st["magnet"]["state"] == "connected" and st["camera"]["state"] == "disconnected"
-        assert "RIGLOCK_TOKEN" in st["camera"]["last_error"]["hint"]
-    finally:
-        api.devices.disconnect()
+    fake_riglock.refuse = "held by V6-chat (pid 1)"
+    with pytest.raises(NotReady, match="held by"):
+        api.devices.connect({"backend": "real"})
+    assert api.devices.status() == {} and "RIGLOCK_TOKEN" not in os.environ
 
 
 class _FakeImaqdx:
