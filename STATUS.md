@@ -32,6 +32,8 @@ Short and current. Details live in the linked documents; the history is in git a
   camera parameter catalogue (design/camera-parameters.md).
 - **Next:** protocols on hardware (force ramps, rotation, 3-state clamp, autofocus), the stop / watchdog paths
   exercised on the rig, then the tethered-bead calibration.
+- **Queued (owner 2026-10-30):** lock the camera settings while a z scan runs (the GUI must not change exposure,
+  rate or ROI between slices; `api.acq.average` would otherwise mix frames of two settings).
 
 ## Decided since phase 5 (owner, 2026-10-25 / 26)
 | # | Decision |
