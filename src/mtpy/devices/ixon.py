@@ -491,6 +491,26 @@ class IxonCamera(Device):
         sdk("GetMostRecentImage16", img.ctypes.data_as(P(ctypes.c_uint16)), img.size)
         return img.reshape(h, w)
 
+    def cycle_shutter(self, cycles, pause_s):
+        """Owner 2026-10-30: exercise a stiff shutter blade. SetShutter open / closed `cycles` times, `pause_s`
+        after each call, stopping at the first return code other than DRV_SUCCESS; the shutter is left closed.
+        Returns {"calls_ok", "cycles", "stopped_at": None | (cycle, "open" | "closed", error)}."""
+        sdk = self._io()
+        r = {"calls_ok": 0, "cycles": int(cycles), "stopped_at": None}
+        try:
+            for i in range(int(cycles)):
+                for mode, name in ((1, "open"), (2, "closed")):
+                    try:
+                        sdk("SetShutter", 1, mode, 50, 50)
+                    except AndorError as e:
+                        r["stopped_at"] = (i + 1, name, str(e))
+                        return r
+                    r["calls_ok"] += 1
+                    time.sleep(pause_s)
+        finally:
+            self._set_shutter(2)
+        return r
+
     def read_new(self):
         """Every frame not yet read, from the SDK's circular buffer: (first, last, uint16 array n x h x w), or
         None when there is none. first / last are the SDK's own frame numbers (1-based, counting since the

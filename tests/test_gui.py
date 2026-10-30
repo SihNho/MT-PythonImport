@@ -85,3 +85,28 @@ def test_gui_flow_on_simulators(window):
     assert w.bead_ids == [1, 2, 3, 4, 5] and w.roles[1] == "reference"
     kinds = [w.events_list.item(i).text().split("  ")[1] for i in range(w.events_list.count())]
     assert "motor_reading" not in kinds and "mark" in kinds and "recording" in kinds
+
+
+def test_gui_emccd_group_on_simulators(window):
+    """The EMCCD group (owner 2026-10-30): apply the five parameters with read-back, snap into the image view,
+    shutter open / close, and the shutter exercise, all through api.emccd on the simulated iXon."""
+    app, w = window
+    w._connect()
+    _until(app, lambda: "8 / 8" in w.dev_summary.text(), 15, "connect")
+    w.em_rate.setValue(18.0)
+    w._apply_emccd()
+    _until(app, lambda: "emccd read back" in w.em_readback.text(), 10, "emccd preset")
+    assert "'rate_Hz': 17.99" in w.em_readback.text() and "'temperature_C': -70" in w.em_readback.text()
+    w._snap_emccd()
+    _until(app, lambda: "emccd frame 512 x 512" in w.em_readback.text(), 10, "emccd snap")
+    w._shutter(2)
+    _until(app, lambda: w.em_readback.text() == "emccd shutter: closed", 10, "shutter closed")
+    w._shutter(1)
+    _until(app, lambda: w.em_readback.text() == "emccd shutter: open", 10, "shutter open")
+    w.em_cycles.setValue(3)
+    w.em_pause.setValue(0.0)
+    w._exercise_emccd()
+    _until(app, lambda: "6 of 6 calls ok" in w.em_readback.text(), 10, "shutter exercise")
+    assert api.emccd.settings()["shutter"] == 2
+    w._disconnect()
+    _until(app, lambda: "not connected" in w.dev_summary.text(), 20, "disconnect")

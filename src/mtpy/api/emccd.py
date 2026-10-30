@@ -84,6 +84,17 @@ def apply_preset(preset):
     return got
 
 
+def exercise_shutter(cycles=100, pause_s=0.1):
+    """Cycle the internal shutter open / closed `cycles` times, `pause_s` after each call (owner 2026-10-30: the
+    blade was stiff after long disuse and freed up under cycling); stops at the first SDK error; the shutter is
+    left closed. Returns {"calls_ok", "cycles", "stopped_at"}."""
+    svc = service("emccd")
+    r = svc.call(svc.require().cycle_shutter, cycles, pause_s, what=f"exercise shutter {cycles} x {pause_s} s",
+                 timeout_s=2.0 * cycles * pause_s + 30.0)
+    events.log("emccd_shutter_exercise", device="emccd", **r)
+    return r
+
+
 def start():
     """Shutter open, then the run-till-abort acquisition into the SDK's circular buffer (read it with read_new())."""
     svc = service("emccd")

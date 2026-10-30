@@ -245,7 +245,7 @@ class MainWindow(QMainWindow):
         self.backend = QComboBox()
         self.backend.addItem("sim: every device simulated", "sim")
         self.backend.addItem("real: JAI camera (IMAQdx) + Andor iXon EMCCD (SDK2) under the rig lock; motors simulated", "real")
-        self.backend.addItem("real-motors: both cameras + PI / ASI / Autonics through the motion gate (phase 7)", "real-motors")
+        self.backend.addItem("rig: JAI + iXon + motors through the motion gate", "real-motors")
         self.backend.setCurrentIndex(self.backend.findData(self.backend_arg))
         f.addRow("Backend", self.backend)
         self.ed_fixture = QLineEdit(str(self.fixture))
@@ -286,6 +286,12 @@ class MainWindow(QMainWindow):
         g4f.addRow("Temperature set point (cooler on)", self.em_temp)
         g4f.addRow(_row(QPushButton("Apply and read back", clicked=self._apply_emccd),
                         QPushButton("Snap one frame", clicked=self._snap_emccd)))
+        self.em_cycles = _spin(1, 1000, 10, 100, 0, " cycles")
+        self.em_pause = _spin(0.0, 5.0, 0.1, 0.1, 2, " s")
+        g4f.addRow("Shutter", _row(QPushButton("Open", clicked=lambda: self._shutter(1)),
+                                   QPushButton("Close", clicked=lambda: self._shutter(2)),
+                                   self.em_cycles, self.em_pause,
+                                   QPushButton("Exercise (open / close)", clicked=self._exercise_emccd)))
         self.em_readback = QLabel("emccd: not connected")
         self.em_readback.setWordWrap(True)
         g4f.addRow(self.em_readback)
@@ -491,6 +497,19 @@ class MainWindow(QMainWindow):
                   "temperature_C": int(self.em_temp.value())}
         self._call(lambda: api.emccd.apply_preset(preset), "emccd preset",
                    lambda r: self.em_readback.setText(f"emccd read back: {r}"))
+
+    def _shutter(self, mode):
+        self._call(lambda: api.emccd.set_shutter(mode), f"emccd shutter {'open' if mode == 1 else 'closed'}",
+                   lambda r: self.em_readback.setText(f"emccd shutter: {'open' if r == 1 else 'closed'}"))
+
+    def _exercise_emccd(self):
+        n, pause = int(self.em_cycles.value()), self.em_pause.value()
+        self.em_readback.setText(f"emccd shutter exercise: {n} cycles at {pause:g} s running...")
+        self._call(lambda: api.emccd.exercise_shutter(n, pause), "emccd shutter exercise",
+                   lambda r: self.em_readback.setText(
+                       f"emccd shutter exercise: {r['calls_ok']} of {2 * r['cycles']} calls ok"
+                       + (f"; STOPPED at cycle {r['stopped_at'][0]} ({r['stopped_at'][1]}): {r['stopped_at'][2]}"
+                          if r["stopped_at"] else "; every call returned DRV_SUCCESS; shutter closed")))
 
     def _snap_emccd(self):
         def show(img):
