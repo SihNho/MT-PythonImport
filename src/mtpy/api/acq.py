@@ -36,6 +36,7 @@ from mtpy.acq import Pipeline, make_kernel
 from mtpy.devices.base import passive_reads
 
 from . import beads as _beads
+from . import devices as _devices_api
 from . import events
 from . import magnet as _magnet
 from . import rotor as _rotor
@@ -227,7 +228,7 @@ def _hdf5_sink(folder, name, beads, roles, svc, dev, settings):
         identity = svc.call(dev.identity, what="identity")
     except Exception as e:  # noqa: BLE001 - identity is metadata; its absence is recorded, acquisition goes on
         identity = {"error": f"{type(e).__name__}: {e}"}
-    meta = {"devices": {"jai": {"identity": identity, "settings_at_start": settings}}}
+    meta = {"run": {"mode": _devices_api.mode()}, "devices": {"jai": {"identity": identity, "settings_at_start": settings}}}
     if "magnet" in _services:          # decision 0010: the force calibration in use (name, equation, constants, touch)
         meta["devices"]["magnet"] = {"force_calibration_at_start": _magnet.force_calibration()}
     preset = getattr(svc, "preset", None)              # the last camera preset applied (U15 frame-rate triple)

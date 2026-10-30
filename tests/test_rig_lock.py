@@ -86,3 +86,16 @@ def test_lost_permission_engages_the_stop(fake_real, fake_riglock, monkeypatch):
     while not estop.active() and time.monotonic() < t_end:
         time.sleep(0.02)
     assert estop.active()
+
+
+def test_mode_chooses_the_devices(fake_real):
+    """Owner 2026-10-30: MT = tracking alone, MT-TIRF = everything; the mode is on the connect event and in mode()."""
+    st = api.devices.connect({"backend": "sim", "mode": "MT"})
+    assert sorted(st) == ["arduino", "camera", "focus", "magnet", "rotor", "stage"] and api.devices.mode() == "MT"
+    api.devices.disconnect()
+    assert api.devices.mode() is None
+    st = api.devices.connect({"backend": "sim"})
+    assert len(st) == 8 and api.devices.mode() == "MT-TIRF"
+    api.devices.disconnect()
+    with pytest.raises(NotReady, match="mode"):
+        api.devices.connect({"backend": "sim", "mode": "FRET"})

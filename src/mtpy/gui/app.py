@@ -124,10 +124,11 @@ class MainWindow(QMainWindow):
         self.t0 = time.time()
         self.bead_ids, self.roles, self.cal_path = [], {}, None
         self.display_on = True
-        self.setWindowTitle("MT Tracker (Python) - " + ("REAL CAMERA, other devices simulated" if backend == "real" else "REAL CAMERA AND MOTORS" if backend == "real-motors"
-                                                          else "simulators") + ("  [SIM-DEV PROFILE]" if sim_dev else ""))
+        self.base_title = "MT Tracker (Python) - " + ("REAL CAMERA, other devices simulated" if backend == "real" else "REAL CAMERA AND MOTORS" if backend == "real-motors"
+                                                        else "simulators") + ("  [SIM-DEV PROFILE]" if sim_dev else "")
         self.resize(1500, 950)
         self._build()
+        self._apply_mode()
         self.event_in.connect(self._on_event)
         self._unsub = events.subscribe(self.event_in.emit)
         self.timer = QTimer(self, interval=33, timeout=self._tick)
@@ -262,6 +263,12 @@ class MainWindow(QMainWindow):
         self.backend.addItem("rig: JAI + iXon + motors through the motion gate", "real-motors")
         self.backend.setCurrentIndex(self.backend.findData(self.backend_arg))
         f.addRow("Backend", self.backend)
+        self.mode = QComboBox()          # owner 2026-10-30: MT and MT-TIRF are distinct modes of the program
+        self.mode.addItem("MT: tracking (JAI, motors, sync box)", "MT")
+        self.mode.addItem("MT-TIRF: tracking + EMCCD, lasers, light gating (phase 10a)", "MT-TIRF")
+        self.mode.setCurrentIndex(self.mode.findData(api.devices.DEFAULT_MODE))
+        self.mode.currentIndexChanged.connect(self._apply_mode)
+        f.addRow("Mode", self.mode)
         self.ed_fixture = QLineEdit(str(self.fixture))
         f.addRow("Simulator fixture", _row(self.ed_fixture, QPushButton("Browse...", clicked=self._browse_fixture)))
         f.addRow(_row(QPushButton("Connect", clicked=self._connect),
@@ -284,7 +291,7 @@ class MainWindow(QMainWindow):
         gf.addRow("Gain", self.cam_gain)
         gf.addRow(QPushButton("Apply preset and read back", clicked=self._apply_preset))
         f.addRow(g)
-        g4 = QGroupBox("EMCCD (Andor iXon Ultra): core parameters, each read back")
+        g4 = self.em_group = QGroupBox("EMCCD (Andor iXon Ultra): core parameters, each read back")
         g4f = QFormLayout(g4)
         self.em_exp = _spin(0.01, 10000.0, 1.0, 30.0, 2, " ms")
         self.em_rate = _spin(0.01, 1000.0, 1.0, 18.0, 2, " Hz")     # 30 ms + 24.59 ms readout (frame transfer off) -> 18.3 Hz max
@@ -470,7 +477,7 @@ class MainWindow(QMainWindow):
             self.ed_fixture.setText(d)
 
     def _connect(self):
-        preset = {"backend": self.backend.currentData()}
+        preset = {"backend": self.backend.currentData(), "mode": self.mode.currentData()}
         fx = Path(self.ed_fixture.text())
         if preset["backend"] == "sim" and fx.is_dir():
             preset["fixture"] = str(fx)
@@ -478,6 +485,15 @@ class MainWindow(QMainWindow):
             if cals and not self.ed_cal.text():
                 self.ed_cal.setText(str(cals[0]))
         self._call(lambda: (estop.clear(), api.devices.connect(preset))[1], "connect", self._show_devices)
+
+    def _apply_mode(self):
+        """MT hides the EMCCD screen and group; the device set follows at the next Connect."""
+        tirf = self.mode.currentData() == "MT-TIRF"
+        self.em_view.setVisible(tirf)
+        self.em_group.setVisible(tirf)
+        self.setWindowTitle(self.base_title + f"  [{self.mode.currentData()}]")
+        if api.devices.status():
+            self.statusBar().showMessage("mode applies to the devices at the next Connect (Disconnect first)", 8000)
 
     def _disconnect(self):
         run_shutdown(self)

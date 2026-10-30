@@ -68,3 +68,26 @@ def test_failed_step_waits_for_retry(app, monkeypatch):
     d.btn_retry.click()
     _until(app, lambda: d.ok, 20, "retry finished")
     assert api.devices.status() == {} and calls.count("magnet") == 2
+
+
+def test_mode_switch_hides_the_emccd_screen(tmp_path, monkeypatch):
+    from PySide6.QtWidgets import QApplication
+
+    from mtpy.gui.__main__ import sim_dev_config
+    from mtpy.gui.app import MainWindow
+    cfg = sim_dev_config()
+    a = QApplication.instance() or QApplication([])
+    w = MainWindow(fixture=str(tmp_path), out=str(tmp_path / "runs"), sim_dev=cfg)
+    w.show()
+    try:
+        assert w.em_view.isVisible() and w.em_group.isVisible() and "[MT-TIRF]" in w.windowTitle()
+        w.mode.setCurrentIndex(w.mode.findData("MT"))
+        assert not w.em_view.isVisible() and not w.em_group.isVisible() and "[MT]" in w.windowTitle()
+        w._connect()
+        _until(a, lambda: "6 / 6" in w.dev_summary.text(), 20, "connect in MT mode")
+        assert "emccd" not in api.devices.status()
+    finally:
+        w.close()
+        _until(a, lambda: not api.devices.status(), 20, "closed")
+        with events.as_caller("gui"):
+            estop.clear()

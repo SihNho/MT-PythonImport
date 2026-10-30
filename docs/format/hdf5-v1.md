@@ -309,3 +309,7 @@ needs them.
 8. Whether `images` stay in this file or in a companion file with the same `run_id` (size), and the JSON copy's name.
 9. Map storage: maps are JSON files ([mapping.md](mapping.md), still a proposal); the data file stores their content as
    JSON in `/metadata/run/maps`.
+
+
+`/metadata/run/mode`: "MT" or "MT-TIRF", the program mode of the connection that recorded the run (owner
+2026-10-30; `api.devices.MODES`). Files written before 2026-10-30 have no such item.

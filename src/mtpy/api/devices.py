@@ -15,14 +15,24 @@ from .errors import DeviceError, NotReady
 
 _services = {}
 CLOSE_ORDER = ("magnet", "rotor", "stage", "focus", "emccd", "camera", "arduino", "light")   # docs/design/shutdown.md
+# Owner 2026-10-30: "MT, MT-TIRF 모드 구분이 필요함". MT = tracking alone (the JAI, the motors, the sync box);
+# MT-TIRF = everything (plan phase 10a: the iXon, the lasers / light gating). The mode chooses which devices a
+# connect opens and is written into every run file; the default keeps today's behaviour.
+MODES = {"MT": ("camera", "magnet", "rotor", "stage", "focus", "arduino"), "MT-TIRF": _devices.NAMES}
+DEFAULT_MODE = "MT-TIRF"
+_mode = None
 
 
 def connect(rig_preset):
     """Open every device of the rig preset; a device that fails to open stays listed with its error (U8). Returns
     status(). NotReady if already connected; NotImplementedError for a backend other than 'sim'."""
+    global _mode
     if _services:
         raise NotReady("devices are already connected; api.devices.disconnect() first")
     backend = rig_preset.get("backend")
+    mode = rig_preset.get("mode", DEFAULT_MODE)
+    if mode not in MODES:
+        raise NotReady(f"mode {mode!r} does not exist; use one of {sorted(MODES)}")
     if backend != "sim":
         rig.acquire(f"mtpy {backend}")             # decision 0026: the program holds the rig lock itself
     try:
@@ -30,14 +40,22 @@ def connect(rig_preset):
     except Exception:
         rig.release()
         raise
+    _mode = mode
     for name, dev in built.items():
+        if name not in MODES[mode]:
+            continue                                # not part of this mode: never opened
         _services[name] = svc = _devices.DeviceService(dev)
         try:
             svc.open()
         except DeviceError:
             pass                                    # recorded in svc.status(); reconnect(name) retries
-    events.log("devices", action="connect", backend=rig_preset.get("backend"))
+    events.log("devices", action="connect", backend=backend, mode=mode)
     return status()
+
+
+def mode():
+    """The mode of the current connection ("MT" | "MT-TIRF"), None when disconnected."""
+    return _mode if _services else None
 
 
 def close(name):
