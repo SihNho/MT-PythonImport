@@ -4,8 +4,9 @@ when the program is closed). Used by Disconnect and by closing the window.
 Steps, in order: stop the protocol, stop acquisition, close each device (magnet home + limits released, rotor, stage,
 focus, iXon shutter closed / cooler off / warm-up / ShutDown, JAI, Arduino, light), release the rig lock. Each step
 runs on a worker thread and is ticked in the dialog; the first failure stops the sequence, the dialog stays open with
-the error and offers Retry (the remaining steps again) or "Close anyway" (the rig lock is then NOT released: the lock
-file keeps saying the rig is not clean, RULES.md 3).
+the error and offers Retry (the remaining steps again) or "Close anyway" (the program ends; the rig lock is NOT
+released: the lock file keeps saying the rig is not clean, RULES.md 3). A device whose close failed stays listed and
+is reopened by the next close so the cleanup is really done (api.devices.close).
 
     d = ShutdownDialog(parent)
     d.exec()            # True when every step succeeded (the window may close), False on "Close anyway"
@@ -28,7 +29,7 @@ def steps():
            ("stop acquisition (recording closed)", lambda: api.acq.running() and api.acq.stop())]
     names = [n for n in api.devices.CLOSE_ORDER if n in st] + [n for n in st if n not in api.devices.CLOSE_ORDER]
     notes = {"magnet": " (home 0 mm, limits released)", "stage": " (limits released)",
-             "emccd": " (shutter closed, cooler off, warm-up to -20 C: minutes, ShutDown)"}
+             "emccd": " (shutter closed, warm-up through the set point to -20 C: minutes, ShutDown)"}
     out += [(f"close {n}{notes.get(n, '')}", lambda n=n: api.devices.close(n)) for n in names]
     out.append(("release the rig lock", api.devices.disconnect))      # also drops anything left over
     return out

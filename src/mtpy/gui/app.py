@@ -113,6 +113,7 @@ def _row(*widgets):
 
 
 class MainWindow(QMainWindow):
+    _closed_anyway = False      # "Close anyway" pressed: the window closes without running the sequence again
     event_in = Signal(object)
 
     def __init__(self, fixture, out, sim_dev=None, backend="sim"):
@@ -506,7 +507,12 @@ class MainWindow(QMainWindow):
             self.statusBar().showMessage("mode applies to the devices at the next Connect (Disconnect first)", 8000)
 
     def _disconnect(self):
-        run_shutdown(self)
+        # rig 2026-10-30: "Close anyway" from here left the window, the devices and the lock alive (the owner then
+        # closed by the X and the sequence ran again); it now ends the program like the X does
+        if not run_shutdown(self):
+            self._closed_anyway = True
+            self.close()
+            return
         self._show_devices(api.devices.status())
 
     def _self_check(self):
@@ -983,15 +989,13 @@ class MainWindow(QMainWindow):
 
     def closeEvent(self, e):
         # the shutdown sequence (gui/shutdown.py) runs with the window still open; "Close anyway" closes it uncleaned
-        if api.devices.status():
-            self.timer.stop()
-            self.slow.stop()
-            run_shutdown(self)
-            self._show_devices(api.devices.status())
-            if api.devices.status():            # closed anyway: the rig lock is kept, the log says so
-                events.log("gui", action="closed_uncleaned", devices=sorted(api.devices.status()))
         self.timer.stop()
         self.slow.stop()
+        if api.devices.status() and not self._closed_anyway:
+            run_shutdown(self)
+            self._show_devices(api.devices.status())
+        if api.devices.status():                # closed anyway: the rig lock is kept, the log says so
+            events.log("gui", action="closed_uncleaned", devices=sorted(api.devices.status()))
         with contextlib.suppress(Exception):
             self._unsub()
         super().closeEvent(e)

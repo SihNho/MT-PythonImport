@@ -37,8 +37,9 @@ Short and current. Details live in the linked documents; the history is in git a
 - **2026-10-30/31 (iXon cooler):** CoolerOFF does not stop this camera's cooler; the close warms it up through the
   set point (SetTemperature(top) + CoolerON, judged by the temperature alone, fails fast when it does not move) and
   the open reads the state a previous owner left and adopts a cold sensor as the set point (owner 2026-10-31:
-  check the configuration status at device start; results/2026-10-30-ixon-cooler.md). GUI items still open:
-  "Close anyway" from the Disconnect button leaves the process alive; a failed device close is reopened by the next.
+  check the configuration status at device start; results/2026-10-30-ixon-cooler.md). "Close anyway" from the
+  Disconnect button now ends the program (2026-10-31); a failed device close stays listed and is reopened by the
+  next close on purpose, so the cleanup is really done (bounded now by the 60-s warm-up stall check).
 - **Next:** protocols on hardware (force ramps, rotation, 3-state clamp, autofocus), the stop / watchdog paths
   exercised on the rig, then the tethered-bead calibration.
 - **Queued (owner 2026-10-30):** lock the camera settings while a z scan runs (the GUI must not change exposure,

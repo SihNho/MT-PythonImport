@@ -91,3 +91,25 @@ def test_mode_switch_hides_the_emccd_screen(tmp_path, monkeypatch):
         _until(a, lambda: not api.devices.status(), 20, "closed")
         with events.as_caller("gui"):
             estop.clear()
+
+
+def test_close_anyway_from_disconnect_ends_the_window(tmp_path, monkeypatch):
+    from PySide6.QtWidgets import QApplication
+
+    from mtpy.gui import app as gui_app
+    from mtpy.gui.__main__ import sim_dev_config
+    a = QApplication.instance() or QApplication([])
+    w = gui_app.MainWindow(fixture=str(tmp_path), out=str(tmp_path / "runs"), sim_dev=sim_dev_config())
+    w.show()
+    try:
+        w._connect()
+        _until(a, lambda: api.devices.status(), 20, "connected")
+        monkeypatch.setattr(gui_app, "run_shutdown", lambda parent: False)     # the user pressed "Close anyway"
+        w._disconnect()
+        _until(a, lambda: not w.isVisible(), 5, "window closed")
+        assert api.devices.status()                                            # uncleaned, as the button says
+        assert any(e.extra.get("action") == "closed_uncleaned" for e in events.events() if e.kind == "gui")
+    finally:
+        with events.as_caller("gui"):
+            api.devices.disconnect()
+            estop.clear()

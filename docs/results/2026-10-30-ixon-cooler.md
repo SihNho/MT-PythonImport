@@ -32,7 +32,8 @@ cooler off (owner 2026-10-31: "아마 랩뷰에 close connection 부분이 코�
 (`found_at_open`) and adopts a sensor below -20 C as the set point; `close` warms up through the set point, judged by
 the temperature only, and fails within `stall_s` (60 s) when the reading does not move instead of after 15 min.
 
-**Still open.** The GUI's "Close anyway" from the Disconnect button leaves the window and the devices alive; a
-device whose close failed is reopened by the next close and waits again. The motors already reset their state at
+**GUI (2026-10-31).** "Close anyway" from the Disconnect button now ends the program like the window X. A device
+whose close failed stays listed and is reopened by the next close on purpose (the cleanup must really happen); with
+the stall check that retry costs about a minute, not fifteen. The motors already reset their state at
 open (PI: limits written, reference, readback; ASI: limits from the current position), so the owner's "check, reset,
 then connect" rule holds there; a COM port held by another process still fails the open with its error.
