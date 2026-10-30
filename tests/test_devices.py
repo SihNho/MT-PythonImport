@@ -780,7 +780,7 @@ def test_relative_windows_use_session_start_origin(rig):
 
 def test_self_check_report(rig):
     report = api.devices.self_check()
-    assert set(report) == {"camera", "magnet", "rotor", "stage", "focus", "arduino", "light"}
+    assert set(report) == {"camera", "magnet", "rotor", "stage", "focus", "arduino", "light", "emccd"}
     assert all(r["ok"] for steps in report.values() for r in steps)
     rig["rotor"].device.fault = "no_reply"
     steps = api.devices.self_check()["rotor"]

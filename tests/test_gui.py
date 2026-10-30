@@ -60,7 +60,7 @@ def window(tmp_path, monkeypatch):
 def test_gui_flow_on_simulators(window):
     app, w = window
     w._connect()
-    _until(app, lambda: "7 / 7" in w.dev_summary.text(), 15, "connect")
+    _until(app, lambda: "8 / 8" in w.dev_summary.text(), 15, "connect")
     w._apply_preset()
     w._call(lambda: api.magnet.set_touch_position(40.0), "touch")
     _until(app, lambda: api.magnet.force_calibration()["ready"], 10, "touch position")

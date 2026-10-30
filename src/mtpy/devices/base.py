@@ -230,7 +230,8 @@ class DeviceService:
     def close(self):
         if self.connected:
             self.connected = False
-            self.call(self.device.close, what="close")
+            # the iXon waits for its sensor to warm up before ShutDown (ixon.py close_timeout_s)
+            self.call(self.device.close, what="close", timeout_s=getattr(self.device, "close_timeout_s", None))
             events.log("device", device=self.name, action="close")
 
     def reconnect(self):

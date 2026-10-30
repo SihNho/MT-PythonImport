@@ -2,7 +2,8 @@
 scripts, plug-ins or the AI gateway.
 
 `make(rig)` builds the devices named by a rig preset: `{"backend": "sim"}` (every device simulated) or
-`{"backend": "real"}` (phase 6: the real JAI camera through IMAQdx under the rig lock, `jai.py`; motors simulated) or
+`{"backend": "real"}` (phase 6: the real JAI camera through IMAQdx under the rig lock, `jai.py`, and the Andor iXon
+EMCCD `ixon.py`, 2026-10-30; motors simulated) or
 `{"backend": "real-motors"}` (phase 7: the camera and the PI / ASI / Autonics drivers `pi.py`, `asi.py`,
 `autonics.py` = the project's motion gate, docs/design/motion-gate.md; Arduino and lights still simulated). Real
 drivers take the shared rig lock before every send (CLAUDE.md "The rig").
@@ -16,7 +17,7 @@ import mtpy.api  # noqa: F401 - must load before .base (see above)
 
 from .base import IMMEDIATE, NEEDS_PAUSE, Device, DeviceService, Motion
 
-NAMES = ("camera", "magnet", "rotor", "stage", "focus", "arduino", "light")
+NAMES = ("camera", "magnet", "rotor", "stage", "focus", "arduino", "light", "emccd")
 
 
 def make(rig):
@@ -26,9 +27,10 @@ def make(rig):
     from .sim import make_rig
     if backend == "sim":
         return make_rig(fixture=rig.get("fixture"))
+    from .ixon import IxonCamera
     if backend == "real":
         from .jai import JaiCamera
-        return {**make_rig(), "camera": JaiCamera()}
+        return {**make_rig(), "camera": JaiCamera(), "emccd": IxonCamera()}
     if backend == "real-motors":
         # phase 7: the motion gate (docs/design/motion-gate.md) - only after the owner's approval of that page
         from .asi import AsiFocus, AsiStage
@@ -36,7 +38,7 @@ def make(rig):
         from .jai import JaiCamera
         from .pi import PiMagnet
         return {**make_rig(), "camera": JaiCamera(), "magnet": PiMagnet(), "stage": AsiStage(), "focus": AsiFocus(),
-                "rotor": AutonicsRotor()}
+                "rotor": AutonicsRotor(), "emccd": IxonCamera()}
     raise NotImplementedError(f"device backend {backend!r} does not exist; use the rig preset "
                               "{'backend': 'sim'}, {'backend': 'real'} (camera) or {'backend': 'real-motors'}")
 

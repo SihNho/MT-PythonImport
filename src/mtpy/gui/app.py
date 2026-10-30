@@ -244,8 +244,8 @@ class MainWindow(QMainWindow):
         f = QFormLayout(w)
         self.backend = QComboBox()
         self.backend.addItem("sim: every device simulated", "sim")
-        self.backend.addItem("real: JAI camera through IMAQdx under the rig lock; motors simulated (phase 6)", "real")
-        self.backend.addItem("real-motors: camera + PI / ASI / Autonics through the motion gate (phase 7)", "real-motors")
+        self.backend.addItem("real: JAI camera (IMAQdx) + Andor iXon EMCCD (SDK2) under the rig lock; motors simulated", "real")
+        self.backend.addItem("real-motors: both cameras + PI / ASI / Autonics through the motion gate (phase 7)", "real-motors")
         self.backend.setCurrentIndex(self.backend.findData(self.backend_arg))
         f.addRow("Backend", self.backend)
         self.ed_fixture = QLineEdit(str(self.fixture))
@@ -270,6 +270,26 @@ class MainWindow(QMainWindow):
         gf.addRow("Gain", self.cam_gain)
         gf.addRow(QPushButton("Apply preset and read back", clicked=self._apply_preset))
         f.addRow(g)
+        g4 = QGroupBox("EMCCD (Andor iXon Ultra): core parameters, each read back")
+        g4f = QFormLayout(g4)
+        self.em_exp = _spin(0.01, 10000.0, 1.0, 30.0, 2, " ms")
+        self.em_rate = _spin(0.01, 1000.0, 1.0, 20.0, 2, " Hz")
+        self.em_mode = QComboBox()
+        for i, m in enumerate(("8 bit DAC", "12 bit DAC", "linear", "real EM gain")):
+            self.em_mode.addItem(f"{i}: {m}", i)
+        self.em_gain = _spin(0, 1000, 1, 0, 0, "")
+        self.em_temp = _spin(-120, 20, 1, -70, 0, " C")
+        g4f.addRow("Exposure", self.em_exp)
+        g4f.addRow("Frame rate", self.em_rate)
+        g4f.addRow("EM gain mode", self.em_mode)
+        g4f.addRow("EM gain", self.em_gain)
+        g4f.addRow("Temperature set point (cooler on)", self.em_temp)
+        g4f.addRow(_row(QPushButton("Apply and read back", clicked=self._apply_emccd),
+                        QPushButton("Snap one frame", clicked=self._snap_emccd)))
+        self.em_readback = QLabel("emccd: not connected")
+        self.em_readback.setWordWrap(True)
+        g4f.addRow(self.em_readback)
+        f.addRow(g4)
         g2 = QGroupBox("Analysis (decision 0024)")
         g2f = QFormLayout(g2)
         self.z_method = QComboBox()
@@ -464,6 +484,20 @@ class MainWindow(QMainWindow):
             preset.pop("gain_dB")                  # read-only on the JAI until its gain unit is verified (jai.py)
         self._call(lambda: api.camera.apply_preset(preset, confirm=True), "camera preset",
                    lambda r: self.readback.setText(f"camera: {r}"))
+
+    def _apply_emccd(self):
+        preset = {"name": "gui", "em_gain_mode": self.em_mode.currentData(), "em_gain": int(self.em_gain.value()),
+                  "exposure_ms": self.em_exp.value(), "rate_Hz": self.em_rate.value(),
+                  "temperature_C": int(self.em_temp.value())}
+        self._call(lambda: api.emccd.apply_preset(preset), "emccd preset",
+                   lambda r: self.em_readback.setText(f"emccd read back: {r}"))
+
+    def _snap_emccd(self):
+        def show(img):
+            self.img_item.setImage(img.T, autoLevels=True)
+            self.em_readback.setText(f"emccd frame {img.shape[1]} x {img.shape[0]}: min {img.min()} max {img.max()} "
+                                     f"mean {img.mean():.1f}")
+        self._call(api.emccd.snap, "emccd snap", show)
 
     # ------------------------------------------------------------------ explore
     def _move_magnet(self):
@@ -725,6 +759,14 @@ class MainWindow(QMainWindow):
             except Exception as e:  # noqa: BLE001
                 self._mag = self._force = float("nan")
                 self.readback.setText(f"magnet read: {type(e).__name__}: {e}")
+        if st and st.get("emccd", {}).get("state") == "connected" and not self._workers:
+            try:
+                e = api.emccd.settings()
+                self.em_readback.setText(f"emccd: {e['exposure_ms']:.3f} ms, {e['rate_Hz']:.3f} Hz, gain mode "
+                                         f"{e['em_gain_mode']}, gain {e['em_gain']}, set {e['temperature_C']} C, "
+                                         f"sensor {e['sensor_temperature_C']} C ({e['cooler']})")
+            except Exception as ex:  # noqa: BLE001
+                self.em_readback.setText(f"emccd read: {type(ex).__name__}: {ex}")
         parts = []
         if api.acq.running():
             a = api.acq.status()
