@@ -41,4 +41,11 @@ Widening the window is a rig-admin change that needs the owner's word and a read
 
 Both edges of the verified window reached and read back exactly; the window itself stays +-5 turns.
 
+## Rerun watched by the owner
+
+The whole sequence (rotor at +-5) ran again 09:37:03-09:37:45 after the owner missed the first pass
+(`sequence_20261030_093703.json`, 20 steps, none failed, same read-backs within 0.2 um); the owner watched it and
+confirmed the motors moved ("모터 작동 확인함"). Note: V6 `rig_session.py` refuses instead of waiting when another
+holder has the lock; the rerun was started by a shell loop that waited for `riglock status` holder = null.
+
 Not covered: the EMCCD (run separately the same day), the magnet speed above 15 mm/s (profile maximum).
