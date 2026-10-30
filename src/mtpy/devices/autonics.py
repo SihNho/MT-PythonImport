@@ -78,14 +78,15 @@ class AutonicsRotor(Device):
     def open(self):
         gate.permitted("the rotor")
         e = safety.profile()["limits"]["rotor_turns"]
-        if e["relative_to"] != "session_start" or e["min"] is None or e["max"] is None:
-            raise PermissionError("the profile's rotor_turns is not a session-relative window: no rotor session")
+        if e["min"] is None or e["max"] is None or e["relative_to"] not in (None, "session_start"):
+            raise PermissionError("the profile's rotor_turns has no usable window: no rotor session")
         L = self.line or Line.open(self.port_name, BAUD, b"\r", b"\r", 1.5)
         L.ask("POS")                                     # the first read after opening times out (V6 note)
         time.sleep(0.2)
         p = self._read(L)
         self.line = L
-        lo, hi = (p + round(float(e["min"]) * PULSES_PER_TURN), p + round(float(e["max"]) * PULSES_PER_TURN))
+        base = p if e["relative_to"] == "session_start" else 0      # absolute window (decision 0027) or relative
+        lo, hi = (base + round(float(e["min"]) * PULSES_PER_TURN), base + round(float(e["max"]) * PULSES_PER_TURN))
         minus, plus = (_param(L.ask("IXR X7B"), "IXR"), _param(L.ask("IXR X7A"), "IXR"))
         self.mode2 = _param(L.ask("IHR XE4"), "IHR")
         if minus is not None and plus is not None:

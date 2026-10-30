@@ -9,7 +9,12 @@ Reads (manual DRW170814AB pp. 76-78, parameter table p. 78): POS, ERD X (bits 9 
 IXR X7A soft limit + and IXR X7B soft limit - (4-byte, pulses), IHR XE4 operation mode 2 (digit 6 "Soft Limit",
 0 = ENABLE, 1 = DISABLE - the manual marks the logic as reversed), IHR XE6 speed multiplier, VER. Prints one line per
 query and a RESULT line with the decoded values.
+
+--adopt (decision 0027, owner 2026-10-30: "그걸 리밋으로 두면 될듯"): after the read, make the controller's soft limits
+the profile's `rotor_turns` (absolute turns in the controller frame, verified by this readback) through the admin
+API - a new profile version; nothing is written to the controller.
 """
+import argparse
 import json
 import sys
 import time
@@ -23,7 +28,30 @@ def _signed32(h):
     return v - (1 << 32) if v >= (1 << 31) else v
 
 
-def main():
+def adopt(dec):
+    """Profile: rotor_turns = the controller's soft limits (turns, absolute). Returns the new profile's version."""
+    from mtpy.admin import safety_admin as admin
+    from mtpy.api import events, safety
+    from mtpy.devices.autonics import PULSES_PER_TURN
+    lo, hi = dec["soft_limit_minus_pulses"] / PULSES_PER_TURN, dec["soft_limit_plus_pulses"] / PULSES_PER_TURN
+    with events.as_caller("rig-admin"):
+        s = admin.open_admin_session("decision 0027: rotor_turns = the controller's own soft limits")
+        lim = safety._thaw(safety.profile()["limits"])
+        lim["rotor_turns"] = {"min": lo, "max": hi, "unit": "turns", "relative_to": None, "verified": True,
+                              "source": f"Autonics PMC-2HS soft limits IXR X7B / X7A read on the rig {time.strftime('%Y-%m-%d')} "
+                                        f"({dec['soft_limit_minus_pulses']} / {dec['soft_limit_plus_pulses']} pulses, "
+                                        "the position counter's own range; owner: '그걸 리밋으로 두면 될듯'); "
+                                        "tools/rotor_limits_probe.py --adopt"}
+        pend = admin.propose_change(s, lim, by="rig-admin (rotor limits probe)", reason="decision 0027")
+        p = admin.activate(s, pend, admin.RecommissioningReport(by="rig-admin (rotor limits probe)",
+                                                                   checked={"rotor_turns": True}))
+    return {"version": p["version"], "rotor_turns": p["limits"]["rotor_turns"]}
+
+
+def main(argv=None):
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--adopt", action="store_true")
+    a = ap.parse_args(argv)
     from mtpy.devices import autonics, gate
     from mtpy.devices.gate import Line
     gate.permitted("the rotor probe")
@@ -52,7 +80,9 @@ def main():
         dec["error_hex"] = e.removeprefix("X")        # the controller answers 'ERD X4000'
     except (IndexError, ValueError, KeyError) as e:
         dec["decode_error"] = f"{type(e).__name__}: {e}"
-    print("RESULT " + json.dumps({"raw": out, "decoded": dec}), flush=True)
+    if a.adopt and "decode_error" not in dec:
+        dec["profile"] = adopt(dec)
+    print("RESULT " + json.dumps({"raw": out, "decoded": dec}, ensure_ascii=False), flush=True)
     return 0
 
 

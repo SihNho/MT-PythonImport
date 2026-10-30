@@ -231,3 +231,20 @@ def test_rotor_follows_the_controller_soft_limits():
     r.close()
     with pytest.raises(PermissionError, match="outside the controller"):
         rotor(FakeRotor(100000, soft_limits=(100500, 101000))).open()      # the rotor sits outside its limits
+
+
+def test_rotor_absolute_window_from_the_controller(monkeypatch):
+    """Decision 0027: with the profile's rotor_turns absolute (= the controller's range), the window is that range."""
+    from mtpy.api import safety
+    prof = safety._thaw(safety.profile())
+    prof["limits"]["rotor_turns"] = {"min": -16777.216, "max": 16777.214, "unit": "turns", "relative_to": None,
+                                     "verified": True, "source": "test"}
+    monkeypatch.setattr(safety, "profile", lambda: prof)
+    ctl = FakeRotor(100000)
+    line = Line(ctl, b"\r", 0.1)
+    line.eol_in = b"\r"
+    r = autonics.AutonicsRotor(line=line)
+    r.open()
+    assert r.window == (-8388608, 8388607) and r.limits()["controller_soft_limits_in_use"] is False
+    r.move_to(210.0)                        # +10 turns from 200: allowed now
+    assert ctl.log[-1] == "PAB 105000"
