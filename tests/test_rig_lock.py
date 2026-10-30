@@ -91,7 +91,7 @@ def test_lost_permission_engages_the_stop(fake_real, fake_riglock, monkeypatch):
 def test_mode_chooses_the_devices(fake_real):
     """Owner 2026-10-30: MT = tracking alone, MT-TIRF = everything; the mode is on the connect event and in mode()."""
     st = api.devices.connect({"backend": "sim", "mode": "MT"})
-    assert sorted(st) == ["arduino", "camera", "focus", "magnet", "rotor", "stage"] and api.devices.mode() == "MT"
+    assert sorted(st) == ["camera", "focus", "magnet", "rotor", "stage"] and api.devices.mode() == "MT"
     api.devices.disconnect()
     assert api.devices.mode() is None
     st = api.devices.connect({"backend": "sim"})

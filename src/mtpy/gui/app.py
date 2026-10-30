@@ -264,8 +264,8 @@ class MainWindow(QMainWindow):
         self.backend.setCurrentIndex(self.backend.findData(self.backend_arg))
         f.addRow("Backend", self.backend)
         self.mode = QComboBox()          # owner 2026-10-30: MT and MT-TIRF are distinct modes of the program
-        self.mode.addItem("MT: tracking (JAI, motors, sync box)", "MT")
-        self.mode.addItem("MT-TIRF: tracking + EMCCD, lasers, light gating (phase 10a)", "MT-TIRF")
+        self.mode.addItem("MT: tracking (JAI, motors)", "MT")
+        self.mode.addItem("MT-TIRF: tracking + EMCCD, Arduino sync, lasers, light gating (phase 10a)", "MT-TIRF")
         self.mode.setCurrentIndex(self.mode.findData(api.devices.DEFAULT_MODE))
         self.mode.currentIndexChanged.connect(self._apply_mode)
         f.addRow("Mode", self.mode)

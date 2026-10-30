@@ -84,7 +84,7 @@ def test_mode_switch_hides_the_emccd_screen(tmp_path, monkeypatch):
         w.mode.setCurrentIndex(w.mode.findData("MT"))
         assert not w.em_view.isVisible() and not w.em_group.isVisible() and "[MT]" in w.windowTitle()
         w._connect()
-        _until(a, lambda: "6 / 6" in w.dev_summary.text(), 20, "connect in MT mode")
+        _until(a, lambda: "5 / 5" in w.dev_summary.text(), 20, "connect in MT mode")
         assert "emccd" not in api.devices.status()
     finally:
         w.close()

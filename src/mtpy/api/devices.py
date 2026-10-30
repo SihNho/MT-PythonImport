@@ -15,10 +15,10 @@ from .errors import DeviceError, NotReady
 
 _services = {}
 CLOSE_ORDER = ("magnet", "rotor", "stage", "focus", "emccd", "camera", "arduino", "light")   # docs/design/shutdown.md
-# Owner 2026-10-30: "MT, MT-TIRF 모드 구분이 필요함". MT = tracking alone (the JAI, the motors, the sync box);
-# MT-TIRF = everything (plan phase 10a: the iXon, the lasers / light gating). The mode chooses which devices a
-# connect opens and is written into every run file; the default keeps today's behaviour.
-MODES = {"MT": ("camera", "magnet", "rotor", "stage", "focus", "arduino"), "MT-TIRF": _devices.NAMES}
+# Owner 2026-10-30: "MT, MT-TIRF 모드 구분이 필요함" / "Arduino는 mt-tirf 용도". MT = tracking alone (the JAI and
+# the motors); MT-TIRF = everything (plan phase 10a: the iXon, the Arduino sync box, the lasers / light gating). The
+# mode chooses which devices a connect opens and is written into every run file; the default keeps today's behaviour.
+MODES = {"MT": ("camera", "magnet", "rotor", "stage", "focus"), "MT-TIRF": _devices.NAMES}
 DEFAULT_MODE = "MT-TIRF"
 _mode = None
 

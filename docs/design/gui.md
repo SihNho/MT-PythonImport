@@ -21,9 +21,9 @@ screens side by side (owner 2026-10-30: the JAI with the bead boxes, the EMCCD w
 30 s; bead chips), the event list (without the 20 Hz motor readings) and the status line (frames, fps, recording,
 magnet position and live force, protocol state, e-stop).
 
-**Modes** (owner 2026-10-30: "MT, MT-TIRF 모드 구분이 필요함"): a Mode box in Setup. **MT** = tracking alone: the JAI,
-the motors and the sync box are opened, the EMCCD screen and group are hidden. **MT-TIRF** = everything (phase 10a:
-the iXon, later the lasers and light gating). The mode goes into the connect preset (`api.devices.MODES`), the
+**Modes** (owner 2026-10-30: "MT, MT-TIRF 모드 구분이 필요함"): a Mode box in Setup. **MT** = tracking alone: the JAI and
+the motors are opened, the EMCCD screen and group are hidden. **MT-TIRF** = everything (phase 10a: the iXon, the
+Arduino sync box - "Arduino는 mt-tirf 용도" - later the lasers and light gating). The mode goes into the connect preset (`api.devices.MODES`), the
 connect event, the window title and every run file (`/metadata/run/mode`); changing it while connected applies at
 the next Connect. Default MT-TIRF (today's behaviour).
 
