@@ -24,7 +24,8 @@ def bead_profile(image, x, y, cross):
     return xo, yo, np.concatenate([prof[1:][::-1], prof])
 
 
-def run(path, xy, slices=60, step_nm=100.0, n_avg=20, cross=120, nm_per_px=84.0, progress=None):
+def run(path, xy, slices=60, step_nm=100.0, n_avg=20, cross=120, nm_per_px=84.0, progress=None,
+        low=calib.DEFAULT_LOW, high=calib.DEFAULT_HIGH, forget=calib.DEFAULT_FORGET):
     """Scan `slices` focus positions `step_nm` apart centred on the current focus, write the .cal to `path`, return
     the focus to where it was. xy: (n, 2) bead positions in px. progress(i, slices) is called per slice."""
     xy = np.asarray(xy, dtype=np.float64)
@@ -42,7 +43,10 @@ def run(path, xy, slices=60, step_nm=100.0, n_avg=20, cross=120, nm_per_px=84.0,
     finally:
         api.focus.move_to(z0).wait(10)
     cal = {"xy": xy, "stack": stack, "n_slices": slices,
-           "bead_i32": np.array([[int(np.rint(x)), int(np.rint(y)), cross] for x, y in xy], dtype=np.int32),
+           # per bead (LOW, HIGH, forget) as LabVIEW's .cal holds it - the band-pass bins and the forget radius the
+           # kernel is built from (calib.clusters); NOT the position (rig 2026-10-30: x, y, cross here gave an empty
+           # band and a division by zero in the kernel)
+           "bead_i32": np.array([[low, high, forget]] * len(xy), dtype=np.int32),
            "z_step": step_um, "n_avg": n_avg, "date": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
            "bead_flags": np.zeros(len(xy), dtype=np.int32), "nm_per_px": nm_per_px}
     write_cal(path, cal)

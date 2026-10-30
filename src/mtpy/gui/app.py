@@ -31,6 +31,7 @@ from PySide6.QtWidgets import (
     QMessageBox,
     QPlainTextEdit,
     QPushButton,
+    QScrollArea,
     QSlider,
     QSpinBox,
     QSplitter,
@@ -152,7 +153,11 @@ class MainWindow(QMainWindow):
         self.panel = QStackedWidget()
         self.panel.setMinimumWidth(420)
         self.panel.setMaximumWidth(520)
-        body.addWidget(self.panel, 0)
+        scroll = QScrollArea()           # the Setup page is taller than a 1080-px screen: scroll instead of hiding the status bar
+        scroll.setWidget(self.panel)
+        scroll.setWidgetResizable(True)
+        scroll.setMinimumWidth(440)
+        body.addWidget(scroll, 0)
         for key, _ in STEPS:
             self.panel.addWidget(getattr(self, f"_panel_{key}")())
         self.events_list = QListWidget()
@@ -279,7 +284,7 @@ class MainWindow(QMainWindow):
         self.dev_table = QTableWidget(0, 3)
         self.dev_table.setHorizontalHeaderLabels(["Device", "State", "Last error / detail"])
         self.dev_table.horizontalHeader().setStretchLastSection(True)
-        self.dev_table.setMinimumHeight(180)
+        self.dev_table.setMinimumHeight(120)
         f.addRow(self.dev_table)
         g = QGroupBox("Camera preset (U15)")
         gf = QFormLayout(g)
@@ -378,7 +383,7 @@ class MainWindow(QMainWindow):
         f.addRow(".cal file", _row(self.ed_cal, QPushButton("Browse...", clicked=self._browse_cal),
                                    QPushButton("Load list", clicked=self._load_cal_list)))
         self.bead_list = QListWidget()
-        self.bead_list.setMinimumHeight(220)
+        self.bead_list.setMinimumHeight(120)
         f.addRow(self.bead_list)
         self.role_ref = QLineEdit("1")
         f.addRow("Reference bead ids (comma)", self.role_ref)

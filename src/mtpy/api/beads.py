@@ -8,6 +8,8 @@ Bead ids are 1-based, as in the `.cal` and `.tra` files (bead 1 = x1, y1, z1).
 """
 from pathlib import Path
 
+import numpy as np
+
 from mtpy import calib
 from mtpy.acq import Beads
 
@@ -50,6 +52,7 @@ def select(ids, cal_path=None):
     if acq.running():
         raise NotReady("beads cannot change while acquisition runs; api.acq.stop() first")
     path = Path(cal_path) if cal_path is not None else _fixture_cal()
+    _check_band(read_cal(path), path)
     cal = read_cal(path)
     n = len(cal["stack"])
     ids = tuple(ids)
@@ -69,3 +72,13 @@ def select(ids, cal_path=None):
 def selected():
     """The selected `mtpy.acq.Beads`, or None."""
     return _selected
+
+
+def _check_band(cal, path):
+    """A .cal whose per-bead (LOW, HIGH, forget) gives an empty band-pass would divide by zero inside the tracking
+    kernel (rig 2026-10-30); refuse it here with the numbers instead."""
+    half = cal["stack"].shape[2] // 2
+    for b, (lo, hi, fg) in enumerate(np.asarray(cal["bead_i32"]).tolist()):
+        if not (0 <= lo < hi <= half and 0 <= fg < half):
+            raise NotReady(f"{path}: bead {b + 1} has (LOW, HIGH, forget) = ({lo}, {hi}, {fg}); the band must satisfy "
+                           f"0 <= LOW < HIGH <= {half} and 0 <= forget < {half} - re-scan the calibration")
