@@ -28,6 +28,9 @@ Each file records one decision: what was decided, why, and what follows from it.
 | [0022](0022-z-lut-initial-band-and-forget.md) | Initial z-LUT settings at 50x LOW 0 / HIGH 40 / forget 10 (forget removes the inner radii); no further edits to the V6 LabVIEW code | 2026-10-27 |
 | [0023](0023-labview-is-the-baseline-not-the-standard.md) | LabVIEW is the baseline, not the standard: at least its performance, better if possible; the exact port stays as the reference; formats stay; alternatives measured on the reference-bead benchmarks | 2026-10-28 |
 | [0024](0024-three-z-methods-on-numba-and-cuda.md) | Three Z estimators (current / spline / phase_spline) kept as swappable slots on numpy, numba and CUDA, agreeing to 1e-9; default stays current until the tethered-bead data; the GPU executor works but is not yet faster | 2026-10-29 |
+| [0025](0025-motion-gate-approved.md) | The project's motion gate is approved; the focus z window follows the ASI controller's own SL/SU Z limits | 2026-10-30 |
+| [0026](0026-program-holds-the-rig-lock-and-shuts-down-visibly.md) | The program takes the shared rig lock itself (not the V6 wrapper) and closes the rig in a visible step-by-step dialog that keeps the lock on a failed cleanup | 2026-10-30 |
+| [0027](0027-rotor-limit-is-the-controller-counter-range.md) | The rotor's limit is the controller's own soft-limit registers read at open (today the 24-bit counter range); the program writes nothing to the controller; the profile adopts the readback | 2026-10-30 |
 
 The behavior specification of the LabVIEW program is in [../spec/README.md](../spec/README.md) and the device manuals are
 in [../manuals/README.md](../manuals/README.md).

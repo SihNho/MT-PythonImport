@@ -123,6 +123,7 @@ when they are set, refuses to open when the rotor already sits outside them, and
 2. ~~The speed multiplier stored in the controller~~ read 2026-10-30: 10.
 3. What initial string does `Configure.vi` send?
 4. Where should the rotor be left at the end of a job (in place, or back to the start position)?
-5. Should the controller's EEPROM soft limit be installed for the released program? Owner 2026-10-30: yes, the
-   rotor follows the controller's limit - the values and who writes them (panel or a one-time serial write) are open.
+5. ~~Should the controller's EEPROM soft limit be installed for the released program?~~ Decision 0027 (2026-10-30):
+   the limit is whatever the controller holds, read at every open - today its counter range; the program writes
+   nothing. The profile adopts the readback with `tools/rotor_limits_probe.py --adopt` (not yet run).
 6. Which physical direction (seen from the camera) is positive degrees?
