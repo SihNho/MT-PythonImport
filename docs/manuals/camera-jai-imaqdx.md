@@ -30,6 +30,14 @@ acquiring keeps the sensor and USB link busy; every job must stop acquisition an
 - Preserved ctypes reference: `third_party/mt_labview/tools/bench/imaqdx_ctypes.py` (structures `CameraInformation`,
   `AttributeInformation`, `EnumItem`; value-type codes U32 0, I64 1, F64 2, STR 3, ENUM 4, BOOL 5, CMD 6, BLOB 7).
 - The C API needs no LabVIEW and opens no dialog; NI's example VIs with an empty camera name block on a modal dialog.
+- **USB3 Vision driver binding (rig 2026-10-31/11-01).** The owner installed JAI's eBUS SDK 6.5.3.7155 (64-bit; the
+  PC had 6.3.0 before) to look at it as the alternative of decision 0021. The installer re-bound the camera
+  (`USB\VID_14FB&PID_1006`) to Pleora's USB3 Vision driver (`ebuniversalproforu3v.inf` = oem87.inf, 7.2.5.5600,
+  installed 23:59:26). From then on IMAQdx enumerates no camera ("no camera enumerated", the program's connect at
+  00:00:25 left the camera disconnected; the motors were fine), and LabVIEW would see the same. NI's own driver
+  (`niu3vk.inf` = oem11.inf, 26.3.0) is still in the driver store, so the camera can be bound back (eBUS Driver
+  Installation Tool, Device Manager "Update driver", or removing oem87.inf) - a system change the owner decides.
+  The eBUS 6.5.3 package has C++ and .NET APIs only; the Python API is a separate Pleora download.
 
 ## Command table - C API functions
 

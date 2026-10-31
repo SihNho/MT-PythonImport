@@ -54,6 +54,9 @@ Short and current. Details live in the linked documents; the history is in git a
   G1 / G7 (double Connect / Start built two device sets / pipelines, confirmed on the sim), D5 (a raising lock check
   ended the heartbeat silently) and D7 (a silent PI read as "still moving") fixed with tests; D1 (a cleanup Retry
   re-opened and re-referenced the PI) and G15 (Connect cleared the e-stop) fixed on the owner's word ("둘 다 고쳐"). The device panel became a control panel (rows + numeric fields per device) the same night.
+- **2026-11-01 00:00 (owner installed the eBUS SDK 6.5.3):** the installer bound the JAI camera to Pleora's USB3 Vision
+  driver; **IMAQdx no longer enumerates the camera** (program connect: camera disconnected, motors fine). NI's U3V driver
+  is still in the store; binding it back is the owner's call (manuals/camera-jai-imaqdx.md "Driver / SDK").
 - **Next:** protocols on hardware (force ramps, rotation, 3-state clamp, autofocus), the stop / watchdog paths
   exercised on the rig, then the tethered-bead calibration.
 - **Queued (owner 2026-10-30):** lock the camera settings while a z scan runs (the GUI must not change exposure,
