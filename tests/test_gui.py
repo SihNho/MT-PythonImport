@@ -121,7 +121,7 @@ def test_gui_pick_flow_on_simulators(window, tmp_path):
     _until(app, lambda: "8 / 8" in w.dev_summary.text(), 15, "connect")
     w._toggle_acq()
     _until(app, lambda: api.acq.running() and "JAI frame" in w.cam_label.text, 20, "display-only acquisition")
-    for x, y in read_cal(FIXTURE / "cal001")["xy"][:3]:
+    for x, y in read_cal(FIXTURE / "cal002")["xy"][:3]:
         w.picks.append((float(x), float(y)))
     w._draw_picks()
     w.cal_out.setText(str(tmp_path / "cal_pick"))
