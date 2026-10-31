@@ -114,8 +114,8 @@ class SimMotor(Device):
 
 
 class SimMagnet(SimMotor):
-    """PI C-863.11 magnet: 0 mm = top (farthest from the sample), larger = more force; soft limits TMN/TMX 0 .. 39 mm
-    as the gate writes them, hard travel 0 .. 40.94 mm (Max Trans Pos.vi)."""
+    """PI C-863.11 magnet: 0 mm = top (farthest from the sample), larger = more force; soft limits TMN/TMX from the
+    profile's magnet_position_mm at open, as the real open writes them; hard travel 0 .. 40.94 mm (Max Trans Pos.vi)."""
     name, model, unit = "magnet", "PI C-863.11 (magnet)", "mm"
     hint = "check the PI controller power, servo (SVO) and the USB cable"
     quantities = ("magnet_position_mm", "magnet_force_pN", "magnet_speed_mm_s")
@@ -133,6 +133,15 @@ class SimMagnet(SimMotor):
         self._stall_at = None          # armed stall position (inject_stall), or None
         self._stall_pending = False    # a move was cut at the stall position; the stall fires when it arrives
         self.fail_servo_on = False     # TEST ONLY: re-enabling the servo fails (it stays off)
+
+    def open(self):
+        super().open()
+        # as the real PI open writes the profile's TMN/TMX (pi.open): the simulator followed a fixed 0..39 until
+        # profile v9 (40.9 mm, 2026-10-31) showed it
+        from mtpy.api import safety
+        lim = safety.profile()["limits"]["magnet_position_mm"]
+        if lim["min"] is not None and lim["max"] is not None:
+            self.soft = (float(lim["min"]), float(lim["max"]))
 
     def limits(self):
         return {**super().limits(), "soft_limits_TMN_TMX": self.soft}

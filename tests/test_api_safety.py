@@ -53,16 +53,28 @@ class Motor:
         return self.pos
 
 
-def test_shipped_config_is_v7_focus_window_from_the_controller_rotor_verified(monkeypatch):
-    """v7 (rig 2026-10-30): `rotor_turns` +-5 turns verified (both edges driven, one pulse past refused). Decision
+def test_shipped_config_is_v9_magnet_limit_40_9_rotor_counter_range(monkeypatch):
+    """v9 (owner 2026-10-31): `magnet_position_mm` max 40.9 mm (0.04 mm short of the 40.94 mm travel end), else v8.
+    v8 (decision 0027, rig 2026-10-31): `rotor_turns` = the Autonics controller's soft limits (+-16777 turns, absolute).
+    v7 (rig 2026-10-30): `rotor_turns` +-5 turns verified (both edges driven, one pulse past refused). Decision
     0025 (v6): `focus_z_um` = the ASI controller's SL/SU Z (+-75 um, absolute, verified by readback), else as v5. Decision 0017 (v5): `magnet_force_pN`
     removed (the force limit is derived from the magnet position limit), nothing checked on the rig, every other
     limit identical to v4; v1-v5 stay in the history."""
     monkeypatch.setattr(safety, "CONFIG", REPO_CONFIG)
     p = safety.load_active()
-    v4, v5, v6, v7 = (json.loads((REPO_CONFIG / "safety_profiles" / f"{v}.json").read_text(encoding="utf-8")) for v in (4, 5, 6, 7))
-    assert p["version"] == 7 and p["base_version"] == 6 and safety.versions() == [1, 2, 3, 4, 5, 6, 7]
-    assert safety._thaw(p) == v7 and v7["allow_unverified"] is False and v6["allow_unverified"] is False
+    v4, v5, v6, v7, v8, v9 = (json.loads((REPO_CONFIG / "safety_profiles" / f"{v}.json").read_text(encoding="utf-8"))
+                              for v in (4, 5, 6, 7, 8, 9))
+    assert p["version"] == 9 and p["base_version"] == 8 and safety.versions() == [1, 2, 3, 4, 5, 6, 7, 8, 9]
+    assert safety._thaw(p) == v9 and v9["allow_unverified"] is False and v6["allow_unverified"] is False
+    assert v9["limits"]["magnet_position_mm"]["max"] == 40.9 and v9["recommissioning"]["checked"] == {"magnet_position_mm": True}
+    assert {q: e for q, e in v9["limits"].items() if q != "magnet_position_mm"} == {q: e for q, e in v8["limits"].items() if q != "magnet_position_mm"}
+    assert safety.check("magnet_position_mm", 40.9) is True
+    with pytest.raises(SafetyRefused, match=r"\[0, 40.9\] mm of the rig safety profile v9"):
+        safety.check("magnet_position_mm", 41.0)
+    assert v8["base_version"] == 7 and v8["recommissioning"]["checked"] == {"rotor_turns": True}
+    assert v8["limits"]["rotor_turns"]["min"] == -16777.216 and v8["limits"]["rotor_turns"]["max"] == 16777.214
+    assert {q: e for q, e in v8["limits"].items() if q != "rotor_turns"} == {q: e for q, e in v7["limits"].items() if q != "rotor_turns"}
+    assert v7["allow_unverified"] is False
     assert v7["limits"]["rotor_turns"]["verified"] is True and v7["recommissioning"]["checked"] == {"rotor_turns": True}
     assert v7["unverified"] == ["rotor_speed_turns_s"] and safety.check("rotor_turns", 204.0, 200.0) is True
     assert {q: e for q, e in v7["limits"].items() if q != "rotor_turns"} == {q: e for q, e in v6["limits"].items() if q != "rotor_turns"}
@@ -79,7 +91,7 @@ def test_shipped_config_is_v7_focus_window_from_the_controller_rotor_verified(mo
     assert v5["recommissioning"]["checked"] == {} and v5["recommissioning"]["not_checked_unverified"] == []
     assert "0017" in v5["reason"]
     assert safety.check("magnet_position_mm", 39.0) is True and safety.check("magnet_speed_mm_s", 15.0) is True
-    with pytest.raises(SafetyRefused, match="magnet_force_pN is not in the rig safety profile v7"):
+    with pytest.raises(SafetyRefused, match="magnet_force_pN is not in the rig safety profile v9"):
         safety.check("magnet_force_pN", 1.0)
 
 

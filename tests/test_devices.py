@@ -16,7 +16,7 @@ from mtpy.devices.sim import SimCamera
 
 REPO_CONFIG = Path(__file__).resolve().parents[1] / "config"
 # TEST ONLY - not a rig value: every limit set and verified so the simulators can exercise every device function.
-TEST_LIMITS = {"magnet_speed_mm_s": (0.0, 10.0), "rotor_turns": (-5.0, 5.0),
+TEST_LIMITS = {"magnet_position_mm": (0.0, 39.0), "magnet_speed_mm_s": (0.0, 10.0), "rotor_turns": (-5.0, 5.0),
                "rotor_speed_turns_s": (0.0, 10.0), "focus_z_um": (-50.0, 50.0)}
 # TEST ONLY - a clearly synthetic position-to-force table (no physics; decision 0010 needs a recorded one).
 SYNTHETIC_TABLE = {"name": "synthetic test table", "version": "test", "position_mm": [0.0, 10.0, 20.0],
@@ -67,9 +67,10 @@ def rig(tmp_path, monkeypatch):
 
 @pytest.fixture
 def shipped_rig(tmp_path, monkeypatch):
-    """A simulated rig on the shipped profile (v5: magnet position [0, 39] mm and speed max 15 mm/s verified, no force
+    """A simulated rig on profile v8 from the history (the shipped profile before the owner's 40.9 mm magnet limit of
+    2026-10-31, v9: these tests document decisions 0017 / 0018 at [0, 39] mm; v5: magnet position [0, 39] mm and speed max 15 mm/s verified, no force
     limit - decision 0017)."""
-    yield from _rig(tmp_path, monkeypatch, test_limits=False)
+    yield from _rig(tmp_path, monkeypatch, test_limits=False, profile_version=8)
 
 
 @pytest.fixture
@@ -146,9 +147,9 @@ def _wait_still(svc, timeout_s=10.0):
         time.sleep(0.02)
 
 
-@pytest.fixture(params=[None, 4], ids=["shipped_v5", "history_v4"])
+@pytest.fixture(params=[7, 4], ids=["history_v7", "history_v4"])
 def v4_or_v5_rig(request, tmp_path, monkeypatch):
-    """The shipped profile (v5) and v4 from the history: the same magnet position and speed limits."""
+    """v7 and v4 from the history: the same magnet position [0, 39] mm and speed limits (v8 widened the rotor, v9 the magnet)."""
     yield from _rig(tmp_path, monkeypatch, test_limits=False, profile_version=request.param)
 
 
@@ -156,7 +157,7 @@ def test_profiles_v4_and_v5_magnet_position_moves_up_to_15_mm_s_rotor_focus_refu
     """Profiles v4 (rig check 2026-10-25) and v5 (decision 0017, same position and speed limits): a magnet POSITION
     move at <= 15 mm/s (given or read back) runs in the simulator; > 15 mm/s is refused and nothing moves; > 39 mm is
     coerced to 39 mm (decision 0018 item 5); the rotor is still refused (unverified); focus unset before v6."""
-    assert safety.profile()["version"] in (4, 5, 6, 7)
+    assert safety.profile()["version"] in (4, 5, 6, 7, 8)
     if safety.profile()["version"] < 7:
         with pytest.raises(SafetyRefused, match="not verified"):
             api.rotor.rotate(1.0)
@@ -184,11 +185,11 @@ def test_profiles_v4_and_v5_magnet_position_moves_up_to_15_mm_s_rotor_focus_refu
 def test_shipped_v5_force_inside_the_reachable_range_runs(shipped_rig):
     """Decision 0017 on the shipped v5: a force is converted through the table to a position inside [0, 39] mm and
     runs; the reachable range of a table that ends inside the limit is the table's own range."""
-    assert safety.profile()["version"] == 7 and "magnet_force_pN" not in safety.profile()["limits"]
+    assert safety.profile()["version"] == 8 and "magnet_force_pN" not in safety.profile()["limits"]
     api.magnet.use_force_table(SYNTHETIC_TABLE)
     r = api.magnet.force_range()
     assert r["force_pN"] == (0.1, 10.0) and r["position_mm"] == (0.0, 20.0) and r["position_limit_mm"] == (0.0, 39.0)
-    assert r["limited_by"] == ("position limit", "table end") and r["profile_version"] == 7
+    assert r["limited_by"] == ("position limit", "table end") and r["profile_version"] == 8
     assert r["table"] == "synthetic test table"
     n = len(events.events())
     assert api.magnet.set_force(1.0).wait(5) == pytest.approx(10.0, abs=0.01)
@@ -213,7 +214,7 @@ def test_table_force_above_the_reachable_range_is_coerced_to_the_limit_end(shipp
     assert c.request["value"] == 25.0 and c.extra["applied"] == pytest.approx(23.04)
     assert c.extra["calibration"] == "wide test table" and c.extra["position_mm"] == 39.0
     assert "above the reachable range [0.1, 23.04] pN" in c.extra["reason"]
-    assert "set to 23.04 pN at the position limit (39 mm)" in c.extra["reason"] and "rig safety profile v7" in c.extra["reason"]
+    assert "set to 23.04 pN at the position limit (39 mm)" in c.extra["reason"] and "rig safety profile v8" in c.extra["reason"]
     assert api.magnet.coerce_force(31.0)["applied_pN"] == pytest.approx(23.04)
     m = api.magnet.set_force(23.0)
     assert not m.coerced and m.wait(10) == pytest.approx(20 + 25 * 22 / 29, abs=0.01)

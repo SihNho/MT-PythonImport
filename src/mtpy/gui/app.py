@@ -45,7 +45,7 @@ from PySide6.QtWidgets import (
 )
 
 from mtpy import api
-from mtpy.api import estop, events
+from mtpy.api import estop, events, safety
 from mtpy.lvfiles import read_cal
 from mtpy.track import Z_METHODS
 
@@ -400,9 +400,10 @@ class MainWindow(QMainWindow):
     def _panel_explore(self):
         w = QWidget()
         f = QFormLayout(w)
-        self.mag_pos = _spin(0.0, 39.0, 0.1, 0.0, 3, " mm")
+        hi = float(safety.profile()["limits"]["magnet_position_mm"]["max"])      # 40.9 mm since profile v9
+        self.mag_pos = _spin(0.0, hi, 0.1, 0.0, 3, " mm")
         self.mag_slider = QSlider(Qt.Horizontal)
-        self.mag_slider.setRange(0, 390)
+        self.mag_slider.setRange(0, round(hi * 10))
         self.mag_slider.valueChanged.connect(lambda v: self.mag_pos.setValue(v / 10))
         f.addRow("Magnet position", _row(self.mag_pos, QPushButton("Move", clicked=self._move_magnet)))
         f.addRow(self.mag_slider)

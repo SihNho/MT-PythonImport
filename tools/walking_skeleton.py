@@ -53,7 +53,7 @@ TABLE = {"name": "TEST ONLY synthetic table (walking skeleton)", "version": "tes
 # TEST ONLY - a synthetic table reaching past the 39 mm magnet position limit (23.04 pN at 39 mm; decision 0017)
 WIDE_TABLE = {"name": "TEST ONLY wide synthetic table (walking skeleton)", "version": "test",
               "position_mm": [0.0, 20.0, 45.0], "force_pN": [0.1, 1.0, 30.0]}
-OUT_OF_REACH = 'grammar 0.1\nprotocol "out-of-reach"\nhold f=25 t=0.1\n'      # 25 pN -> 40.69 mm with WIDE_TABLE
+OUT_OF_REACH = 'grammar 0.1\nprotocol "out-of-reach"\nhold f=31 t=0.1\n'      # beyond WIDE_TABLE itself at any position limit
 TOUCH_MM = 40.0     # TEST ONLY - a touch position for the force equation (the rig's value is set per session)
 PRESET = {"name": "skeleton 90 Hz", "roi": (0, 0, 1280, 1024), "rate_Hz": 90.0, "exposure_ms": 2.0, "gain_dB": 0.0}
 BEADS = [1, 2, 3, 4, 5]
@@ -144,9 +144,12 @@ def _out_of_reach_coerced(r):
     p = api.magnet.position()
     co = [e for e in events.events()[n:] if e.kind == "coerced"]
     api.magnet.move_to(0.0).wait(10)                   # the main protocol starts from the top, as before 0018
-    r.check("force beyond the magnet position limit coerced, not refused; runs to 39 mm (0018)",
-            rep["ok"] and [c["applied"] for c in rep["coerced"]] == [23.04] and "hold f=23.04 t=0.1" in rep["text"]
-            and st["state"] == "completed" and abs(p - 39.0) < 0.01 and len(co) == 1, f"{st['state']}, {p:.3f} mm, "
+    hi = safety.profile()["limits"]["magnet_position_mm"]["max"]           # 39 mm until profile v8, 40.9 from v9
+    f_hi = api.magnet.force_at(hi, WIDE_TABLE)
+    co_ok = len(rep["coerced"]) == 1 and abs(rep["coerced"][0]["applied"] - f_hi) < 1e-3         and f"hold f={rep['coerced'][0]['text']} t=0.1" in rep["text"]
+    r.check(f"force beyond the magnet position limit coerced, not refused; runs to the {hi:g} mm limit (0018)",
+            rep["ok"] and co_ok
+            and st["state"] == "completed" and abs(p - hi) < 0.01 and len(co) == 1, f"{st['state']}, {p:.3f} mm, "
             f"{[(c['requested'], c['applied']) for c in rep['coerced']]}")
 
 

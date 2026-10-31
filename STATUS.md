@@ -28,6 +28,9 @@ Short and current. Details live in the linked documents; the history is in git a
   registers read at open (factory values = the 24-bit counter range, read on the rig); nothing is written to the
   controller. `tools/rotor_limits_probe.py --adopt` ran 2026-10-31 on the owner's word: profile **v8**, `rotor_turns`
   = the controller's counter range (+-16777 turns, absolute).
+- **2026-10-31 (owner: "모터 리밋은 40.9 까지 잡아두자"):** profile **v9** - `magnet_position_mm` max 40.9 mm (0.04 mm short of
+  the 40.94 mm travel end = PI Max Trans Pos = the touch position); TMX 40.9 written and read back at the PI open on the
+  rig the same day. Tests that document decisions 0017 / 0018 at [0, 39] mm run on v8 from the history.
 - **2026-10-30 (owner: "Shutdown + lock"):** decision 0026 - the program holds the shared rig lock itself
   (`api.rig`, taken by `devices.connect` for real backends, released only after a clean `disconnect`) and shuts
   down through a visible step dialog (`gui/shutdown.py`, design/shutdown.md); `MT Tracker (rig).cmd` runs the GUI

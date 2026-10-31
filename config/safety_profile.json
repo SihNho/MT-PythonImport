@@ -1,9 +1,9 @@
 {
-  "version": 8,
-  "base_version": 7,
-  "created": "2026-10-31T17:37:03",
-  "by": "rig-admin (rotor limits probe)",
-  "reason": "decision 0027",
+  "version": 9,
+  "base_version": 8,
+  "created": "2026-10-31T18:07:31",
+  "by": "rig-admin (owner's word, chat 2026-10-31)",
+  "reason": "magnet position limit max 39 -> 40.9 mm (owner: '\ubaa8\ud130 \ub9ac\ubc0b\uc740 40.9 \uae4c\uc9c0 \uc7a1\uc544\ub450\uc790')",
   "allow_unverified": false,
   "unverified": [
     "rotor_speed_turns_s"
@@ -11,11 +11,11 @@
   "limits": {
     "magnet_position_mm": {
       "min": 0.0,
-      "max": 39.0,
+      "max": 40.9,
       "unit": "mm",
       "relative_to": null,
       "verified": true,
-      "source": "PI C-863.11 TMN 0 / TMX 39 written by MT_LabVIEW tools/motor_gate.py (tools/bench/motor_limits.json pi lo_mm/hi_mm, 2026-09-18, owner at the rig)"
+      "source": "owner 2026-10-31 '\ubaa8\ud130 \ub9ac\ubc0b\uc740 40.9 \uae4c\uc9c0 \uc7a1\uc544\ub450\uc790': 0.04 mm short of the travel end 40.94 mm (PI Max Trans Pos.vi, the touch position); TMN 0 / TMX 40.9 written and read back at every PI open (pi.open)"
     },
     "magnet_speed_mm_s": {
       "min": 0.0,
@@ -67,12 +67,12 @@
     }
   },
   "recommissioning": {
-    "by": "rig-admin (rotor limits probe)",
-    "t": 1793435823.7151103,
+    "by": "rig-admin (owner's word, chat 2026-10-31)",
+    "t": 1793437651.5003135,
     "checked": {
-      "rotor_turns": true
+      "magnet_position_mm": true
     },
-    "notes": "",
+    "notes": "limit registers written and read back at the next PI open on the rig (no move to 40.9 mm)",
     "not_checked_unverified": []
   }
 }
