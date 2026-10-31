@@ -28,7 +28,9 @@ def run(path, xy, slices=60, step_nm=100.0, n_avg=20, cross=120, nm_per_px=84.0,
         low=calib.DEFAULT_LOW, high=calib.DEFAULT_HIGH, forget=calib.DEFAULT_FORGET):
     """Scan `slices` focus positions `step_nm` apart centred on the current focus, write the .cal to `path`, return
     the focus to where it was. xy: (n, 2) bead positions in px. progress(i, slices) is called per slice."""
-    xy = np.asarray(xy, dtype=np.float64)
+    xy = np.asarray(xy, dtype=np.float64).reshape(-1, 2)
+    if len(xy) == 0:        # rig 2026-10-31: an empty pick list scanned 60 slices, then write_cal crashed
+        raise ValueError("z scan: no bead positions to scan")
     z0 = api.focus.position()
     step_um = step_nm / 1000.0
     stack = np.zeros((len(xy), slices, cross - 1))

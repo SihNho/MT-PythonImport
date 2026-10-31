@@ -944,3 +944,81 @@ def test_disconnect_reports_a_failed_close(rig):
     with pytest.raises(DeviceError, match="cleanup incomplete.*limits NOT released"):
         api.devices.disconnect()
     assert api.devices.status() == {}
+
+
+def test_two_connects_at_once_build_one_rig(tmp_path, monkeypatch):
+    """Fault list G1 (2026-10-31, confirmed on the sim): two Connect clicks built two device sets, the second
+    overwriting the first in the registry (open ports nobody could close). connect() is one at a time."""
+    _config(tmp_path, monkeypatch, True)
+    from mtpy.api import devices as D
+    real_make = D._devices.make
+
+    def slow_make(p):
+        time.sleep(0.3)
+        return real_make(p)
+    monkeypatch.setattr(D._devices, "make", slow_make)
+    res, n0 = [], len(events.events())
+
+    def go():
+        try:
+            api.devices.connect({"backend": "sim"})
+            res.append("ok")
+        except NotReady:
+            res.append("refused")
+    ts = [threading.Thread(target=go) for _ in range(2)]
+    for t in ts:
+        t.start()
+    for t in ts:
+        t.join()
+    try:
+        assert sorted(res) == ["ok", "refused"]
+        opens = [e for e in events.events()[n0:] if e.kind == "device" and e.extra.get("action") == "open"
+                 and e.extra.get("device") == "camera"]
+        assert len(opens) == 1
+    finally:
+        api.devices.disconnect()
+
+
+def test_two_acquisition_starts_at_once_build_one_pipeline(rig):
+    """Fault list G7 (2026-10-31, confirmed on the sim): two Start clicks both passed the running check."""
+    res = []
+
+    def go():
+        try:
+            api.acq.start(record=False)
+            res.append("ok")
+        except NotReady:
+            res.append("refused")
+    ts = [threading.Thread(target=go) for _ in range(2)]
+    for t in ts:
+        t.start()
+    for t in ts:
+        t.join()
+    try:
+        assert sorted(res) == ["ok", "refused"]
+    finally:
+        api.acq.stop()
+
+
+def test_heartbeat_treats_a_raising_permitted_as_a_lost_lock(monkeypatch, fake_riglock):
+    """Fault list D5 (2026-10-31): a permitted() that raises (lock file unreadable) used to end the heartbeat thread
+    silently; it is a lost lock: event + emergency stop."""
+    from mtpy.api import rig
+    monkeypatch.setattr(rig, "HEARTBEAT_S", 0.05)
+
+    def boom(*a, **k):
+        raise OSError("lock file unreadable")
+    with events.as_caller("gui"):
+        estop.clear()
+        rig.acquire("test")                 # the check at acquire still passes; the lock then becomes unreadable
+        fake_riglock.permitted = boom
+        try:
+            t0 = time.time()
+            while not estop.active() and time.time() - t0 < 3:
+                time.sleep(0.02)
+            assert estop.active()
+            lost = [e for e in events.events() if e.kind == "rig_lock" and e.extra.get("action") == "lost"]
+            assert lost and "OSError" in lost[-1].extra["reason"]
+        finally:
+            rig.release()
+            estop.clear()

@@ -7,6 +7,8 @@ backends raise NotImplementedError until phases 6/7. Example:
     api.devices.connect({"backend": "sim"})
     api.devices.status()["magnet"]["state"]      # 'connected'
 """
+import threading
+
 from mtpy import devices as _devices
 
 from . import estop, events, rig
@@ -21,12 +23,18 @@ CLOSE_ORDER = ("magnet", "rotor", "stage", "focus", "emccd", "camera", "arduino"
 MODES = {"MT": ("camera", "magnet", "rotor", "stage", "focus"),
          "MT-TIRF": ("camera", "magnet", "rotor", "stage", "focus", "arduino", "light", "emccd")}   # = devices.NAMES (literal: import order)
 DEFAULT_MODE = "MT-TIRF"
+_connect_lock = threading.Lock()
 _mode = None
 
 
 def connect(rig_preset):
     """Open every device of the rig preset; a device that fails to open stays listed with its error (U8). Returns
     status(). NotReady if already connected; NotImplementedError for a backend other than 'sim'."""
+    with _connect_lock:                     # fault list G1 (2026-10-31): two connects at once built two device sets
+        return _connect(rig_preset)
+
+
+def _connect(rig_preset):
     global _mode
     if _services:
         raise NotReady("devices are already connected; api.devices.disconnect() first")

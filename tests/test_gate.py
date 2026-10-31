@@ -250,3 +250,13 @@ def test_rotor_absolute_window_from_the_controller(monkeypatch):
     assert r.window == (-8388608, 8388607) and r.limits()["controller_soft_limits_in_use"] is False
     r.move_to(210.0)                        # +10 turns from 200: allowed now
     assert ctl.log[-1] == "PAB 105000"
+
+
+def test_pi_no_reply_to_ont_is_an_error_not_still_moving():
+    """Fault list D7 (2026-10-31): a dead port used to read as 'still moving' until the move timeout."""
+    ctl, dev = _pi()
+    dev.open()
+    handle = ctl.handle
+    ctl.handle = lambda c: None if c == "ONT?" else handle(c)
+    with pytest.raises(ConnectionError, match="ONT"):
+        dev.moving()

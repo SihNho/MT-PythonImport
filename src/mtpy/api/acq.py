@@ -48,6 +48,7 @@ _last = None          # the last finished one (status, sink and latest stay read
 _svc = None           # the camera service of the running acquisition
 _make_kernel = make_kernel
 SNAPSHOT_FIELDS = ("roi", "rate_Hz", "exposure_ms", "gain_dB")   # = api.camera.PRESET_FIELDS (no import: cycle)
+_start_lock = threading.Lock()
 MOTOR_POLL_S = 0.05   # 20 readings per second per motor (LabVIEW reads them every frame; 0005: ms-level timing)
 
 
@@ -161,6 +162,11 @@ def start(record=False, name=None, sink=None, ring_capacity=64, folder=None, rol
     poller (None = no polling; see the module docstring). NotReady if acquisition already runs, the camera is not
     connected, the selected beads do not fit the camera ROI, or the camera ROI origin is not the one in force when
     the beads were selected (U23, WP6). Returns status()."""
+    with _start_lock:                       # fault list G7 (2026-10-31): two starts at once built two pipelines
+        return _start(record, name, sink, ring_capacity, folder, roles, motor_poll_s, z_method, gpu)
+
+
+def _start(record, name, sink, ring_capacity, folder, roles, motor_poll_s, z_method, gpu):
     global _pipe, _svc
     if _pipe is not None:
         raise NotReady("acquisition is already running")

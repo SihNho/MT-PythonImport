@@ -41,3 +41,10 @@ def test_zscan_writes_the_band_not_the_position(tmp_path, monkeypatch):
     cal = zscan.run(tmp_path / "cal_z", [(200.0, 200.0), (640.0, 512.0)], slices=5, n_avg=1)
     assert cal["bead_i32"].tolist() == [[0, 40, 10], [0, 40, 10]]
     assert read_cal(tmp_path / "cal_z")["bead_i32"].tolist() == [[0, 40, 10], [0, 40, 10]]
+
+
+def test_zscan_refuses_an_empty_pick_list(tmp_path):
+    """Rig 2026-10-31: an empty pick list scanned 60 slices and then crashed in write_cal; refuse before any move."""
+    from mtpy.gui import zscan
+    with pytest.raises(ValueError, match="no bead positions"):
+        zscan.run(tmp_path / "cal_none", [], slices=5, n_avg=1)

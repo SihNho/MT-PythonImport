@@ -74,8 +74,13 @@ def acquire(purpose):
 
 def _heartbeat(token, stop):
     while not stop.wait(HEARTBEAT_S):
-        if not _riglock().permitted(token, WORK_STATES):
-            events.log("rig_lock", action="lost", reason="permitted() false: experiment declared or lock lost")
+        try:
+            ok = _riglock().permitted(token, WORK_STATES)
+            reason = "permitted() false: experiment declared or lock lost"
+        except Exception as e:  # noqa: BLE001 - fault list D5 (2026-10-31): a raising check must not end the monitor silently
+            ok, reason = False, f"permitted() raised {type(e).__name__}: {e}"
+        if not ok:
+            events.log("rig_lock", action="lost", reason=reason)
             estop.engage("rig lock lost")
             return
 

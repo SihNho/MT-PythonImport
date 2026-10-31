@@ -1,4 +1,4 @@
-# Status (2026-10-30)
+# Status (2026-10-31)
 
 Short and current. Details live in the linked documents; the history is in git and `dev/cycles.md`.
 
@@ -43,6 +43,16 @@ Short and current. Details live in the linked documents; the history is in git a
   check the configuration status at device start; results/2026-10-30-ixon-cooler.md). "Close anyway" from the
   Disconnect button now ends the program (2026-10-31); a failed device close stays listed and is reopened by the
   next close on purpose, so the cleanup is really done (bounded now by the 60-s warm-up stall check).
+- **2026-10-31 evening (owner: dry channel with reference beads, EMCCD powered):** the same reference bead tracked 18
+  times with every tracker (3 Z methods x numba / CUDA) plus a piezo-step run, all through the API on the rig
+  ([results/2026-10-31-refbead-track.md](docs/results/2026-10-31-refbead-track.md)): 0 frames lost in 19 runs, the six
+  trackers agree (5 / 8 / 12 nm per frame in x / y / z on this dry sample), tracked z follows the piezo with slope
+  1.04-1.06 (an unsettled 8-s z scan is the likely cause: proposal = settle time per slice), focus drift 60-70 nm/min.
+  iXon open / close with the camera powered but warm: fine (the cold path is still to be exercised). The same evening:
+  a merged **fault-scenario list** from three review sessions ([design/fault-scenarios.md](docs/design/fault-scenarios.md));
+  G1 / G7 (double Connect / Start built two device sets / pipelines, confirmed on the sim), D5 (a raising lock check
+  ended the heartbeat silently) and D7 (a silent PI read as "still moving") fixed with tests; D1 (a cleanup Retry
+  re-opens and re-references the PI) and G15 (Connect clears the e-stop) wait for the owner.
 - **Next:** protocols on hardware (force ramps, rotation, 3-state clamp, autofocus), the stop / watchdog paths
   exercised on the rig, then the tethered-bead calibration.
 - **Queued (owner 2026-10-30):** lock the camera settings while a z scan runs (the GUI must not change exposure,
@@ -57,9 +67,9 @@ Short and current. Details live in the linked documents; the history is in git a
 | [0019](docs/decisions/0019-magnet-stall-returns-to-zero.md) | stall (controller error -1024): return to 0 mm once, error window + record, else lock - an extinguisher |
 | [0020](docs/decisions/0020-rig-core-parameters-register.md) | stall threshold stays 1.0 mm; rig core parameters in one register ([docs/rig/core-parameters.md](docs/rig/core-parameters.md)) |
 
-## Rig (state: assembled; 2026-10-30 owner: experiment over, a channel with reference and magnetic beads together is mounted)
-- Rig safety profile **v5**: magnet 0..39 mm and 15 mm/s, both rig-verified (speed write 10 <-> 15 shown to take
-  effect); rotor, focus unverified -> refused. ASI +-2 mm from the session start.
+## Rig (state: assembled; 2026-10-31 owner: a dry channel with reference and magnetic beads is mounted, in focus)
+- Rig safety profile **v9**: magnet 0..40.9 mm and 15 mm/s (rig-verified; the owner's 40.9 of 2026-10-31), focus
+  -75..+75 um (v6), rotor = the controller's counter range (v8). ASI +-2 mm from the session start.
 - PI controller read: stall threshold 1.0 mm; normal lag at 15 mm/s about 0.05 mm (1/20). Stage model unknown.
 - Force equation read from `Magnet2Force v3_for M270.vi` and checked by running it (16 points, 2e-16).
 

@@ -199,7 +199,10 @@ class PiMagnet(Device):
         if p is not None and (p > self.hi + 0.5 or p < self.lo - 0.5):
             L.say("HLT 1")                   # watchdog: outside the limits by more than 0.5 mm
             raise ValueError(f"PI position {p} outside the limits; HLT sent")
-        return _num(L.ask("ONT?")) != 1
+        ont = _num(L.ask("ONT?"))
+        if ont is None:                      # fault list D7 (2026-10-31): a dead port must not read as "still moving"
+            raise ConnectionError("PI ONT?: no reply")
+        return ont != 1
 
     def speed(self):
         v = _num(self._io().ask("VEL?"))
