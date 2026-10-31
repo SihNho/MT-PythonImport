@@ -260,3 +260,21 @@ def test_pi_no_reply_to_ont_is_an_error_not_still_moving():
     ctl.handle = lambda c: None if c == "ONT?" else handle(c)
     with pytest.raises(ConnectionError, match="ONT"):
         dev.moving()
+
+
+def test_pi_failed_home_keeps_the_port_and_limits_for_the_retry():
+    """Fault list D1 (owner 2026-10-31): a failed home keeps the session (port open, TMN/TMX as set) so the retry homes
+    again; it never re-references. The release happens only after a verified home."""
+    ctl, dev = _pi()
+    dev.open()
+    dev.move_to(5.0)
+    handle = ctl.handle
+    ctl.handle = lambda c: None if c.startswith("MOV") else handle(c)      # the stage does not move (stall, cable)
+    with pytest.raises(ConnectionError, match="limits NOT released"):
+        dev.close()
+    assert not ctl.closed and (ctl.tmn, ctl.tmx) == (0.0, 39.0) and dev.line is not None
+    ctl.handle = handle
+    fnl_before = ctl.log.count("FNL 1")
+    dev.close()
+    assert ctl.closed and (ctl.tmn, ctl.tmx) == (pi.RELEASE_LO, pi.RELEASE_HI) and ctl.pos == 0.0
+    assert ctl.log.count("FNL 1") == fnl_before and dev.line is None

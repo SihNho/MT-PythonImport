@@ -342,14 +342,12 @@ class IxonCamera(Device):
         sdk = self.sdk
         if sdk is None:
             return
-        try:
-            self.stop_acquisition()             # abort and shutter closed
-            self._warm_up()
-            sdk("CoolerOFF")
-            self.cooler_on = False
-            sdk("ShutDown")
-        finally:
-            self.sdk = None
+        self.stop_acquisition()             # abort and shutter closed
+        self._warm_up()                     # a failure here keeps the handle: the retry warms up again (fault list D1 / D11)
+        sdk("CoolerOFF")
+        self.cooler_on = False
+        sdk("ShutDown")
+        self.sdk = None
 
     def _warm_up(self):
         """Bring the sensor above WARM_C through the camera's own regulation: set point = top of the range + CoolerON

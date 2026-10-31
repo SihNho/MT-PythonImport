@@ -41,8 +41,9 @@ Short and current. Details live in the linked documents; the history is in git a
   set point (SetTemperature(top) + CoolerON, judged by the temperature alone, fails fast when it does not move) and
   the open reads the state a previous owner left and adopts a cold sensor as the set point (owner 2026-10-31:
   check the configuration status at device start; results/2026-10-30-ixon-cooler.md). "Close anyway" from the
-  Disconnect button now ends the program (2026-10-31); a failed device close stays listed and is reopened by the
-  next close on purpose, so the cleanup is really done (bounded now by the 60-s warm-up stall check).
+  Disconnect button now ends the program (2026-10-31); a failed device close stays listed and the next close
+  repeats the cleanup on the still-open device (since 2026-10-31 evening: no re-open, so no PI reference move and no
+  iXon cool-down on a Retry; bounded by the 60-s warm-up stall check).
 - **2026-10-31 evening (owner: dry channel with reference beads, EMCCD powered):** the same reference bead tracked 18
   times with every tracker (3 Z methods x numba / CUDA) plus a piezo-step run, all through the API on the rig
   ([results/2026-10-31-refbead-track.md](docs/results/2026-10-31-refbead-track.md)): 0 frames lost in 19 runs, the six
@@ -52,7 +53,7 @@ Short and current. Details live in the linked documents; the history is in git a
   a merged **fault-scenario list** from three review sessions ([design/fault-scenarios.md](docs/design/fault-scenarios.md));
   G1 / G7 (double Connect / Start built two device sets / pipelines, confirmed on the sim), D5 (a raising lock check
   ended the heartbeat silently) and D7 (a silent PI read as "still moving") fixed with tests; D1 (a cleanup Retry
-  re-opens and re-references the PI) and G15 (Connect clears the e-stop) wait for the owner.
+  re-opened and re-referenced the PI) and G15 (Connect cleared the e-stop) fixed on the owner's word ("둘 다 고쳐"). The device panel became a control panel (rows + numeric fields per device) the same night.
 - **Next:** protocols on hardware (force ramps, rotation, 3-state clamp, autofocus), the stop / watchdog paths
   exercised on the rig, then the tethered-bead calibration.
 - **Queued (owner 2026-10-30):** lock the camera settings while a z scan runs (the GUI must not change exposure,

@@ -7,7 +7,7 @@ What happens when the operator presses Disconnect or closes the window while dev
 |---|---|---|---|
 | 1 | stop the protocol | `protocol.wait` returns | sequence stops |
 | 2 | stop acquisition | `acq.stop` returned; the run file is closed | sequence stops |
-| 3 | close magnet (PI) | at 0 mm within 0.01 mm, TMN/TMX back to 0/52, port closed | limits NOT released; retry reopens the PI (limits 0..39, reference) and homes again |
+| 3 | close magnet (PI) | at 0 mm within 0.01 mm, TMN/TMX back to 0/52, port closed | limits NOT released; the port and the session limits are kept, and the retry homes again on the same session (never a re-open or a reference move; fault list D1, owner 2026-10-31) |
 | 4 | close rotor (Autonics) | port closed (position kept) | retry |
 | 5 | close stage (ASI X/Y) | SL/SU released, port closed | retry |
 | 6 | close focus (ASI Z) | SL/SU Z unchanged since open, port closed | retry |

@@ -152,8 +152,9 @@ def test_camera_settings_and_device_info_open_in_panels(window):
     w._connect()
     _until(app, lambda: "8 / 8" in w.dev_summary.text(), 15, "connect")
     w.dev_table.cellClicked.emit(0, 0)
-    _until(app, lambda: w.dev_panel.isVisible() and "identity" in w.dev_info.toPlainText(), 10, "device info panel")
+    _until(app, lambda: w.dev_panel.isVisible() and "model" in w.dev_info.text(), 10, "device info panel")
     assert w.dev_panel.windowTitle() == "Device: " + w.dev_table.item(0, 0).text()
+    assert w.dev_form is not None and w.dev_form.layout().rowCount() > 2       # rows, not a raw dump
     w.cam_panel.open_()
     assert w.cam_panel.isVisible() and w.em_group.isVisible() and w.em_exp.isVisible()
 
@@ -172,3 +173,36 @@ def test_touch_position_is_kept_locked_and_applied_at_connect(window, monkeypatc
     w._connect()
     _until(app, lambda: api.magnet.force_calibration()["ready"], 15, "touch position applied at connect")
     assert api.magnet.force_calibration()["touch_mm"] == 40.5
+
+
+def test_connect_is_refused_while_the_emergency_stop_is_engaged(window):
+    """Fault list G15 (owner 2026-10-31 "둘 다 고쳐"): Connect used to clear an engaged stop silently; now it is refused
+    until Acknowledge."""
+    app, w = window
+    w._estop()
+    w._connect()
+    _until(app, lambda: any("Acknowledge first" in w.events_list.item(i).text() for i in range(w.events_list.count())),
+           5, "refusal shown")
+    assert api.devices.status() == {} and estop.active()
+    w._estop_clear()
+    w._connect()
+    _until(app, lambda: "8 / 8" in w.dev_summary.text(), 15, "connect after Acknowledge")
+
+
+def test_device_panel_has_numeric_controls_that_move_the_device(window):
+    """Owner 2026-10-31: the device panel is a control panel - numbers go into numeric fields; Move acts and the
+    panel reads the device back."""
+    app, w = window
+    w._connect()
+    _until(app, lambda: "8 / 8" in w.dev_summary.text(), 15, "connect")
+    row = next(i for i in range(w.dev_table.rowCount()) if w.dev_table.item(i, 0).text() == "magnet")
+    w.dev_table.cellClicked.emit(row, 0)
+    _until(app, lambda: "position_mm" in w.dev_controls, 10, "magnet controls")
+    c = w.dev_controls
+    assert c["position_mm"].maximum() == pytest.approx(safety.profile()["limits"]["magnet_position_mm"]["max"])
+    c["position_mm"].setValue(1.5)
+    w._dev_act("magnet", "magnet move", lambda: api.magnet.move_to(c["position_mm"].value(), c["speed_mm_s"].value()).wait(60))
+    _until(app, lambda: abs(api.magnet.position() - 1.5) < 0.01, 20, "magnet moved from the panel")
+    _until(app, lambda: "position_mm" in w.dev_controls and w.dev_controls["position_mm"] is not c["position_mm"], 10,
+           "panel read back after the move")
+    assert w.dev_controls["position_mm"].value() == pytest.approx(1.5, abs=0.01)

@@ -1022,3 +1022,24 @@ def test_heartbeat_treats_a_raising_permitted_as_a_lost_lock(monkeypatch, fake_r
         finally:
             rig.release()
             estop.clear()
+
+
+def test_close_retry_repeats_the_cleanup_without_reopening(rig):
+    """Fault list D1 (owner 2026-10-31 "둘 다 고쳐"): after a failed close the retry used to re-open the device (for the
+    PI: limits written + FNL reference move) before closing it again. Now it repeats the cleanup on the open device."""
+    dev = rig["magnet"].device
+    real_close, calls, n0 = dev.close, [], len(events.events())
+
+    def close_once_failing():
+        calls.append(1)
+        if len(calls) == 1:
+            raise ConnectionError("PI magnet return: POS 5, not within 0.01 of 0 mm; limits NOT released")
+        real_close()
+    dev.close = close_once_failing
+    with pytest.raises(DeviceError, match="limits NOT released"):
+        api.devices.close("magnet")
+    assert "magnet" in api.devices.status()                   # stays listed for the retry
+    api.devices.close("magnet")
+    assert len(calls) == 2 and "magnet" not in api.devices.status()
+    opens = [e for e in events.events()[n0:] if e.kind == "device" and e.extra.get("action") == "open"]
+    assert opens == []                                        # no re-open on the retry

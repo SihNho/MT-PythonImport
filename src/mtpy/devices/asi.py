@@ -116,12 +116,10 @@ class AsiStage(Device):
         L = self.line
         if L is None:
             return
-        try:
-            rel = {"X": RELEASE, "Y": RELEASE}
-            self._write_limits(L, {"X": -RELEASE, "Y": -RELEASE}, rel)
-        finally:
-            self.line, self.sl, self.su = None, None, None
-            _release(L)
+        rel = {"X": RELEASE, "Y": RELEASE}
+        self._write_limits(L, {"X": -RELEASE, "Y": -RELEASE}, rel)   # a failure keeps the port: the retry repeats it (D1)
+        self.line, self.sl, self.su = None, None, None
+        _release(L)
 
     def _checked_move(self, L, targets):
         """targets {axis: units}: every check for every axis BEFORE the first write (audit item 8: no partial move)."""
@@ -210,13 +208,11 @@ class AsiFocus(Device):
         L = self.line
         if L is None:
             return
-        try:
-            sl, su = self._zlimits(L)
-            if abs(sl / UNIT_MM - self.window[0]) > 5 or abs(su / UNIT_MM - self.window[1]) > 5:
-                raise ConnectionError(f"ASI SL/SU Z changed during the session: {sl} / {su} mm")
-        finally:
-            self.line, self.window = None, None
-            _release(L)
+        sl, su = self._zlimits(L)
+        if abs(sl / UNIT_MM - self.window[0]) > 5 or abs(su / UNIT_MM - self.window[1]) > 5:
+            raise ConnectionError(f"ASI SL/SU Z changed during the session: {sl} / {su} mm")   # port kept for the retry (D1)
+        self.line, self.window = None, None
+        _release(L)
 
     def _z_units(self, L):
         v = _num(L.ask("W Z"), "")

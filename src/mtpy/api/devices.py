@@ -74,9 +74,13 @@ def close(name):
     svc = _services.get(name)
     if svc is None:
         return
-    if not svc._thread.is_alive():          # an earlier close failed and ended the service: reopen, then close again
-        svc = _services[name] = _devices.DeviceService(svc.device)
-        svc.open()
+    if not svc._thread.is_alive():
+        # an earlier close failed and ended the service thread; the device itself is still open (a driver keeps its
+        # port on a failed close). Fault list D1 (owner 2026-10-31 "둘 다 고쳐"): the retry repeats the cleanup on that
+        # open device - it never re-opens, so no PI reference move and no iXon cool-down on a Retry.
+        old, svc = svc, _devices.DeviceService(svc.device)
+        svc.connected, svc.connected_since, svc.origin = True, old.connected_since, old.origin
+        _services[name] = svc
     svc.shutdown()
     _services.pop(name, None)
 

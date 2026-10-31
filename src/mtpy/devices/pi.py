@@ -125,20 +125,20 @@ class PiMagnet(Device):
 
     def close(self):
         """Magnet home at 0 mm verified while the limits are still set, then the release limits. A failed home
-        releases nothing and raises (the lock holder keeps the lock)."""
+        releases nothing and raises (the lock holder keeps the lock); the port and the session limits are KEPT, so
+        the retry (fault list D1, owner 2026-10-31) repeats the home on the same session instead of re-opening
+        (a re-open would write the limits again and run the FNL reference move)."""
         L = self.line
         if L is None:
             return
-        try:
-            self._checked_move(L, 0.0)
-            self._wait(L, lambda: _num(L.ask("ONT?")) == 1, 60)
-            p = _num(L.ask("POS?"))
-            if p is None or abs(p) > HOME_TOL:
-                raise ConnectionError(f"PI magnet return: POS {p}, not within {HOME_TOL} of 0 mm; limits NOT released")
-            self._write_limits(L, RELEASE_LO, RELEASE_HI)
-        finally:
-            self.line, self.lo = None, None
-            L.close()
+        self._checked_move(L, 0.0)
+        self._wait(L, lambda: _num(L.ask("ONT?")) == 1, 60)
+        p = _num(L.ask("POS?"))
+        if p is None or abs(p) > HOME_TOL:
+            raise ConnectionError(f"PI magnet return: POS {p}, not within {HOME_TOL} of 0 mm; limits NOT released")
+        self._write_limits(L, RELEASE_LO, RELEASE_HI)
+        self.line, self.lo = None, None
+        L.close()
 
     # --- the gate: one checked move ----------------------------------------------------------------------------
     def _checked_move(self, L, target):

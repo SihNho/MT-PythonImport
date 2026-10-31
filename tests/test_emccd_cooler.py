@@ -33,4 +33,8 @@ def test_warm_up_that_does_not_move_fails_fast_without_shutdown():
     fake.stuck_c, dev.stall_s = -80, 0.0
     with pytest.raises(TimeoutError, match=r"did not warm up within 0 s of SetTemperature\(20\) \+ CoolerON"):
         dev.close()
-    assert not fake.shut and dev.sdk is None
+    assert not fake.shut and dev.sdk is not None        # D1: the handle is kept for the retry, no Initialize again
+    fake.stuck_c = None
+    n = len(fake.calls)
+    dev.close()
+    assert fake.shut and dev.sdk is None and "Initialize" not in fake.calls[n:]

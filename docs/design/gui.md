@@ -29,7 +29,7 @@ the next Connect. Default MT-TIRF (today's behaviour).
 
 | Step | Does | API |
 |---|---|---|
-| Setup | connect / disconnect the rig, self-check, device table (a click on a row opens that device's information in a panel), "Camera settings..." opens the JAI preset and the EMCCD parameters in their own panel (owner 2026-10-31: not crammed into the step column), Z method and executor (0024), touch position for the force equation (0018: starts at 40.94 mm = the magnet's travel end, locked, Change... / Set only, kept in `config/touch_position.json` across restarts, applied at every Connect) | `devices`, `camera`, `magnet.set_touch_position` |
+| Setup | connect / disconnect the rig, self-check, device table (a click on a row opens that device's panel: identity, read-back, limits and the profile window as rows, and what the device can be told as numeric fields with Move / Set - owner 2026-10-31: a control panel, not a raw dump; the EMCCD row opens the camera-settings panel), "Camera settings..." opens the JAI preset and the EMCCD parameters in their own panel (owner 2026-10-31: not crammed into the step column), Z method and executor (0024), touch position for the force equation (0018: starts at 40.94 mm = the magnet's travel end, locked, Change... / Set only, kept in `config/touch_position.json` across restarts, applied at every Connect) | `devices`, `camera`, `magnet.set_touch_position` |
 | Explore | magnet position and force, rotor, focus, exposure and gain, read-backs | `magnet`, `rotor`, `focus`, `camera` |
 | Beads | list the beads of a `.cal`, check, reference ids, select | `beads.select` |
 | Calibrate | z scan of the selected beads from the display frames -> `.cal` (`gui/zscan.py`) | `focus`, `acq.display`, `lvfiles.write_cal` |

@@ -325,7 +325,9 @@ class MainWindow(QMainWindow):
         self.dev_table.setMinimumHeight(120)
         self.dev_table.cellClicked.connect(self._device_info)
         f.addRow(self.dev_table)
-        self.dev_info = QPlainTextEdit(readOnly=True)
+        self.dev_info = QLabel("")                      # identity line; the rows and controls are built per device
+        self.dev_info.setWordWrap(True)
+        self.dev_form, self.dev_controls = None, {}
         self.dev_panel = _Panel(self, "Device", self.dev_info)
         self.dev_panel.resize(640, 520)
         cams = QWidget()
@@ -545,7 +547,10 @@ class MainWindow(QMainWindow):
             cals = sorted(fx.glob("cal*"))
             if cals and not self.ed_cal.text():
                 self.ed_cal.setText(str(cals[0]))
-        self._call(lambda: (estop.clear(), api.devices.connect(preset))[1], "connect", self._connected)
+        if estop.active():                              # fault list G15 (owner 2026-10-31): never cleared by Connect
+            self._fail("connect", "emergency stop engaged: press Acknowledge first")
+            return
+        self._call(lambda: api.devices.connect(preset), "connect", self._connected)
 
     def _connected(self, st):
         self._show_devices(st)
@@ -594,17 +599,117 @@ class MainWindow(QMainWindow):
         self._call(api.devices.self_check, "self-check", show)
 
     def _device_info(self, row, _col):
-        """A click on a device row opens its information (identity, settings read back, limits) in the Device panel."""
+        """A click on a device row opens that device's panel: information as rows and its settable values as
+        numeric fields (owner 2026-10-31: a control panel, not a raw dump)."""
         item = self.dev_table.item(row, 0)
         if item is None:
             return
-        name = item.text()
-        self.dev_panel.setWindowTitle(f"Device: {name}")
+        self._refresh_device(item.text())
 
-        def show(d):
-            self.dev_info.setPlainText(json.dumps(d, indent=1, default=str, ensure_ascii=False))
-            self.dev_panel.open_()
-        self._call(lambda: api.devices.info(name), f"info {name}", show)
+    def _refresh_device(self, name):
+        self.dev_panel.setWindowTitle(f"Device: {name}")
+        self._call(lambda: api.devices.info(name), f"info {name}", lambda d: self._fill_device_panel(name, d))
+
+    def _fill_device_panel(self, name, d):
+        w = QWidget()
+        f = QFormLayout(w)
+        ident = d.get("identity") or {}
+        self.dev_info.setText("; ".join(f"{k}: {v}" for k, v in ident.items() if not isinstance(v, (dict, list))))
+        for k, v in (d.get("settings") or {}).items():
+            f.addRow(f"{k} (read back)", QLabel(str(v)))
+        for k, v in (d.get("limits") or {}).items():
+            f.addRow(f"limit {k}", QLabel(str(v)))
+        for q, e in (d.get("profile_limits") or {}).items():
+            f.addRow(f"profile {q}", QLabel(f"{e.get('min')} .. {e.get('max')} {e.get('unit', '')}"
+                                            + (" from the session start" if e.get("relative_to") else "")))
+        errs = d.get("recent_errors") or []
+        if errs:
+            f.addRow("recent errors", QLabel("\n".join(f"{x.get('command')}: {x.get('hint')}" for x in errs[-3:])))
+        self.dev_controls = {}
+        build = getattr(self, f"_controls_{name}", None)
+        if build is not None and d.get("settings") is not None:
+            build(f, d, self.dev_controls)
+        lay = self.dev_panel.layout()
+        if self.dev_form is not None:
+            lay.removeWidget(self.dev_form)
+            self.dev_form.deleteLater()
+        self.dev_form = w
+        lay.addWidget(w)
+        self.dev_panel.open_()
+
+    def _dev_act(self, name, what, fn):
+        """A device-panel action: run it, then read the device back into the panel."""
+        self._call(fn, what, lambda _: self._refresh_device(name))
+
+    @staticmethod
+    def _window(e, origin, lo_default, hi_default):
+        lo, hi = e.get("min"), e.get("max")
+        if e.get("relative_to") and origin is not None and lo is not None and hi is not None:
+            lo, hi = origin + lo, origin + hi
+        return (lo_default if lo is None else lo), (hi_default if hi is None else hi)
+
+    def _controls_camera(self, f, d, c):
+        s = d["settings"]
+        c["exposure_ms"] = _spin(0.001, 1000.0, 0.1, float(s["exposure_ms"]), 3, " ms")
+        c["gain_dB"] = _spin(0.0, 48.0, 0.5, float(s["gain_dB"]), 1, " dB")
+        c["rate_Hz"] = _spin(0.1, 1000.0, 1.0, float(s["rate_Hz"]), 3, " Hz")
+        for key, label, fn in (("exposure_ms", "Exposure", api.camera.set_exposure),
+                               ("gain_dB", "Gain", api.camera.set_gain), ("rate_Hz", "Frame rate", api.camera.set_rate)):
+            f.addRow(label, _row(c[key], QPushButton("Set", clicked=lambda _=False, k=key, fn=fn, lb=label: self._dev_act(
+                "camera", f"camera {lb.lower()}", lambda: fn(c[k].value())))))
+
+    def _controls_emccd(self, f, d, c):
+        f.addRow(QPushButton("Camera settings... (EMCCD parameters)", clicked=self.cam_panel.open_))
+
+    def _controls_magnet(self, f, d, c):
+        pl, s = d.get("profile_limits") or {}, d["settings"]
+        lo, hi = self._window(pl.get("magnet_position_mm", {}), None, 0.0, 40.9)
+        slo, shi = self._window(pl.get("magnet_speed_mm_s", {}), None, 0.1, 15.0)
+        c["position_mm"] = _spin(lo, hi, 0.1, float(s["position"]), 3, " mm")
+        c["speed_mm_s"] = _spin(max(slo, 0.01), shi, 0.5, float(s["speed"]), 2, " mm/s")
+        f.addRow("Position, speed", _row(c["position_mm"], c["speed_mm_s"], QPushButton("Move", clicked=lambda: self._dev_act(
+            "magnet", "magnet move",
+            lambda: api.magnet.move_to(c["position_mm"].value(), c["speed_mm_s"].value()).wait(60)))))
+
+    def _controls_rotor(self, f, d, c):
+        pl, s = d.get("profile_limits") or {}, d["settings"]
+        slo, shi = self._window(pl.get("rotor_speed_turns_s", {}), None, 0.01, 3.0)
+        c["turns"] = _spin(-100.0, 100.0, 1.0, 1.0, 2, " turns")
+        c["speed_turns_s"] = _spin(max(slo, 0.01), shi, 0.1, float(s["speed"]), 2, " turns/s")
+        f.addRow("Rotate (relative), speed", _row(c["turns"], c["speed_turns_s"], QPushButton("Rotate", clicked=lambda: self._dev_act(
+            "rotor", "rotor rotate",
+            lambda: api.rotor.rotate(c["turns"].value(), c["speed_turns_s"].value()).wait(60)))))
+
+    def _controls_stage(self, f, d, c):
+        pl, (x, y) = d.get("profile_limits") or {}, d["settings"]["position"]
+        origin = d.get("origin") or (None, None)
+        xlo, xhi = self._window(pl.get("stage_x_mm", {}), origin[0], -500.0, 500.0)
+        ylo, yhi = self._window(pl.get("stage_y_mm", {}), origin[1], -500.0, 500.0)
+        c["x_mm"], c["y_mm"] = _spin(xlo, xhi, 0.01, float(x), 4, " mm"), _spin(ylo, yhi, 0.01, float(y), 4, " mm")
+        f.addRow("X, Y", _row(c["x_mm"], c["y_mm"], QPushButton("Move", clicked=lambda: self._dev_act(
+            "stage", "stage move", lambda: api.stage.move_to(c["x_mm"].value(), c["y_mm"].value()).wait(30)))))
+
+    def _controls_focus(self, f, d, c):
+        pl, s = d.get("profile_limits") or {}, d["settings"]
+        lo, hi = self._window(pl.get("focus_z_um", {}), d.get("origin"), -5000.0, 5000.0)
+        c["z_um"] = _spin(lo, hi, 0.1, float(s["position"]), 3, " um")
+        f.addRow("Z", _row(c["z_um"], QPushButton("Move", clicked=lambda: self._dev_act(
+            "focus", "focus move", lambda: api.focus.move_to(c["z_um"].value()).wait(30)))))
+
+    def _controls_arduino(self, f, d, c):
+        lim = (d.get("limits") or {}).get("ratio", [1, 65536])
+        c["ratio"] = QSpinBox()
+        c["ratio"].setRange(int(lim[0]), int(lim[1]))
+        c["ratio"].setValue(int(d["settings"]["ratio"]))
+        f.addRow("Frame divider ratio", _row(c["ratio"], QPushButton("Set", clicked=lambda: self._dev_act(
+            "arduino", "sync ratio", lambda: api.sync.set_ratio(c["ratio"].value())))))
+
+    def _controls_light(self, f, d, c):
+        for laser, on in d["settings"].items():
+            c[laser] = QCheckBox(f"{laser} nm on")
+            c[laser].setChecked(bool(on))
+            c[laser].toggled.connect(lambda v, k=laser: self._dev_act("light", f"laser {k}", lambda: api.light.set(k, v)))
+            f.addRow(c[laser])
 
     def _show_devices(self, st):
         self.dev_table.setRowCount(len(st))
