@@ -20,6 +20,19 @@ from .base import IMMEDIATE, NEEDS_PAUSE, Device, DeviceService, Motion
 NAMES = ("camera", "magnet", "rotor", "stage", "focus", "arduino", "light", "emccd")
 
 
+def _camera(rig):
+    """The real JAI camera: eBUS (decision 0028, owner 2026-11-01) unless the preset says `"camera_sdk": "imaqdx"`
+    (the camera must then be bound to NI's USB3 Vision driver again)."""
+    sdk = rig.get("camera_sdk", "ebus")
+    if sdk == "imaqdx":
+        from .jai import JaiCamera
+        return JaiCamera()
+    if sdk == "ebus":
+        from .ebus import EbusCamera
+        return EbusCamera()
+    raise NotImplementedError(f"camera_sdk {sdk!r}: 'ebus' or 'imaqdx'")
+
+
 def make(rig):
     """{name: Device} for the rig preset. `{"backend": "sim", "fixture": <folder or None>}` or `{"backend": "real"}`;
     others raise NotImplementedError."""
@@ -29,15 +42,13 @@ def make(rig):
         return make_rig(fixture=rig.get("fixture"))
     from .ixon import IxonCamera
     if backend == "real":
-        from .jai import JaiCamera
-        return {**make_rig(), "camera": JaiCamera(), "emccd": IxonCamera()}
+        return {**make_rig(), "camera": _camera(rig), "emccd": IxonCamera()}
     if backend == "real-motors":
         # phase 7: the motion gate (docs/design/motion-gate.md) - only after the owner's approval of that page
         from .asi import AsiFocus, AsiStage
         from .autonics import AutonicsRotor
-        from .jai import JaiCamera
         from .pi import PiMagnet
-        return {**make_rig(), "camera": JaiCamera(), "magnet": PiMagnet(), "stage": AsiStage(), "focus": AsiFocus(),
+        return {**make_rig(), "camera": _camera(rig), "magnet": PiMagnet(), "stage": AsiStage(), "focus": AsiFocus(),
                 "rotor": AutonicsRotor(), "emccd": IxonCamera()}
     raise NotImplementedError(f"device backend {backend!r} does not exist; use the rig preset "
                               "{'backend': 'sim'}, {'backend': 'real'} (camera) or {'backend': 'real-motors'}")

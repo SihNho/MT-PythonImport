@@ -8,6 +8,7 @@ still unknown.
 | device | manual | on the rig today | used by the LabVIEW program |
 |---|---|---|---|
 | JAI SP-5000M-USB camera (NI-IMAQdx) | [camera-jai-imaqdx.md](camera-jai-imaqdx.md) | yes | yes |
+| JAI SP-5000M-USB camera (eBUS SDK, decision 0028) | [camera-jai-ebus.md](camera-jai-ebus.md) | yes | yes |
 | PI C-863.11 + M-126.PD1 magnet stage | [pi-c863.md](pi-c863.md) | yes | yes |
 | Autonics PMC-2HS rotor controller | [rotor-autonics-pmc2hs.md](rotor-autonics-pmc2hs.md) | yes | yes |
 | ASI Tiger (TG-1000) XY stage + Z piezo | [asi-tiger.md](asi-tiger.md) | yes | yes |

@@ -56,7 +56,10 @@ Short and current. Details live in the linked documents; the history is in git a
   re-opened and re-referenced the PI) and G15 (Connect cleared the e-stop) fixed on the owner's word ("둘 다 고쳐"). The device panel became a control panel (rows + numeric fields per device) the same night.
 - **2026-11-01 00:00 (owner installed the eBUS SDK 6.5.3):** the installer bound the JAI camera to Pleora's USB3 Vision
   driver; **IMAQdx no longer enumerates the camera** (program connect: camera disconnected, motors fine). NI's U3V driver
-  is still in the store; binding it back is the owner's call (manuals/camera-jai-imaqdx.md "Driver / SDK").
+  is still in the store. **Owner: "eBUS로 간다" -> decision 0028:** `src/mtpy/devices/ebus.py` drives the JAI through
+  the eBUS .NET API (pythonnet + a 10-line C# pointer helper built on first use); on the rig 90 Hz 901 / 150 Hz 1500
+  frames through `api.acq`, 0 gaps, 0 drops, hardware timestamps (1 GHz). LabVIEW cannot open the camera while it is
+  bound to Pleora's driver (accepted). IMAQdx stays behind `camera_sdk: imaqdx` (manuals/camera-jai-ebus.md).
 - **Next:** protocols on hardware (force ramps, rotation, 3-state clamp, autofocus), the stop / watchdog paths
   exercised on the rig, then the tethered-bead calibration.
 - **Queued (owner 2026-10-30):** lock the camera settings while a z scan runs (the GUI must not change exposure,

@@ -38,6 +38,8 @@ acquiring keeps the sensor and USB link busy; every job must stop acquisition an
   (`niu3vk.inf` = oem11.inf, 26.3.0) is still in the driver store, so the camera can be bound back (eBUS Driver
   Installation Tool, Device Manager "Update driver", or removing oem87.inf) - a system change the owner decides.
   The eBUS 6.5.3 package has C++ and .NET APIs only; the Python API is a separate Pleora download.
+  **Owner 2026-11-01: "eBUS로 간다" - decision 0028: the camera now runs through eBUS ([camera-jai-ebus.md](camera-jai-ebus.md));
+  this IMAQdx path stays selectable (`camera_sdk: imaqdx`) for a camera bound to NI's driver.**
 
 ## Command table - C API functions
 
