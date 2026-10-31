@@ -26,8 +26,8 @@ Short and current. Details live in the linked documents; the history is in git a
   working tree; open items listed in the results page.
 - **2026-10-30 (owner: "그걸 리밋으로 두면 될듯"):** decision 0027 - the rotor's limit is the controller's own soft-limit
   registers read at open (factory values = the 24-bit counter range, read on the rig); nothing is written to the
-  controller. `tools/rotor_limits_probe.py --adopt` turns the readback into profile v8 (`rotor_turns` absolute) -
-  still to run with the owner, outside an experiment; until then profile v7 (+-5 turns) is the tighter window.
+  controller. `tools/rotor_limits_probe.py --adopt` ran 2026-10-31 on the owner's word: profile **v8**, `rotor_turns`
+  = the controller's counter range (+-16777 turns, absolute).
 - **2026-10-30 (owner: "Shutdown + lock"):** decision 0026 - the program holds the shared rig lock itself
   (`api.rig`, taken by `devices.connect` for real backends, released only after a clean `disconnect`) and shuts
   down through a visible step dialog (`gui/shutdown.py`, design/shutdown.md); `MT Tracker (rig).cmd` runs the GUI

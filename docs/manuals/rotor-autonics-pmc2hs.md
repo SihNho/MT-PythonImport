@@ -125,5 +125,5 @@ when they are set, refuses to open when the rotor already sits outside them, and
 4. Where should the rotor be left at the end of a job (in place, or back to the start position)?
 5. ~~Should the controller's EEPROM soft limit be installed for the released program?~~ Decision 0027 (2026-10-30):
    the limit is whatever the controller holds, read at every open - today its counter range; the program writes
-   nothing. The profile adopts the readback with `tools/rotor_limits_probe.py --adopt` (not yet run).
+   nothing. The profile adopted the readback with `tools/rotor_limits_probe.py --adopt` on 2026-10-31 (profile v8).
 6. Which physical direction (seen from the camera) is positive degrees?

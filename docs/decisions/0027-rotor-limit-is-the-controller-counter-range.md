@@ -18,9 +18,10 @@ in the controller: "내가 알기로는 reading 할 때 limit이 있을건데? s
    panel, the driver picks them up at the next open with no code change.
 4. **The safety profile follows the controller, not the other way round.** `rotor_turns` becomes an absolute window
    (`relative_to: None`) equal to the controller's limits in turns, written as a new profile version through the admin
-   API by `tools/rotor_limits_probe.py --adopt` after a fresh readback on the rig. Until that runs, the current
-   profile v7 (+-5 turns from the session start) is the tighter of the two and stays in force; the driver always takes
-   the intersection. The adoption needs the rig outside an experiment and the owner's go; it has not run yet.
+   API by `tools/rotor_limits_probe.py --adopt` after a fresh readback on the rig. Run 2026-10-31 17:37 on the
+   owner's word ("동의함 3번도 진행하도록"): readback IXR X7A 007FFFFF / X7B FF800000 (unchanged), profile **v8**
+   `rotor_turns` = -16777.216..+16777.214 turns absolute, verified. The driver always takes the intersection with
+   the controller's own registers read at open.
 
 ## Why this and not a fixed +-N turns
 - The rotor has no mechanical end stop and no home switch the program trusts (`HOM` ignores the soft limit, manual

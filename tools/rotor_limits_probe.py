@@ -82,7 +82,7 @@ def main(argv=None):
         dec["decode_error"] = f"{type(e).__name__}: {e}"
     if a.adopt and "decode_error" not in dec:
         dec["profile"] = adopt(dec)
-    print("RESULT " + json.dumps({"raw": out, "decoded": dec}, ensure_ascii=False), flush=True)
+    print("RESULT " + json.dumps({"raw": out, "decoded": dec}, ensure_ascii=False, default=str), flush=True)   # the profile holds mappingproxies
     return 0
 
 

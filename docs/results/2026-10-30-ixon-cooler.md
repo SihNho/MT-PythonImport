@@ -37,3 +37,8 @@ whose close failed stays listed and is reopened by the next close on purpose (th
 the stall check that retry costs about a minute, not fifteen. The motors already reset their state at
 open (PI: limits written, reference, readback; ASI: limits from the current position), so the owner's "check, reset,
 then connect" rule holds there; a COM port held by another process still fails the open with its error.
+
+**Rig check 2026-10-31 17:35.** The owner's MT Tracker left running (MT mode, started 16:15) was closed by WM_CLOSE on
+the owner's word; the shutdown sequence finished and released the lock within 5 s. Then `api.devices.connect` in MT
+mode (EMCCD powered off): 5/5 connected in 20 s, `disconnect` clean in 1.0 s (PI home with the ERR? drain), lock
+released. The iXon open/close path is still unverified on the camera (powered off today).
