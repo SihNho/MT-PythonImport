@@ -142,3 +142,17 @@ def test_gui_pick_flow_on_simulators(window, tmp_path):
     assert api.acq.running(), api.acq.status()
     w._toggle_acq()
     _until(app, lambda: not api.acq.running(), 20, "stop 2")
+
+
+def test_camera_settings_and_device_info_open_in_panels(window):
+    """Owner 2026-10-31: the camera settings are not crammed into the step column but open in their own panel; a
+    click on a device row opens that device's information, like the mock-up's device list."""
+    app, w = window
+    assert not w.cam_panel.isVisible() and w.em_group.parent() is not None
+    w._connect()
+    _until(app, lambda: "8 / 8" in w.dev_summary.text(), 15, "connect")
+    w.dev_table.cellClicked.emit(0, 0)
+    _until(app, lambda: w.dev_panel.isVisible() and "identity" in w.dev_info.toPlainText(), 10, "device info panel")
+    assert w.dev_panel.windowTitle() == "Device: " + w.dev_table.item(0, 0).text()
+    w.cam_panel.open_()
+    assert w.cam_panel.isVisible() and w.em_group.isVisible() and w.em_exp.isVisible()

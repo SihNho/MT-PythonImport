@@ -6,6 +6,7 @@ shortcut: the GUI shares the API's process (plan phase 8 says its own process); 
 camera thread losing frames while the window is dragged.
 """
 import contextlib
+import json
 import time
 from collections import deque
 from pathlib import Path
@@ -17,6 +18,7 @@ from PySide6.QtWidgets import (
     QButtonGroup,
     QCheckBox,
     QComboBox,
+    QDialog,
     QDoubleSpinBox,
     QFileDialog,
     QFormLayout,
@@ -101,6 +103,23 @@ def _spin(lo, hi, step, value, decimals=2, suffix=""):
     s.setValue(value)
     s.setSuffix(suffix)
     return s
+
+
+class _Panel(QDialog):
+    """A non-modal side panel for what does not belong in the step column (owner 2026-10-31: the camera settings
+    open in their own panel on a click; the device table opens a device's information the same way)."""
+
+    def __init__(self, parent, title, widget):
+        super().__init__(parent)
+        self.setWindowTitle(title)
+        self.setModal(False)
+        lay = QVBoxLayout(self)
+        lay.addWidget(widget)
+
+    def open_(self):
+        self.show()
+        self.raise_()
+        self.activateWindow()
 
 
 def _row(*widgets):
@@ -286,7 +305,15 @@ class MainWindow(QMainWindow):
         self.dev_table.setHorizontalHeaderLabels(["Device", "State", "Last error / detail"])
         self.dev_table.horizontalHeader().setStretchLastSection(True)
         self.dev_table.setMinimumHeight(120)
+        self.dev_table.cellClicked.connect(self._device_info)
         f.addRow(self.dev_table)
+        self.dev_info = QPlainTextEdit(readOnly=True)
+        self.dev_panel = _Panel(self, "Device", self.dev_info)
+        self.dev_panel.resize(640, 520)
+        cams = QWidget()
+        cams_lay = QVBoxLayout(cams)
+        self.cam_panel = _Panel(self, "Camera settings", cams)
+        f.addRow(QPushButton("Camera settings...", clicked=self.cam_panel.open_))
         g = QGroupBox("Camera preset (U15)")
         gf = QFormLayout(g)
         self.cam_rate = QComboBox()
@@ -298,7 +325,7 @@ class MainWindow(QMainWindow):
         gf.addRow("Exposure", self.cam_exp)
         gf.addRow("Gain", self.cam_gain)
         gf.addRow(QPushButton("Apply preset and read back", clicked=self._apply_preset))
-        f.addRow(g)
+        cams_lay.addWidget(g)
         g4 = self.em_group = QGroupBox("EMCCD (Andor iXon Ultra): core parameters, each read back")
         g4f = QFormLayout(g4)
         self.em_exp = _spin(0.01, 10000.0, 1.0, 30.0, 2, " ms")
@@ -325,7 +352,7 @@ class MainWindow(QMainWindow):
         self.em_readback = QLabel("emccd: not connected")
         self.em_readback.setWordWrap(True)
         g4f.addRow(self.em_readback)
-        f.addRow(g4)
+        cams_lay.addWidget(g4)
         g2 = QGroupBox("Analysis (decision 0024)")
         g2f = QFormLayout(g2)
         self.z_method = QComboBox()
@@ -521,6 +548,19 @@ class MainWindow(QMainWindow):
                      if s.get("detail") else "") for s in steps) for d, steps in res.items()]
             self._info("Self-check", "\n".join(lines))
         self._call(api.devices.self_check, "self-check", show)
+
+    def _device_info(self, row, _col):
+        """A click on a device row opens its information (identity, settings read back, limits) in the Device panel."""
+        item = self.dev_table.item(row, 0)
+        if item is None:
+            return
+        name = item.text()
+        self.dev_panel.setWindowTitle(f"Device: {name}")
+
+        def show(d):
+            self.dev_info.setPlainText(json.dumps(d, indent=1, default=str, ensure_ascii=False))
+            self.dev_panel.open_()
+        self._call(lambda: api.devices.info(name), f"info {name}", show)
 
     def _show_devices(self, st):
         self.dev_table.setRowCount(len(st))

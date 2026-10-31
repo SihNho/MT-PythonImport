@@ -80,9 +80,9 @@ def test_mode_switch_hides_the_emccd_screen(tmp_path, monkeypatch):
     w = MainWindow(fixture=str(tmp_path), out=str(tmp_path / "runs"), sim_dev=cfg)
     w.show()
     try:
-        assert w.em_view.isVisible() and w.em_group.isVisible() and "[MT-TIRF]" in w.windowTitle()
+        assert w.em_view.isVisible() and not w.em_group.isHidden() and "[MT-TIRF]" in w.windowTitle()
         w.mode.setCurrentIndex(w.mode.findData("MT"))
-        assert not w.em_view.isVisible() and not w.em_group.isVisible() and "[MT]" in w.windowTitle()
+        assert not w.em_view.isVisible() and w.em_group.isHidden() and "[MT]" in w.windowTitle()
         w._connect()
         _until(a, lambda: "5 / 5" in w.dev_summary.text(), 20, "connect in MT mode")
         assert "emccd" not in api.devices.status()
