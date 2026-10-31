@@ -100,6 +100,7 @@ class DeviceService:
         self.errors = []                 # recent errors, newest last (U8 details)
         self._failed = self._slow = False
         self.recording = False           # set by acquisition (later WP); guards the 'guarded while recording' kinds
+        self.scanning = False            # set by the z scan (gui/zscan): every camera setting is refused meanwhile
         self.reapply = None              # callable run after a reconnect (camera: the last preset, U15)
         self.calibration = None          # calibration in use set by the API (magnet: the force table, 0010)
         self._q = queue.Queue()

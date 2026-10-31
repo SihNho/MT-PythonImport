@@ -9,6 +9,20 @@ from mtpy.api.errors import NotReady
 from mtpy.lvfiles import read_cal, write_cal
 
 
+@pytest.fixture
+def sim(tmp_path, monkeypatch):
+    """A connected simulated rig: the z scan locks the camera service while it runs."""
+    from test_devices import _config
+
+    from mtpy.api import estop, events
+    _config(tmp_path, monkeypatch, test_limits=True)
+    with events.as_caller("gui"):
+        estop.clear()
+        api.devices.connect({"backend": "sim"})
+    yield
+    api.devices.disconnect()
+
+
 def _cal(bead_i32):
     rng = np.random.default_rng(0)
     return {"xy": np.array([[100.0, 100.0], [300.0, 200.0]]), "stack": 100 + rng.random((2, 12, 119)),
@@ -27,7 +41,7 @@ def test_select_refuses_an_empty_band(tmp_path):
     assert all((c["cosband"] != 0).any() for c in calib.clusters(read_cal(good)))
 
 
-def test_zscan_writes_the_band_not_the_position(tmp_path, monkeypatch):
+def test_zscan_writes_the_band_not_the_position(sim, tmp_path, monkeypatch):
     from mtpy.gui import zscan
     frames = iter([np.full((1024, 1280), 100.0) + k for k in range(200)])
     monkeypatch.setattr(api.acq, "average", lambda n, timeout_s=10.0: next(frames))
@@ -48,3 +62,32 @@ def test_zscan_refuses_an_empty_pick_list(tmp_path):
     from mtpy.gui import zscan
     with pytest.raises(ValueError, match="no bead positions"):
         zscan.run(tmp_path / "cal_none", [], slices=5, n_avg=1)
+
+
+def test_zscan_locks_the_camera_settings_while_it_runs(sim, tmp_path, monkeypatch):
+    """Fault list P5 / G5 (owner 2026-10-30): a .cal must come from one camera setting; every camera change is
+    refused while the scan runs and allowed again afterwards (also after a failed scan)."""
+    from mtpy.api.errors import SafetyRefused
+    from mtpy.gui import zscan
+    seen = []
+
+    def average(n, timeout_s=10.0):
+        try:
+            api.camera.set_exposure(2.0)
+        except SafetyRefused as e:
+            seen.append(str(e))
+        return np.full((1024, 1280), 100.0)
+
+    class _M:
+        def wait(self, t):
+            return 0.0
+    monkeypatch.setattr(api.acq, "average", average)
+    monkeypatch.setattr(api.focus, "position", lambda: 0.0)
+    monkeypatch.setattr(api.focus, "move_to", lambda z: _M())
+    zscan.run(tmp_path / "cal_lock", [(200.0, 200.0)], slices=3, n_avg=1)
+    assert len(seen) == 3 and "locked while a z scan runs" in seen[0]
+    assert api.camera.set_exposure(2.0) == 2.0                 # unlocked again
+    monkeypatch.setattr(api.acq, "average", lambda n, timeout_s=10.0: 1 / 0)
+    with pytest.raises(ZeroDivisionError):
+        zscan.run(tmp_path / "cal_fail", [(200.0, 200.0)], slices=3, n_avg=1)
+    assert api.camera.set_exposure(3.0) == 3.0                 # a failed scan unlocks too

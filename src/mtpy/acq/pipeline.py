@@ -13,6 +13,7 @@ per frame, the display tap and `latest()` hold one value each. Queues carry only
 bounded ring that drops by design and counts every drop; worker -> sink is lossless).
 """
 import collections
+import contextlib
 import queue
 import threading
 import time
@@ -145,6 +146,7 @@ class Pipeline:
         self.frames_received = self.frames_produced = self.frames_tracked = 0
         self.tracking_errors, self.last_tracking_error = 0, None
         self.sink_failures, self.sink_error = 0, None
+        self.camera_error, self.on_fault = None, None   # on_fault(kind, exc): first sink failure / camera thread death
         self._avg = None  # [acc, frames left, Event] while average() collects
         self._latest = None
         self._cam_on, self._worker_on = threading.Event(), threading.Event()
@@ -204,8 +206,9 @@ class Pipeline:
         """After the camera stopped: take the frames still in the camera's buffer, then close the segment. Its
         end loss stays UNKNOWN (how many frames the camera produced after the last one received is not known)."""
         with self._seg_lock:
-            while (f := self.source.next_frame(0)) is not None:
-                self._receive(f)
+            with contextlib.suppress(Exception):     # D13: a dead frame path must not keep the segment from closing
+                while (f := self.source.next_frame(0)) is not None:
+                    self._receive(f)
             seg = self.segments[-1] if self.segments else None
             if seg is not None and seg.end_pc_s is None:
                 seg.end_pc_s = time.time()
@@ -226,11 +229,21 @@ class Pipeline:
 
     # --- camera thread ----------------------------------------------------------------------------------------------
     def _camera_loop(self):
-        while self._cam_on.is_set():
-            with self._seg_lock:
-                f = self.source.next_frame(0.02)
-                if f is not None:
-                    self._receive(f)
+        try:
+            while self._cam_on.is_set():
+                with self._seg_lock:
+                    f = self.source.next_frame(0.02)
+                    if f is not None:
+                        self._receive(f)
+        except Exception as e:  # noqa: BLE001 - fault list D13: frames stop while running() stays True; say so
+            self.camera_error = f"{type(e).__name__}: {e}"
+            self._fault("camera", e)
+
+    def _fault(self, kind, e):
+        fn = self.on_fault
+        if fn is not None:
+            with contextlib.suppress(Exception):     # the handler's failure must not take the loop with it
+                fn(kind, e)
 
     def _receive(self, f):
         """Stamp one frame and push it (seg_lock held). Never waits for the worker."""
@@ -322,6 +335,8 @@ class Pipeline:
             except Exception as e:  # noqa: BLE001 - shown in status(); never an event (it would come back here)
                 self.sink_failures, self.sink_error = self.sink_failures + 1, f"{type(e).__name__}: {e}"
                 self._note_sink_error(kind, x, e)
+                if self.sink_failures == 1:
+                    self._fault("sink", e)
         try:
             self.sink.close()
         except Exception as e:  # noqa: BLE001
@@ -387,7 +402,7 @@ class Pipeline:
                 "latency_ms_p50": _pct(lat, 50), "latency_ms_p99": _pct(lat, 99),
                 "ring_fill": len(self.ring), "tracking_errors": self.tracking_errors,
                 "last_tracking_error": self.last_tracking_error, "sink_failures": self.sink_failures,
-                "sink_error": self.sink_error,
+                "sink_error": self.sink_error, "camera_error": self.camera_error,
                 # WP5 carry: frames the sink refused to hold (HDF5Writer max_pending overflow); None for a sink
                 # without that count
                 "frames_not_written": getattr(self.sink, "unwritten_frames", None),

@@ -219,3 +219,18 @@ def test_setup_has_a_camera_sdk_selector_in_the_connect_preset(window, monkeypat
     w._connect()
     _until(app, lambda: "8 / 8" in w.dev_summary.text(), 15, "connect")
     assert seen["camera_sdk"] == "ebus" and seen["backend"] == "sim"       # the sim ignores it; a real backend builds EbusCamera
+
+
+def test_apply_preset_asks_before_a_guarded_change_while_recording(window, monkeypatch):
+    """Fault list G5: the GUI's confirm=True is the operator's answer to a question, not a default."""
+    from PySide6.QtWidgets import QMessageBox
+    app, w = window
+    calls = []
+    monkeypatch.setattr(api.acq, "status", lambda: {"running": True, "recording": True})
+    monkeypatch.setattr(api.camera, "apply_preset", lambda preset, confirm=False: calls.append(confirm) or {})
+    monkeypatch.setattr(QMessageBox, "question", staticmethod(lambda *a, **k: QMessageBox.StandardButton.No))
+    w._apply_preset()
+    assert calls == []
+    monkeypatch.setattr(QMessageBox, "question", staticmethod(lambda *a, **k: QMessageBox.StandardButton.Yes))
+    w._apply_preset()
+    _until(app, lambda: calls == [True], 5, "preset applied after yes")

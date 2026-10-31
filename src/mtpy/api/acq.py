@@ -26,6 +26,8 @@
   `touch_mm`, from `api.magnet.live_force`) when the calibration is ready - derived on this poller thread, never on
   the frame path; the raw record stays the position (0010).
 """
+import atexit
+import contextlib
 import contextvars
 import threading
 import time
@@ -199,6 +201,7 @@ def _start(record, name, sink, ring_capacity, folder, roles, motor_poll_s, z_met
         kernel.track(np.zeros((h, w), dtype=np.uint8), np.rint(beads.xy0[:, 0]).astype(np.int64),
                      np.rint(beads.xy0[:, 1]).astype(np.int64), np.ones(len(beads.ids), dtype=bool))
     pipe = Pipeline(dev, beads, kernel, sink, ring_capacity, t_source=getattr(dev, "timestamp_source", "unknown"))
+    pipe.on_fault = _fault
     pipe.start(events.subscribe)
     pipe.motor_poll = _MotorPoller(pipe, motor_poll_s) if motor_poll_s else None
     _pipe, _svc = pipe, svc
@@ -218,6 +221,27 @@ def _start(record, name, sink, ring_capacity, folder, roles, motor_poll_s, z_met
         _finish()
         raise
     return status()
+
+
+def _fault(kind, e):
+    """Fault list P1 / D13 (2026-10-31): the pipeline's camera thread died, or the sink failed for the first time.
+    An `acquisition fault` event always; a sink I/O failure (disk full, file gone) while recording also switches
+    recording off, so the run is not fed what it cannot hold (acquisition and display go on)."""
+    events.log("acquisition", action="fault", source=kind, error=f"{type(e).__name__}: {e}")
+    pipe = _pipe
+    if kind == "sink" and isinstance(e, OSError) and pipe is not None and pipe.recording:
+        set_recording(False)
+
+
+def _atexit():
+    """Fault list D4: a process that ends with acquisition running (sys.exit, Ctrl+C in a script) still closes the
+    run file. taskkill and power loss never reach here: HDF5 then loses at most the unflushed second."""
+    if _pipe is not None:
+        with contextlib.suppress(Exception):
+            stop(timeout_s=5.0)
+
+
+atexit.register(_atexit)
 
 
 def _hdf5_sink(folder, name, beads, roles, svc, dev, settings):

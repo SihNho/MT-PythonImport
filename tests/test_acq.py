@@ -430,3 +430,44 @@ def test_select_and_start_refusals(cam):
     api.acq.stop()
     with pytest.raises(NotReady, match="not running"):
         api.acq.mark("x")
+
+
+class _DiskFullSink(MemorySink):
+    def write_frame(self, result):
+        raise OSError(28, "No space left on device")
+
+
+def test_sink_io_failure_switches_recording_off_with_an_event(cam):
+    """Fault list P1: disk full while recording -> one `acquisition fault` event, recording off, acquisition and
+    display go on (the first failure is counted, nothing more is fed to the sink)."""
+    n0 = len(events.events())
+    api.acq.start(record=True, name="full", sink=_DiskFullSink())
+    t0 = time.time()
+    while api.acq.status()["recording"] and time.time() - t0 < 15:     # generous: the sim camera slows under load
+        time.sleep(0.02)
+    st = api.acq.status()
+    assert st["running"] and not st["recording"] and st["sink_failures"] >= 1 and "No space left" in st["sink_error"]
+    faults = [e for e in events.events()[n0:] if e.kind == "acquisition" and e.extra.get("action") == "fault"]
+    assert len(faults) == 1 and faults[0].extra["source"] == "sink" and "OSError" in faults[0].extra["error"]
+    assert [e.extra.get("action") for e in events.events()[n0:] if e.kind == "recording"] == ["on", "off"]
+    received = st["frames_received"]
+    assert api.acq.wait_frames(5, 5) and api.acq.status()["frames_received"] > received
+
+
+def test_camera_thread_death_is_visible_in_status_and_as_an_event(cam):
+    """Fault list D13: an exception in next_frame used to end the camera thread silently while running() stayed True."""
+    n0 = len(events.events())
+    api.acq.start()
+    api.acq.wait_frames(3, 5)
+
+    def boom(timeout_s):
+        raise RuntimeError("frame path broke")
+    cam.device.next_frame = boom
+    t0 = time.time()
+    while api.acq.status()["camera_error"] is None and time.time() - t0 < 5:
+        time.sleep(0.02)
+    st = api.acq.status()
+    assert st["running"] and st["camera_error"] == "RuntimeError: frame path broke"
+    faults = [e for e in events.events()[n0:] if e.kind == "acquisition" and e.extra.get("action") == "fault"]
+    assert len(faults) == 1 and faults[0].extra["source"] == "camera"
+    assert api.acq.stop()["camera_error"] == "RuntimeError: frame path broke"

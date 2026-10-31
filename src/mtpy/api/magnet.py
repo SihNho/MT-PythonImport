@@ -361,6 +361,10 @@ def set_touch_position(touch_mm):
     Changes the reachable force range (not the profile). Logs `calibration`."""
     if not safety._is_number(touch_mm):
         raise SafetyRefused(f"touch position {touch_mm!r} is not a finite number")
+    from . import protocol  # here: protocol imports magnet lazily too
+    if protocol.running():                      # fault list P4 / G6: the force -> position map must not jump mid-ramp
+        events.log("refused", request={"touch_mm": touch_mm}, reason="a protocol is running")
+        raise SafetyRefused("the touch position cannot change while a protocol runs; stop it first")
     _set_state(_state()[0], float(touch_mm))
 
 

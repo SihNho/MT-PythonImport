@@ -34,6 +34,8 @@ def run(path, xy, slices=60, step_nm=100.0, n_avg=20, cross=120, nm_per_px=84.0,
     z0 = api.focus.position()
     step_um = step_nm / 1000.0
     stack = np.zeros((len(xy), slices, cross - 1))
+    cam = api.devices.service("camera")
+    cam.scanning = True                  # api.camera refuses every setting until the scan ends (P5 / G5)
     try:
         for s in range(slices):
             api.focus.move_to(z0 + (s - slices // 2) * step_um).wait(10)
@@ -43,6 +45,7 @@ def run(path, xy, slices=60, step_nm=100.0, n_avg=20, cross=120, nm_per_px=84.0,
             if progress:
                 progress(s + 1, slices)
     finally:
+        cam.scanning = False
         api.focus.move_to(z0).wait(10)
     cal = {"xy": xy, "stack": stack, "n_slices": slices,
            # per bead (LOW, HIGH, forget) as LabVIEW's .cal holds it - the band-pass bins and the forget radius the

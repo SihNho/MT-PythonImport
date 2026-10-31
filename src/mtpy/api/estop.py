@@ -20,6 +20,7 @@ _engaged = threading.Event()
 _stoppers = []
 _gen_lock = threading.Lock()
 _generation = 0
+_reason = None
 _send_guard = ContextVar("mtpy_send_guard", default=None)
 _run_gen = ContextVar("mtpy_run_generation", default=None)     # set by run_scope (a protocol run)
 
@@ -39,9 +40,10 @@ def engage(reason="button"):
     """Raise the flag and the generation number, then call every registered stop directly, each on its own so one
     failure does not skip the others, and only then log the `estop` event and one `estop_error` event per failed
     stopper (subscribers are notified after every stop was attempted)."""
-    global _generation
+    global _generation, _reason
     with _gen_lock:
         _generation += 1
+        _reason = reason
         _engaged.set()
     failed = []
     for fn in _stoppers.copy():
@@ -75,6 +77,11 @@ def clear():
 
 def active():
     return _engaged.is_set()
+
+
+def reason():
+    """Why the stop is engaged ("rig lock lost", "GUI STOP button", ...), None while it is not (fault list D6)."""
+    return _reason if _engaged.is_set() else None
 
 
 def generation():

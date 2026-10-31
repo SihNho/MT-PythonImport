@@ -1016,7 +1016,7 @@ def test_heartbeat_treats_a_raising_permitted_as_a_lost_lock(monkeypatch, fake_r
             t0 = time.time()
             while not estop.active() and time.time() - t0 < 3:
                 time.sleep(0.02)
-            assert estop.active()
+            assert estop.active() and estop.reason() == "rig lock lost"         # D6: the GUI shows the reason
             lost = [e for e in events.events() if e.kind == "rig_lock" and e.extra.get("action") == "lost"]
             assert lost and "OSError" in lost[-1].extra["reason"]
         finally:
@@ -1043,3 +1043,12 @@ def test_close_retry_repeats_the_cleanup_without_reopening(rig):
     assert len(calls) == 2 and "magnet" not in api.devices.status()
     opens = [e for e in events.events()[n0:] if e.kind == "device" and e.extra.get("action") == "open"]
     assert opens == []                                        # no re-open on the retry
+
+
+def test_touch_position_is_fixed_while_a_protocol_runs(monkeypatch):
+    """Fault list P4 / G6: the force -> position map must not jump mid-ramp."""
+    monkeypatch.setattr(api.protocol, "running", lambda: True)
+    n0 = len(events.events())
+    with pytest.raises(SafetyRefused, match="while a protocol runs"):
+        api.magnet.set_touch_position(40.0)
+    assert [e.kind for e in events.events()[n0:]] == ["refused"]

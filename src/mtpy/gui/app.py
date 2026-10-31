@@ -730,6 +730,10 @@ class MainWindow(QMainWindow):
                   "exposure_ms": self.cam_exp.value(), "gain_dB": self.cam_gain.value()}
         if self.backend.currentData() == "real":
             preset.pop("gain_dB")                  # read-only on the JAI until its gain unit is verified (jai.py)
+        if api.acq.status().get("recording") and QMessageBox.question(
+                self, "Recording is on", "Rate and ROI changes alter how the recorded data are read and are logged "
+                "into the run as a guarded change. Apply anyway?") != QMessageBox.StandardButton.Yes:
+            return                                 # fault list G5: confirm=True below is the operator's yes, not a default
         self._call(lambda: api.camera.apply_preset(preset, confirm=True), "camera preset",
                    lambda r: self.readback.setText(f"camera: {r}"))
 
@@ -1126,7 +1130,7 @@ class MainWindow(QMainWindow):
         if p["state"] != "idle":
             self.prot_status.setText(f"{p['state']}" + (f": {p['reason']}" if p.get("reason") else ""))
         if estop.active():
-            parts.append("E-STOP ENGAGED")
+            parts.append(f"E-STOP ENGAGED ({estop.reason()})")
         self.statusBar().showMessage("   |   ".join(parts))
 
     def _update_plot(self):

@@ -63,6 +63,14 @@ Short and current. Details live in the linked documents; the history is in git a
   box picks IMAQdx or eBUS (`camera_sdk`); the SDK must match the driver bound (manuals/camera-jai-ebus.md).
   **02:40 the owner bound the camera back to NI's driver; IMAQdx verified on the rig** (90 Hz 900 / 150 Hz 1499 frames,
   0 gaps, 0 drops, disconnect clean, lock released). LabVIEW experiments can use the camera again.
+- **2026-11-01 03:30 (owner: items 2 and 4 "실행할것" / "진행해야"):** the iXon **cold path** on the rig: cooled to -61 C
+  through the program, close warmed it above -20 C and shut down in 86 s, reopened warm (nothing adopted)
+  (manuals/andor-ixon.md). Fault list: P5/G5 (camera settings locked during a z scan; the GUI asks before a guarded
+  change while recording), P4/G6 (touch position fixed while a protocol runs), P1 (first sink I/O failure = event +
+  recording off), D13 (dead camera thread visible), D6 (e-stop reason shown), D4 (atexit closes the run file; the
+  lock refusal names the recovery) fixed with tests. Open from the owner: item 1 (40.9 mm travel, at the lab),
+  item 3 (z-scan settle time: decision pending), item 5 (eBUS extras when the MT experiment is fixed, selectable in
+  the GUI), then a UI/UX discussion.
 - **Next:** protocols on hardware (force ramps, rotation, 3-state clamp, autofocus), the stop / watchdog paths
   exercised on the rig, then the tethered-bead calibration.
 - **Queued (owner 2026-10-30):** lock the camera settings while a z scan runs (the GUI must not change exposure,

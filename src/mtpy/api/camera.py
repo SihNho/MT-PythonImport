@@ -19,6 +19,10 @@ PRESET_FIELDS = ("roi", "rate_Hz", "exposure_ms", "gain_dB")
 
 
 def _guard(svc, dev, names, value, confirm):
+    if svc.scanning:                     # fault list P5 / G5 (owner 2026-10-30): a .cal must come from one setting
+        events.log("refused", request={"camera": dict(value) if isinstance(value, dict) else value},
+                   reason="a z scan is running; camera settings are locked until it ends")
+        raise SafetyRefused("camera settings are locked while a z scan runs; wait for it (or its failure) first")
     guarded = [n for n in names if dev.settings_kinds[n][1]]
     if guarded and svc.recording:
         if not confirm:

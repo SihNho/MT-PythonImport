@@ -59,7 +59,9 @@ def acquire(purpose):
                 token = rl.acquire(HOLDER, purpose)
             except rl.Refused as e:
                 events.log("rig_lock", action="refused", reason=str(e))
-                raise NotReady(f"rig lock refused: {e}") from e
+                raise NotReady(f"rig lock refused: {e}. A stale lock means a program ended without its cleanup: a person "
+                               "checks the rig (magnet position and PI limits, iXon cooling) and takes the lock over by "
+                               "hand per G:/Codes/rig/RULES.md; this program never does") from e
             os.environ["RIGLOCK_TOKEN"] = token          # the drivers' gate reads it from here
         if not rl.permitted(token, WORK_STATES):
             if own:

@@ -76,6 +76,10 @@ file bytes on 2026-10-22, no LabVIEW; **names only - its wiring was never read**
 - **At open**: read `GetTemperature` first; a sensor below -20 C (left cooling by LabVIEW or a crashed process) is
   adopted as the set point and recorded in the identity (`found_at_open`), so the read-back is true and the close
   warms it up (owner 2026-10-31).
+- **Cold path on the rig (2026-11-01 03:27-03:31, through the program):** found at +15 C "off"; set point -60 C
+  reached -61 C in 160 s (status "not stabilized" at the moment of the close); close = warm-up through the set point
+  to above -20 C, CoolerOFF, ShutDown: 86 s, lock released; reopened 20 s later at -15 C "off" (warm: nothing
+  adopted, set point None), closed in 1.6 s. The whole shutdown sequence took 86 s with the iXon cold.
 - Light: high EM gain with bright light can damage the EM register; keep EM gain off or low until the light level is
   known, and keep gain > 300 locked (`SetEMAdvanced` off) unless the owner decides otherwise.
 - Restore: shutter closed, cooler off and warmed, `ShutDown` called, process gone. A crashed process that never called
