@@ -10,14 +10,14 @@ import time
 import numpy as np
 
 sys.path.insert(0, r"G:\Codes\LabVIEW2Scr\src")
-import clr  # noqa: E402
+import clr
 
 clr.AddReference(r"C:\Program Files\Common Files\Pleora\eBUS SDK\PvDotNet.dll")
 clr.AddReference(r"G:\Codes\LabVIEW2Scr\src\mtpy\devices\ebus_helper\MtpyEbus.dll")
-import PvDotNet as Pv  # noqa: E402
-from Mtpy import MtpyEbus as H  # noqa: E402
+import PvDotNet as Pv
 
-from mtpy.api import events, rig  # noqa: E402
+from Mtpy import MtpyEbus as H
+from mtpy.api import events, rig
 
 
 def say(*a):
@@ -119,7 +119,7 @@ def main():
     with events.as_caller("script:ebus-probe@1"):
         rig.acquire("eBUS probe (owner 2026-11-01: eBUS)")
         try:
-            sysm, info = find_device()
+            _sysm, info = find_device()
             u3v = Pv.PvDeviceInfoU3V
             say("device info:", {k: str(getattr(info, k, None)) for k in ("DisplayID", "ManufacturerInfo", "Version", "UniqueID")})
             if isinstance(info, u3v):
