@@ -110,3 +110,35 @@ def test_gui_emccd_group_on_simulators(window):
     assert api.emccd.settings()["shutter"] == 2
     w._disconnect()
     _until(app, lambda: "not connected" in w.dev_summary.text(), 20, "disconnect")
+
+
+def test_gui_pick_flow_on_simulators(window, tmp_path):
+    """Owner 2026-10-30: pick beads on the image, calibrate them, select, track. Also the sim-only oddity seen once
+    on 2026-10-30 (tracking stopped by itself after ~79 frames): tracking must still run and advance after 3 s."""
+    from mtpy.lvfiles import read_cal
+    app, w = window
+    w._connect()
+    _until(app, lambda: "8 / 8" in w.dev_summary.text(), 15, "connect")
+    w._toggle_acq()
+    _until(app, lambda: api.acq.running() and "JAI frame" in w.cam_label.text, 20, "display-only acquisition")
+    for x, y in read_cal(FIXTURE / "cal001")["xy"][:3]:
+        w.picks.append((float(x), float(y)))
+    w._draw_picks()
+    w.cal_out.setText(str(tmp_path / "cal_pick"))
+    w.cal_slices.setValue(9)
+    w.cal_avg.setValue(3)
+    w._run_zscan()
+    _until(app, lambda: w.cal_status.text().startswith("done"), 120, "z scan of the picks")
+    w._toggle_acq()
+    _until(app, lambda: not api.acq.running(), 20, "stop")
+    w._load_cal_list()
+    assert w.bead_list.count() == 3
+    w._select_beads()
+    _until(app, lambda: w.bead_ids == [1, 2, 3], 20, "select")
+    assert w.picks == []                                      # the picks became the selected beads
+    w._toggle_acq()
+    _until(app, lambda: api.acq.running() and api.acq.status()["frames_tracked"] > 10, 30, "tracking")
+    _until(app, lambda: api.acq.status()["frames_tracked"] > 150, 30, "tracking past the 79 frames seen once")
+    assert api.acq.running(), api.acq.status()
+    w._toggle_acq()
+    _until(app, lambda: not api.acq.running(), 20, "stop 2")
