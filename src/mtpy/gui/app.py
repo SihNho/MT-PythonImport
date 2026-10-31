@@ -105,6 +105,24 @@ def _spin(lo, hi, step, value, decimals=2, suffix=""):
     return s
 
 
+# 'Mag pos when touched to glass': the magnet's travel end (PI Max Trans Pos.vi = 40.94 mm; the tethered-calibration
+# protocol uses 40.94). Owner 2026-10-31: start from the LabVIEW value, change it only through its own button, and keep
+# the value across program restarts (a value that differs at every start invites mistakes).
+TOUCH_DEFAULT_MM = 40.94
+TOUCH_FILE = Path(__file__).resolve().parents[3] / "config" / "touch_position.json"
+
+
+def load_touch_mm():
+    with contextlib.suppress(OSError, ValueError, KeyError, TypeError):
+        return float(json.loads(TOUCH_FILE.read_text(encoding="utf-8"))["touch_mm"])
+    return TOUCH_DEFAULT_MM
+
+
+def save_touch_mm(mm):
+    TOUCH_FILE.write_text(json.dumps({"touch_mm": mm, "set_at": time.strftime("%Y-%m-%d %H:%M:%S"),
+                                      "by": "gui (Change / Set)"}, indent=1) + "\n", encoding="utf-8")
+
+
 class _Panel(QDialog):
     """A non-modal side panel for what does not belong in the step column (owner 2026-10-31: the camera settings
     open in their own panel on a click; the device table opens a device's information the same way)."""
@@ -363,10 +381,14 @@ class MainWindow(QMainWindow):
         f.addRow(g2)
         g3 = QGroupBox("Force equation (decision 0018)")
         g3f = QFormLayout(g3)
-        self.touch_mm = _spin(0.0, 60.0, 0.1, 40.0, 2, " mm")
-        g3f.addRow("Magnet position when touching the glass", _row(self.touch_mm, QPushButton(
-            "Set", clicked=lambda: self._call(lambda: api.magnet.set_touch_position(self.touch_mm.value()),
-                                              "touch position set"))))
+        self.touch_mm = _spin(0.0, 60.0, 0.01, load_touch_mm(), 2, " mm")
+        self.touch_mm.setEnabled(False)                 # locked: Change... unlocks, Set applies, saves and locks again
+        self.btn_touch_set = QPushButton("Set", enabled=False, clicked=self._set_touch)
+        g3f.addRow("Magnet position when touching the glass", _row(
+            self.touch_mm, QPushButton("Change...", clicked=self._unlock_touch), self.btn_touch_set))
+        self.touch_info = QLabel(f"kept in {TOUCH_FILE.name}; applied to the force equation at every Connect")
+        self.touch_info.setWordWrap(True)
+        g3f.addRow(self.touch_info)
         f.addRow(g3)
         if self.sim_dev:
             lab = QLabel("SIM-DEV: TEST-ONLY limits on a temporary config copy (focus +-50 um, rotor). Simulators only.")
@@ -522,7 +544,28 @@ class MainWindow(QMainWindow):
             cals = sorted(fx.glob("cal*"))
             if cals and not self.ed_cal.text():
                 self.ed_cal.setText(str(cals[0]))
-        self._call(lambda: (estop.clear(), api.devices.connect(preset))[1], "connect", self._show_devices)
+        self._call(lambda: (estop.clear(), api.devices.connect(preset))[1], "connect", self._connected)
+
+    def _connected(self, st):
+        self._show_devices(st)
+        if "magnet" in st:                              # the kept touch position is the session's from the start
+            mm = self.touch_mm.value()
+            self._call(lambda: api.magnet.set_touch_position(mm), "touch position",
+                       lambda _: self.touch_info.setText(f"touch position {mm:.2f} mm in force (kept in {TOUCH_FILE.name})"))
+
+    def _unlock_touch(self):
+        self.touch_mm.setEnabled(True)
+        self.btn_touch_set.setEnabled(True)
+        self.touch_info.setText("edit the value, then Set; it is saved and used at every Connect from then on")
+
+    def _set_touch(self):
+        mm = round(self.touch_mm.value(), 2)
+        self.touch_mm.setEnabled(False)
+        self.btn_touch_set.setEnabled(False)
+        save_touch_mm(mm)
+        if "magnet" in api.devices.status():
+            self._call(lambda: api.magnet.set_touch_position(mm), "touch position set")
+        self.touch_info.setText(f"touch position {mm:.2f} mm saved to {TOUCH_FILE.name}; applied at every Connect")
 
     def _apply_mode(self):
         """MT hides the EMCCD screen and group; the device set follows at the next Connect."""

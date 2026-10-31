@@ -156,3 +156,19 @@ def test_camera_settings_and_device_info_open_in_panels(window):
     assert w.dev_panel.windowTitle() == "Device: " + w.dev_table.item(0, 0).text()
     w.cam_panel.open_()
     assert w.cam_panel.isVisible() and w.em_group.isVisible() and w.em_exp.isVisible()
+
+
+def test_touch_position_is_kept_locked_and_applied_at_connect(window, monkeypatch, tmp_path):
+    """Owner 2026-10-31: the touch position starts from the LabVIEW value (40.94 mm), changes only through
+    Change... / Set, is kept in a file across restarts and is in force right after Connect."""
+    from mtpy.gui import app as gui_app
+    app, w = window
+    monkeypatch.setattr(gui_app, "TOUCH_FILE", tmp_path / "touch_position.json")
+    assert w.touch_mm.value() == 40.94 and not w.touch_mm.isEnabled() and not w.btn_touch_set.isEnabled()
+    w._unlock_touch()
+    w.touch_mm.setValue(40.5)
+    w._set_touch()
+    assert not w.touch_mm.isEnabled() and gui_app.load_touch_mm() == 40.5
+    w._connect()
+    _until(app, lambda: api.magnet.force_calibration()["ready"], 15, "touch position applied at connect")
+    assert api.magnet.force_calibration()["touch_mm"] == 40.5

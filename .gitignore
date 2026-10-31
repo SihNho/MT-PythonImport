@@ -26,5 +26,8 @@ dist/
 *.log
 .claude/settings.local.json
 
+# the owner's kept touch position (gui)
+/config/touch_position.json
+
 # graphify output (local only)
 graphify-out/
