@@ -21,9 +21,10 @@ NAMES = ("camera", "magnet", "rotor", "stage", "focus", "arduino", "light", "emc
 
 
 def _camera(rig):
-    """The real JAI camera: eBUS (decision 0028, owner 2026-11-01) unless the preset says `"camera_sdk": "imaqdx"`
-    (the camera must then be bound to NI's USB3 Vision driver again)."""
-    sdk = rig.get("camera_sdk", "ebus")
+    """The real JAI camera by the preset key `camera_sdk`: "imaqdx" (default; the camera bound to NI's USB3 Vision
+    driver, as the LabVIEW experiments need - owner 2026-11-01) or "ebus" (decision 0028; the camera bound to Pleora's
+    driver). The Setup panel offers both."""
+    sdk = rig.get("camera_sdk", "imaqdx")
     if sdk == "imaqdx":
         from .jai import JaiCamera
         return JaiCamera()

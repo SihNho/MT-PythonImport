@@ -304,7 +304,7 @@ class MainWindow(QMainWindow):
         f = QFormLayout(w)
         self.backend = QComboBox()
         self.backend.addItem("sim: every device simulated", "sim")
-        self.backend.addItem("real: JAI camera (IMAQdx) + Andor iXon EMCCD (SDK2) under the rig lock; motors simulated", "real")
+        self.backend.addItem("real: JAI camera + Andor iXon EMCCD (SDK2) under the rig lock; motors simulated", "real")
         self.backend.addItem("rig: JAI + iXon + motors through the motion gate", "real-motors")
         self.backend.setCurrentIndex(self.backend.findData(self.backend_arg))
         f.addRow("Backend", self.backend)
@@ -314,6 +314,10 @@ class MainWindow(QMainWindow):
         self.mode.setCurrentIndex(self.mode.findData(api.devices.DEFAULT_MODE))
         self.mode.currentIndexChanged.connect(self._apply_mode)
         f.addRow("Mode", self.mode)
+        self.cam_sdk = QComboBox()       # owner 2026-11-01: the JAI's SDK is chosen here; it must match the USB3 Vision driver bound
+        self.cam_sdk.addItem("IMAQdx (NI driver - LabVIEW can share the camera)", "imaqdx")
+        self.cam_sdk.addItem("eBUS (JAI / Pleora driver - LabVIEW cannot open the camera)", "ebus")
+        f.addRow("Camera SDK", self.cam_sdk)
         self.ed_fixture = QLineEdit(str(self.fixture))
         f.addRow("Simulator fixture", _row(self.ed_fixture, QPushButton("Browse...", clicked=self._browse_fixture)))
         f.addRow(_row(QPushButton("Connect", clicked=self._connect),
@@ -540,7 +544,8 @@ class MainWindow(QMainWindow):
             self.ed_fixture.setText(d)
 
     def _connect(self):
-        preset = {"backend": self.backend.currentData(), "mode": self.mode.currentData()}
+        preset = {"backend": self.backend.currentData(), "mode": self.mode.currentData(),
+                  "camera_sdk": self.cam_sdk.currentData()}
         fx = Path(self.ed_fixture.text())
         if preset["backend"] == "sim" and fx.is_dir():
             preset["fixture"] = str(fx)

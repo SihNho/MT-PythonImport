@@ -185,3 +185,15 @@ def test_frames_carry_block_id_camera_time_and_pixels_then_stop_is_clean(cam):
     assert not cam.acquiring() and not cam.dev.streaming and stream.closed and pipe.started is False
     assert cam.dev.Parameters.commands[-1] == "AcquisitionStop" and pipe.released == [0, 1, 3]
     assert not threading.active_count() > 50
+
+
+def test_camera_sdk_preset_key_selects_the_driver_imaqdx_by_default():
+    """Owner 2026-11-01: IMAQdx stays the default (LabVIEW experiments share the camera on NI's driver); eBUS is chosen
+    by the preset key the Setup panel sets."""
+    from mtpy import devices
+    from mtpy.devices.jai import JaiCamera
+    assert isinstance(devices._camera({"backend": "real"}), JaiCamera)
+    assert isinstance(devices._camera({"backend": "real", "camera_sdk": "imaqdx"}), JaiCamera)
+    assert isinstance(devices._camera({"backend": "real", "camera_sdk": "ebus"}), ebus.EbusCamera)
+    with pytest.raises(NotImplementedError, match="camera_sdk"):
+        devices._camera({"backend": "real", "camera_sdk": "gentl"})

@@ -1,17 +1,23 @@
-# 0028 — The JAI camera runs through JAI's eBUS SDK; the camera is bound to Pleora's USB3 Vision driver
+# 0028 — Two camera SDKs, chosen in Setup: IMAQdx (default, NI driver, shared with LabVIEW) and JAI's eBUS SDK (Pleora driver)
 
 **Decided:** 2026-11-01 (owner, in chat): "eBUS로 간다", after installing the eBUS SDK 6.5.3 ("설치함") and being told that
 the installer had bound the camera to Pleora's driver so IMAQdx (and LabVIEW) no longer see it.
 
+**Amended the same day** (owner: "우선은 그럼 NI 드라이브로 돌리고, IMAQdx 경로로 되돌리자. eBUS 경로 및 IMAQdx 경로를 장비
+셋업창에서 선택할 수 있으면 좋을듯"): the LabVIEW program is still the one the experiments run on, and a USB device
+carries one driver, so the camera goes back to NI's driver, IMAQdx is the default again, and the Setup panel chooses
+the SDK. eBUS stays ready for the day the program replaces LabVIEW (switch the driver, pick eBUS).
+
 ## Decision
-1. **The real JAI SP-5000M-USB is driven through the eBUS SDK's .NET API** (`PvDotNet.dll`, pythonnet) by
-   `src/mtpy/devices/ebus.py` (`EbusCamera`). It is the default camera of the `real` and `real-motors` backends.
-   The IMAQdx driver (`jai.py`, decision 0021) stays in the tree and is selected with the preset key
-   `"camera_sdk": "imaqdx"`; it works only while the camera is bound to NI's USB3 Vision driver.
-2. **The camera stays bound to Pleora's USB3 Vision driver** (`ebuniversalproforu3v.inf` 7.2.5, bound by the eBUS
-   installer 2026-10-31 23:59). Consequence, accepted by the owner: **LabVIEW and NI-IMAQdx cannot open the camera**
-   until the binding is changed back (NI's `niu3vk.inf` 26.3 is still in the driver store; eBUS Driver Installation
-   Tool or Device Manager). The LabVIEW program is the baseline for numbers (0023), not a tool that must keep running.
+1. **Both SDKs are in the tree; the Setup panel's "Camera SDK" box (preset key `camera_sdk`) chooses:**
+   `imaqdx` (default; `jai.py`, decision 0021; the camera bound to NI's USB3 Vision driver, which LabVIEW shares) or
+   `ebus` (`src/mtpy/devices/ebus.py`, `EbusCamera`, the eBUS SDK's .NET API `PvDotNet.dll` via pythonnet; the camera
+   bound to Pleora's driver). The chosen SDK must match the driver the camera is bound to; the other one enumerates
+   no camera and says so.
+2. **The driver binding is the owner's system setting.** The eBUS installer bound the camera to Pleora's
+   `ebuniversalproforu3v.inf` 7.2.5 (2026-10-31 23:59); the owner binds it back to NI's `niu3vk.inf` 26.3 (eBUS Driver
+   Installation Tool or Device Manager) for the LabVIEW experiments. While it is on Pleora's driver, **LabVIEW and
+   NI-IMAQdx cannot open the camera**.
 3. **Pointer access through a 10-line C# helper** (`src/mtpy/devices/ebus_helper/MtpyEbus.cs`): pythonnet exposes
    `Byte*` as an opaque `System.Reflection.Pointer`, so the helper returns the buffer address as a long; it is built
    on first use with the .NET Framework's own `csc.exe` (the built DLL is git-ignored). `pythonnet` becomes a project

@@ -21,6 +21,8 @@ screens side by side (owner 2026-10-30: the JAI with the bead boxes, the EMCCD w
 30 s; bead chips), the event list (without the 20 Hz motor readings) and the status line (frames, fps, recording,
 magnet position and live force, protocol state, e-stop).
 
+**Camera SDK** (owner 2026-11-01, decision 0028): a box in Setup, IMAQdx (default; NI's driver, shared with LabVIEW) or eBUS (Pleora's driver); it must match the USB3 Vision driver the camera is bound to.
+
 **Modes** (owner 2026-10-30: "MT, MT-TIRF 모드 구분이 필요함"): a Mode box in Setup. **MT** = tracking alone: the JAI and
 the motors are opened, the EMCCD screen and group are hidden. **MT-TIRF** = everything (phase 10a: the iXon, the
 Arduino sync box - "Arduino는 mt-tirf 용도" - later the lasers and light gating). The mode goes into the connect preset (`api.devices.MODES`), the

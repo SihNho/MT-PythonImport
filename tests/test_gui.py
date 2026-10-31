@@ -206,3 +206,16 @@ def test_device_panel_has_numeric_controls_that_move_the_device(window):
     _until(app, lambda: "position_mm" in w.dev_controls and w.dev_controls["position_mm"] is not c["position_mm"], 10,
            "panel read back after the move")
     assert w.dev_controls["position_mm"].value() == pytest.approx(1.5, abs=0.01)
+
+
+def test_setup_has_a_camera_sdk_selector_in_the_connect_preset(window, monkeypatch):
+    """Owner 2026-11-01: the Setup panel chooses the JAI's SDK (IMAQdx default, eBUS) and Connect passes it on."""
+    app, w = window
+    seen = {}
+    real = api.devices.connect
+    monkeypatch.setattr(api.devices, "connect", lambda p: seen.update(p) or real(p))
+    assert w.cam_sdk.currentData() == "imaqdx"
+    w.cam_sdk.setCurrentIndex(1)
+    w._connect()
+    _until(app, lambda: "8 / 8" in w.dev_summary.text(), 15, "connect")
+    assert seen["camera_sdk"] == "ebus" and seen["backend"] == "sim"       # the sim ignores it; a real backend builds EbusCamera

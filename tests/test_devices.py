@@ -909,7 +909,7 @@ def test_real_camera_preset_readback_and_recording(tmp_path, monkeypatch):
     monkeypatch.setattr(jai, "ImaqdxCamera", _FakeImaqdx)
     monkeypatch.setattr(jai, "_permitted", lambda: None)
     with events.as_caller("gui"):
-        api.devices.connect({"backend": "real", "camera_sdk": "imaqdx"})    # the IMAQdx path, kept beside eBUS (0028)
+        api.devices.connect({"backend": "real"})                             # IMAQdx is the default camera_sdk (0028)
     try:
         cam = api.devices.service("camera").device
         dx = cam.cam
