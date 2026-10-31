@@ -61,6 +61,8 @@ Short and current. Details live in the linked documents; the history is in git a
   frames through `api.acq`, 0 gaps, 0 drops, hardware timestamps (1 GHz). Then (owner, same night: LabVIEW still runs the
   experiments) the camera goes back to NI's driver, **IMAQdx is the default again** and the Setup panel's "Camera SDK"
   box picks IMAQdx or eBUS (`camera_sdk`); the SDK must match the driver bound (manuals/camera-jai-ebus.md).
+  **02:40 the owner bound the camera back to NI's driver; IMAQdx verified on the rig** (90 Hz 900 / 150 Hz 1499 frames,
+  0 gaps, 0 drops, disconnect clean, lock released). LabVIEW experiments can use the camera again.
 - **Next:** protocols on hardware (force ramps, rotation, 3-state clamp, autofocus), the stop / watchdog paths
   exercised on the rig, then the tethered-bead calibration.
 - **Queued (owner 2026-10-30):** lock the camera settings while a z scan runs (the GUI must not change exposure,

@@ -38,6 +38,10 @@ acquiring keeps the sensor and USB link busy; every job must stop acquisition an
   (`niu3vk.inf` = oem11.inf, 26.3.0) is still in the driver store, so the camera can be bound back (eBUS Driver
   Installation Tool, Device Manager "Update driver", or removing oem87.inf) - a system change the owner decides.
   The eBUS 6.5.3 package has C++ and .NET APIs only; the Python API is a separate Pleora download.
+  **Bound back 2026-11-01 02:40 (owner: "되돌렸음")**: `niu3vk.inf` = oem11.inf 26.3.0.49287, class
+  NIVisionAcquisitionDevices. Program check right after (real-motors MT, `api.acq`): connect 20.2 s, 90 Hz 900 frames
+  / 150 Hz 1499 frames in 10 s, camera gaps 0, pipeline drops 0, latency 0.08 / 0.14 ms (p50 / p99), disconnect 1.0 s,
+  lock released. IMAQdx and LabVIEW see the camera again.
   **Owner 2026-11-01: "eBUS로 간다" - decision 0028: the camera now runs through eBUS ([camera-jai-ebus.md](camera-jai-ebus.md));
   this IMAQdx path stays selectable (`camera_sdk: imaqdx`) for a camera bound to NI's driver.**
 
