@@ -468,6 +468,8 @@ class MainWindow(QMainWindow):
         f.addRow("Step", self.cal_step)
         f.addRow("Frames averaged", self.cal_avg)
         f.addRow("Cross (px)", self.cal_cross)
+        self.cal_settle = _spin(0.0, 5.0, 0.1, zscan.SETTLE_S, 2, " s")
+        f.addRow("Settle after each move", self.cal_settle)
         self.cal_out = QLineEdit(str(self.out / "cal_gui"))
         f.addRow("Write .cal to", self.cal_out)
         f.addRow(QPushButton("Run z scan (beads of the current selection)", clicked=self._run_zscan))
@@ -936,13 +938,13 @@ class MainWindow(QMainWindow):
             return
         path = Path(self.cal_out.text())
         path.parent.mkdir(parents=True, exist_ok=True)
-        slices, step, avg, cross = (self.cal_slices.value(), self.cal_step.value(), self.cal_avg.value(),
-                                    self.cal_cross.value())
+        slices, step, avg, cross, settle = (self.cal_slices.value(), self.cal_step.value(), self.cal_avg.value(),
+                                            self.cal_cross.value(), self.cal_settle.value())
         xy = np.array(self.picks, dtype=np.float64) if self.picks else beads.xy0.copy()
         self.cal_status.setText("running...")
 
         def job():
-            return zscan.run(path, xy, slices, step, avg, cross,
+            return zscan.run(path, xy, slices, step, avg, cross, settle_s=settle,
                              progress=lambda i, n: self.cal_status.setText(f"slice {i} / {n}"))
 
         def done(cal):

@@ -34,7 +34,7 @@ the next Connect. Default MT-TIRF (today's behaviour).
 | Setup | connect / disconnect the rig, self-check, device table (a click on a row opens that device's panel: identity, read-back, limits and the profile window as rows, and what the device can be told as numeric fields with Move / Set - owner 2026-10-31: a control panel, not a raw dump; the EMCCD row opens the camera-settings panel), "Camera settings..." opens the JAI preset and the EMCCD parameters in their own panel (owner 2026-10-31: not crammed into the step column), Z method and executor (0024), touch position for the force equation (0018: starts at 40.94 mm = the magnet's travel end, locked, Change... / Set only, kept in `config/touch_position.json` across restarts, applied at every Connect) | `devices`, `camera`, `magnet.set_touch_position` |
 | Explore | magnet position and force, rotor, focus, exposure and gain, read-backs | `magnet`, `rotor`, `focus`, `camera` |
 | Beads | list the beads of a `.cal`, check, reference ids, select | `beads.select` |
-| Calibrate | z scan of the selected beads from the display frames -> `.cal` (`gui/zscan.py`) | `focus`, `acq.display`, `lvfiles.write_cal` |
+| Calibrate | z scan of the selected beads from the display frames -> `.cal` (`gui/zscan.py`); "Settle after each move" 0.2 s default (owner 2026-11-01: the 10-31 scan without it gave LUT slopes 1.04-1.06) | `focus`, `acq.display`, `lvfiles.write_cal` |
 | Experiment | protocol text editor, Load / Save, Check, Start / Pause / Resume / Stop, Apply edits, Mark | `protocol`, `acq.mark` |
 | Save | run folder and name (acquisition writes `<folder>/<name>.h5`; Record toggles recording inside it), export `.tra` / `.cal`, open a run | `acq`, `data` |
 

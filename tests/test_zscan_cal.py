@@ -52,7 +52,10 @@ def test_zscan_writes_the_band_not_the_position(sim, tmp_path, monkeypatch):
     monkeypatch.setattr(api.focus, "position", lambda: 0.0)
     monkeypatch.setattr(api.focus, "move_to", lambda z: _M())
     monkeypatch.setattr(api.events, "log", lambda *a, **k: None)
+    waits = []
+    monkeypatch.setattr(zscan.time, "sleep", waits.append)
     cal = zscan.run(tmp_path / "cal_z", [(200.0, 200.0), (640.0, 512.0)], slices=5, n_avg=1)
+    assert waits == [0.2] * 5                                   # owner 2026-11-01: 0.2 s settle after each move
     assert cal["bead_i32"].tolist() == [[0, 40, 10], [0, 40, 10]]
     assert read_cal(tmp_path / "cal_z")["bead_i32"].tolist() == [[0, 40, 10], [0, 40, 10]]
 

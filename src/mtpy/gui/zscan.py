@@ -4,6 +4,7 @@ the camera rate by the running acquisition (api.acq.average), so acquisition mus
 api.focus (refused unless the safety profile has a focus window).
 shortcut: the simulated camera's image does not change with focus, so a .cal made on the simulator is flat (every
 slice alike); it exercises the flow only. Real slices come with phase 6."""
+import time
 from datetime import datetime
 
 import numpy as np
@@ -24,10 +25,15 @@ def bead_profile(image, x, y, cross):
     return xo, yo, np.concatenate([prof[1:][::-1], prof])
 
 
+SETTLE_S = 0.2      # owner 2026-11-01 "0.2초로 넣어": the piezo settles after the controller reports arrival; the
+                    # 8-s scan of 2026-10-31 (no wait) gave LUT slopes 1.04-1.06, the 0.2-s scan of 10-26 gave 1.000
+
+
 def run(path, xy, slices=60, step_nm=100.0, n_avg=20, cross=120, nm_per_px=84.0, progress=None,
-        low=calib.DEFAULT_LOW, high=calib.DEFAULT_HIGH, forget=calib.DEFAULT_FORGET):
+        low=calib.DEFAULT_LOW, high=calib.DEFAULT_HIGH, forget=calib.DEFAULT_FORGET, settle_s=SETTLE_S):
     """Scan `slices` focus positions `step_nm` apart centred on the current focus, write the .cal to `path`, return
-    the focus to where it was. xy: (n, 2) bead positions in px. progress(i, slices) is called per slice."""
+    the focus to where it was. xy: (n, 2) bead positions in px. progress(i, slices) is called per slice. settle_s:
+    wait after each focus move reports arrival before the frames are averaged."""
     xy = np.asarray(xy, dtype=np.float64).reshape(-1, 2)
     if len(xy) == 0:        # rig 2026-10-31: an empty pick list scanned 60 slices, then write_cal crashed
         raise ValueError("z scan: no bead positions to scan")
@@ -39,6 +45,7 @@ def run(path, xy, slices=60, step_nm=100.0, n_avg=20, cross=120, nm_per_px=84.0,
     try:
         for s in range(slices):
             api.focus.move_to(z0 + (s - slices // 2) * step_um).wait(10)
+            time.sleep(settle_s)
             img = api.acq.average(n_avg)
             for b, (x, y) in enumerate(xy):
                 stack[b, s] = bead_profile(img, x, y, cross)[2]
@@ -55,6 +62,7 @@ def run(path, xy, slices=60, step_nm=100.0, n_avg=20, cross=120, nm_per_px=84.0,
            "z_step": step_um, "n_avg": n_avg, "date": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
            "bead_flags": np.zeros(len(xy), dtype=np.int32), "nm_per_px": nm_per_px}
     write_cal(path, cal)
-    api.events.log("calibration", request={"slices": slices, "step_nm": step_nm, "n_avg": n_avg, "cross": cross},
+    api.events.log("calibration", request={"slices": slices, "step_nm": step_nm, "n_avg": n_avg, "cross": cross,
+                                           "settle_s": settle_s},
                    path=str(path), beads=len(xy))
     return cal

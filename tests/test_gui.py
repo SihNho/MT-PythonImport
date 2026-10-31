@@ -127,6 +127,7 @@ def test_gui_pick_flow_on_simulators(window, tmp_path):
     w.cal_out.setText(str(tmp_path / "cal_pick"))
     w.cal_slices.setValue(9)
     w.cal_avg.setValue(3)
+    w.cal_settle.setValue(0.0)
     w._run_zscan()
     _until(app, lambda: w.cal_status.text().startswith("done"), 120, "z scan of the picks")
     w._toggle_acq()

@@ -78,7 +78,8 @@ every target exactly. Mean tracked z of each 3 s hold (first 0.8 s dropped), bea
   time), while the 2026-10-26 scan (0.2 s hold) gave slope 1.000 in its self-check. If the focus had not fully
   arrived when the frames were averaged, the LUT's slices are effectively closer than 100 nm and tracked z reads
   about 5 % too large. **Proposal:** a settle time per slice in `gui/zscan.run` (the GUI's default of 20 frames
-  already gives 0.22 s) and a check of the piezo step against the LUT with a slower scan.
+  already gives 0.22 s) and a check of the piezo step against the LUT with a slower scan. **Done 2026-11-01** (owner
+  "0.2초로 넣어"): `zscan.run(settle_s=0.2)` default, a Calibrate field; the slope check with a new LUT is still to run.
 
 ## iXon (item 2 of the owner's list)
 Open found the camera at 13-14 C with the cooler off (as the owner left it after powering on); nothing was adopted as

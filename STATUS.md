@@ -69,7 +69,8 @@ Short and current. Details live in the linked documents; the history is in git a
   change while recording), P4/G6 (touch position fixed while a protocol runs), P1 (first sink I/O failure = event +
   recording off), D13 (dead camera thread visible), D6 (e-stop reason shown), D4 (atexit closes the run file; the
   lock refusal names the recovery) fixed with tests. Open from the owner: item 1 (40.9 mm travel, at the lab),
-  item 3 (z-scan settle time: decision pending), item 5 (eBUS extras when the MT experiment is fixed, selectable in
+  item 3 decided ("0.2초로 넣어": 0.2 s settle per slice in `zscan.run`, a Calibrate field; the slope re-check with a
+  new LUT is still to run on the rig), item 5 (eBUS extras when the MT experiment is fixed, selectable in
   the GUI), then a UI/UX discussion.
 - **Next:** protocols on hardware (force ramps, rotation, 3-state clamp, autofocus), the stop / watchdog paths
   exercised on the rig, then the tethered-bead calibration.
