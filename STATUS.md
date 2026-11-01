@@ -129,7 +129,8 @@ Short and current. Details live in the linked documents; the history is in git a
   kept) so the next death shows whether the PC stopped at once or hung first; the owner registers it at logon
   (schtasks, user level). Hardware suspects: CPU / board power delivery, memory.
   Ingested as [rig/pc-stability.md](docs/rig/pc-stability.md) (+ .ko.md for the 2026-11-02 meeting). The owner
-  experiments tonight; the heartbeat task is not registered yet (owner away from the PC).
+  experiments tonight. 19:54: the owner registered and started the logon task "mtpy pc heartbeat" (log lines
+  arriving); after the next death run `tools/pc_heartbeat.py --report`.
 - **Next:** protocols on hardware (force ramps, rotation, 3-state clamp, autofocus), the stop / watchdog paths
   exercised on the rig, then the tethered-bead calibration.
 - **Queued (owner 2026-10-30):** lock the camera settings while a z scan runs (the GUI must not change exposure,
