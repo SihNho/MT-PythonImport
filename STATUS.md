@@ -100,6 +100,9 @@ Short and current. Details live in the linked documents; the history is in git a
   the GUI tick is 317 ms at 256 beads (boxes recreated and the history rebuilt every tick) and shares the interpreter
   with the worker; the GPU executor suffers most. Fix order: cheap drawing, then the pipeline in its own process
   (decision needed). No language change needed for this (results page, last section).
+- **2026-11-01 16:10 (owner: "프로세스 분리 설계"): decision 0029** - the engine (API, devices, pipeline, safety) in its own
+  process, the GUI a client ([design/engine-process.md](docs/design/engine-process.md)); the roadmap places the
+  work (engine + client on the simulator, the GUI on the client, the rig bench again as acceptance).
 - **Next:** protocols on hardware (force ramps, rotation, 3-state clamp, autofocus), the stop / watchdog paths
   exercised on the rig, then the tethered-bead calibration.
 - **Queued (owner 2026-10-30):** lock the camera settings while a z scan runs (the GUI must not change exposure,

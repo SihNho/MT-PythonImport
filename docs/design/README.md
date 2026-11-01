@@ -23,6 +23,8 @@ or MT-TIRF work. Written 2026-10-24; keep it current when a document is added or
 ## 3. How it is built
 - [design/api.md](api.md) — the public function layer (draft v0): conventions, function groups, safety behaviour,
   example experiment script.
+- [design/engine-process.md](engine-process.md) — the engine process (API, devices, pipeline, safety) and the GUI as
+  a client over a local connection with a shared-memory display snapshot (decision 0029, 2026-11-01).
 - [design/fault-scenarios.md](fault-scenarios.md) — what can go wrong (operator, devices, data), merged from three review
   sessions 2026-10-31, each item verified, fixed or waiting for the owner.
 - [format/grammar.md](../format/grammar.md) — protocol / illumination / recipe script grammar (living draft v0).

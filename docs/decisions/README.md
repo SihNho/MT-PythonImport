@@ -32,6 +32,7 @@ Each file records one decision: what was decided, why, and what follows from it.
 | [0026](0026-program-holds-the-rig-lock-and-shuts-down-visibly.md) | The program takes the shared rig lock itself (not the V6 wrapper) and closes the rig in a visible step-by-step dialog that keeps the lock on a failed cleanup | 2026-10-30 |
 | [0027](0027-rotor-limit-is-the-controller-counter-range.md) | The rotor's limit is the controller's own soft-limit registers read at open (today the 24-bit counter range); the program writes nothing to the controller; the profile adopts the readback | 2026-10-30 |
 | [0028](0028-camera-through-ebus-sdk.md) | Two camera SDKs chosen in Setup (`camera_sdk`): IMAQdx (default; NI driver, shared with LabVIEW) and JAI's eBUS SDK (.NET API via pythonnet, a C# pointer helper; Pleora driver). The SDK must match the USB3 Vision driver bound; the binding is the owner's system setting | 2026-11-01 |
+| [0029](0029-engine-process-and-gui-client.md) | The engine (API, devices, acquisition, safety) runs in its own process; the GUI is a client over a local connection, the display snapshot in shared memory, events streamed; scripts stay in-process. Chosen after the GUI's drawing was measured to share the interpreter with the tracker | 2026-11-01 |
 
 The behavior specification of the LabVIEW program is in [../spec/README.md](../spec/README.md) and the device manuals are
 in [../manuals/README.md](../manuals/README.md).
