@@ -123,6 +123,11 @@ Short and current. Details live in the linked documents; the history is in git a
   (3 counts x 3 methods x 2 executors, pipeline alone and under the client GUI): numba 0.4-0.9 ms median, p99 < 1.7
   ms; GPU 2.2-2.4 ms flat; phase_spline ~30 % dearer than current / spline on numba; the GUI adds nothing to the
   median; 0 drops. Rare single-frame 15-95 ms outliers noted (results page).
+- **2026-11-01 18:10 (owner: the PC dies while idle about weekly; PSU and supply replaced, not them):** System log:
+  18 unexpected shutdowns in 4 months, bugcheck 0, no sleep (high-performance plan, 0 sleep events), one WHEA
+  corrected CPU parity error (00:15 today). `tools/pc_heartbeat.py` writes a line every 10 s (daily file, 7 days
+  kept) so the next death shows whether the PC stopped at once or hung first; the owner registers it at logon
+  (schtasks, user level). Hardware suspects: CPU / board power delivery, memory.
 - **Next:** protocols on hardware (force ramps, rotation, 3-state clamp, autofocus), the stop / watchdog paths
   exercised on the rig, then the tethered-bead calibration.
 - **Queued (owner 2026-10-30):** lock the camera settings while a z scan runs (the GUI must not change exposure,
