@@ -53,3 +53,5 @@ zero / bridge / exclude (U12, U14), troubleshooting guide (U9), MT-TIRF mode (10
   thread losing frames while the window is dragged.
 - The simulated camera does not change with focus: a z scan on the simulator writes a flat LUT (flow only).
 - `--sim-dev` is for the simulators alone: it never touches the shipped config and is removed with the window.
+- Plot bar: "Plot refresh" (1-30 Hz, default 10) paces the live plot's redraw only; the history keeps every displayed
+  frame (owner 2026-11-01, after the GUI isolation measurement showed the plot as the GUI's largest cost per tick).

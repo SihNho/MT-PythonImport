@@ -115,6 +115,8 @@ Short and current. Details live in the linked documents; the history is in git a
   no longer costs the tracker: 4 beads 0.39 / 0.61 ms (was 3.2 p99), 256 GPU 5.7 / 6.6 ms (was 34); 256 numba
   7.4 / 8.5 ms once the engine leaves two cores to the GUI (default now). The GUI's own 276 ms tick at 256 beads
   (drawing) is the remaining item.
+- **2026-11-01 17:20 (owner: no drawing rework; the plot Hz as a user control):** "Plot refresh" (1-30 Hz, default 10)
+  in the plot bar paces the redraw only; the data keep arriving at the display rate.
 - **Next:** protocols on hardware (force ramps, rotation, 3-state clamp, autofocus), the stop / watchdog paths
   exercised on the rig, then the tethered-bead calibration.
 - **Queued (owner 2026-10-30):** lock the camera settings while a z scan runs (the GUI must not change exposure,

@@ -246,3 +246,23 @@ def test_bead_chips_wrap_into_rows(window):
     assert w.bead_chips.count() == 40 and w.bead_chips.rowCount() == -(-40 // CHIPS_PER_ROW)
     assert w.bead_chips.columnCount() == CHIPS_PER_ROW
 
+
+def test_plot_refresh_rate_is_the_users_and_paces_only_the_redraw(window, monkeypatch):
+    """Owner 2026-11-01: the plot's Hz is a user control; the history keeps every displayed frame, the redraw is
+    paced."""
+    app, w = window
+    w._connect()
+    _until(app, lambda: api.devices.status() and not w._workers, 30, "connected")
+    w._load_cal_list()
+    w._select_beads()
+    _until(app, lambda: w.bead_ids, 10, "beads selected")
+    redraws = []
+    monkeypatch.setattr(w, "_update_plot", lambda: redraws.append(time.monotonic()))
+    w.plot_hz.setValue(2)
+    w._toggle_acq()
+    _until(app, lambda: api.acq.running(), 10, "acquisition")
+    _pump(app, 2.0)
+    assert 2 <= len(redraws) <= 6 and len(w.history) > len(redraws) * 3      # ~2 Hz redraws, data at the display rate
+    w._toggle_acq()
+    _until(app, lambda: not api.acq.running(), 10, "stopped")
+
