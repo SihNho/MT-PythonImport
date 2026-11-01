@@ -77,6 +77,11 @@ client can ask `events.events()` for the history).
   worth doing for the GUI's own responsiveness; they are independent of this design.
 
 ## 8. Order of work (the owner's roadmap decides when)
-1. engine + client with the simulator; the API test suite green in both modes.
+1. engine + client with the simulator - **done 2026-11-01** (owner "구현 시작"): `src/mtpy/engine/` (Listener, thread
+   pool, Motion table, event stream, `SharedSnapshot`), `src/mtpy/client/` (`api` proxy, `events` replay, snapshot
+   reader, `ping`, `launch` / `connect`), `python -m mtpy.engine [--config DIR]`; `tests/test_engine.py` runs connect,
+   a Motion, two error classes, acquisition with recording, the snapshot through shared memory, the event stream and
+   the exit with cleanup against a launched engine. Not yet: the API suite parametrised over both modes (the one
+   engine test covers the representative calls).
 2. the GUI on the client; the GUI tests green; the shutdown dialog through the client.
 3. the rig: tools/gui_rig_bench.py and gui_rig_isolate.py repeated through the client; acceptance of 0029 item 7.

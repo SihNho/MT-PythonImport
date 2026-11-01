@@ -103,6 +103,10 @@ Short and current. Details live in the linked documents; the history is in git a
 - **2026-11-01 16:10 (owner: "프로세스 분리 설계"): decision 0029** - the engine (API, devices, pipeline, safety) in its own
   process, the GUI a client ([design/engine-process.md](docs/design/engine-process.md)); the roadmap places the
   work (engine + client on the simulator, the GUI on the client, the rig bench again as acceptance).
+- **2026-11-01 16:40 (owner "구현 시작"): decision 0029 step 1 done** - `mtpy.engine` (the API hosted behind a local
+  listener, Motion handles, event stream, shared-memory display snapshot, cleanup on exit) and `mtpy.client` (`api`
+  proxy with the same names, `events` replay, snapshot reader, watchdog ping, launch / connect); `tests/test_engine.py`
+  on the simulator. Next steps of 0029: the GUI on the client, then the rig bench as acceptance.
 - **Next:** protocols on hardware (force ramps, rotation, 3-state clamp, autofocus), the stop / watchdog paths
   exercised on the rig, then the tethered-bead calibration.
 - **Queued (owner 2026-10-30):** lock the camera settings while a z scan runs (the GUI must not change exposure,
