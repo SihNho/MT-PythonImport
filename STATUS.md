@@ -128,6 +128,8 @@ Short and current. Details live in the linked documents; the history is in git a
   corrected CPU parity error (00:15 today). `tools/pc_heartbeat.py` writes a line every 10 s (daily file, 7 days
   kept) so the next death shows whether the PC stopped at once or hung first; the owner registers it at logon
   (schtasks, user level). Hardware suspects: CPU / board power delivery, memory.
+  Ingested as [rig/pc-stability.md](docs/rig/pc-stability.md) (+ .ko.md for the 2026-11-02 meeting). The owner
+  experiments tonight; the heartbeat task is not registered yet (owner away from the PC).
 - **Next:** protocols on hardware (force ramps, rotation, 3-state clamp, autofocus), the stop / watchdog paths
   exercised on the rig, then the tethered-bead calibration.
 - **Queued (owner 2026-10-30):** lock the camera settings while a z scan runs (the GUI must not change exposure,

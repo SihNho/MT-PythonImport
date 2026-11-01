@@ -37,6 +37,8 @@ or MT-TIRF work. Written 2026-10-24; keep it current when a document is added or
   MT-TIRF UPlanApo 60x/1.50), samples, calibration, fixture.
 - [hardware/mt-tirf-optical-layout.svg](../hardware/mt-tirf-optical-layout.svg) — editable optical schematic
   (2026-10-06 v1; update in place).
+- [rig/pc-stability.md](../rig/pc-stability.md) — the rig PC's weekly unexpected shutdowns: log evidence, what is
+  ruled out, the diagnosis order, the heartbeat log (2026-11-01; Korean summary for the meeting: pc-stability.ko.md).
 - [manuals/](../manuals/README.md) — one manual per device; [smcamera-emccd-parameters.md](../manuals/smcamera-emccd-parameters.md)
   for the old fluorescence software.
 
