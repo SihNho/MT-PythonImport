@@ -18,7 +18,9 @@ sys.path.insert(0, r"G:\Codes\rig")
 import riglock
 from rig_motion_noise import FOCUS_UM, MAGNET_MM, STAGE_UM, analyze, report_noise
 
-from mtpy import api
+from mtpy import api  # noqa: F401 - rebound to the engine client in CLIENT mode (main)
+
+CLIENT = bool(os.environ.get("CLIENT"))          # decision 0029 step 3: the window as a client of an engine process
 from mtpy.gui import zscan
 
 OUT = Path(os.environ.get("OUT", r"G:\l2s_rig_data\2026-11-01_gui_bench"))
@@ -41,8 +43,17 @@ def note(name, **kw):
 def main():
     from PySide6.QtWidgets import QApplication
 
+    from mtpy.gui import app as gui_app
     from mtpy.gui.app import MainWindow
     from mtpy.gui.shutdown import ShutdownDialog
+    global api
+    client = proc = None
+    if CLIENT:
+        from mtpy.client import launch
+        client, proc = launch()
+        gui_app.use_client(client)
+        api = client.api
+        say("engine:", client.call("engine.info"))
     OUT.mkdir(parents=True, exist_ok=True)
     app = QApplication(sys.argv[:1])
     w = MainWindow(fixture=r"G:\Data\SiHyeong\20260906 Kimlab - 50bp 16X WT 90Hz 1p2 Ramp_Newbatch\test",
@@ -218,6 +229,10 @@ def main():
     note("shutdown", ok=d.ok, seconds=round(time.monotonic() - t0, 1), lock=lock(), devices=api.devices.status())
     d.close()
     w.close()
+    if client is not None:
+        client.exit_engine()
+        proc.wait(120)
+        say("engine exited", proc.returncode)
     with open(OUT / "gui_bench.json", "w", encoding="utf-8") as f:
         json.dump(R, f, indent=1, default=str)
     for name in sorted(R["runs"]):

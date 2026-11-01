@@ -126,3 +126,22 @@ problem - items recreated and history rebuilt every tick - and (2) the shared in
 A change of language is not needed for this; it would buy something only for hard real-time guarantees (which
 Windows does not give either way) or for far more beads at far higher rates than the camera delivers.
 
+## The same window as a client of the engine process (17:04, decision 0029 step 3; tools/gui_rig_isolate.py CLIENT=1)
+| beads / exec | condition | in-process GUI (16:00) track p50 / p99 | **client GUI** track p50 / p99 | script (GUI idle) |
+|---|---|---|---|---|
+| 4 numba | normal | 0.39 / 3.21 | **0.39 / 0.61** | 0.36 / 0.76 |
+| 4 numba | no plot | 0.37 / 0.90 | 0.38 / 0.68 | |
+| 256 numba (12 threads) | normal | 11.09 / 15.14 | 11.01 / 11.73 | 6.43 / 11.60 |
+| 256 numba (10 threads) | normal | - | **7.39 / 8.48** | 7.37 / 7.89 |
+| 256 GPU | normal | 7.10 / 34.39 | **5.73 / 6.62** | 5.58 / 6.28 |
+| 256 GPU | display off | 6.60 / 41.13 | 5.59 / 7.55 | |
+
+- **The interpreter sharing is gone:** the 4-bead tail (3.2 -> 0.6 ms) and the GPU tail (34 -> 6.6 ms) equal the
+  script's; no drops anywhere; the GUI tick itself is unchanged (276 ms at 256 beads - still worth the drawing fix).
+- **One effect remained with numba on all 12 cores:** 256 beads p50 11.0 ms under the GUI vs 6.4 idle, in the
+  client too. Not the GIL (separate process) but the cores: the parallel kernel waits for its slowest thread, and
+  the GUI's drawing displaces one. With `NUMBA_NUM_THREADS=10` the frame costs 7.4 ms with or without the GUI
+  (8.5 ms p99 under it). The engine now leaves two cores by default (`python -m mtpy.engine`).
+- **Acceptance of 0029 item 7 met:** p50 / p99 under the GUI within 20 % of the script at 4 and 256 beads, numba
+  (10 threads) and GPU; shutdown through the dialog released the lock; the engine exited 0.
+

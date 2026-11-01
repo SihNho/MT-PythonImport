@@ -92,4 +92,7 @@ client can ask `events.events()` for the history).
    bead selection, recording, Disconnect through the shutdown sequence, all on a launched engine. Found on the
    way: a result the wire cannot pickle (the read-only safety profile) silently ended the engine's sender thread -
    results are made plain and checked before sending, a sender failure answers with an error instead of dying.
-3. the rig: tools/gui_rig_bench.py and gui_rig_isolate.py repeated through the client; acceptance of 0029 item 7.
+3. the rig - **done 2026-11-01 17:04**: gui_rig_isolate.py in CLIENT mode (the engine launched by the script):
+   4 beads 0.39 / 0.61 ms, 256 GPU 5.7 / 6.6 ms under the GUI = the script's; 256 numba needed the engine to leave
+   two cores to the GUI (`NUMBA_NUM_THREADS` = cores - 2 by default): 7.4 / 8.5 ms under the GUI vs 7.4 / 7.9 idle.
+   Acceptance met (results page). Open: the drawing fix for the GUI's own 276 ms tick at 256 beads.
