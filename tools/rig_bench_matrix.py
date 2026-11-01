@@ -36,6 +36,11 @@ BLOCKS = [
        {"FPS": "90", "COUNTS": "20", "EXEC": "numba", "HOLD_S": "3", "STEP_NM": str(nm), "SPEED_FACTOR": str(v)})
       for nm in (20, 50, 100) for v in (1, 0.1)],
     ("ppm1_v01", "rig_accuracy.py", {"FPS": "90", "COUNTS": "20", "EXEC": "numba", "SPEED_FACTOR": "0.1"}),
+    # owner 2026-11-01 22:12: one more focus speed, 1 um/s or the closest the controller takes
+    *[(f"p{nm}_v1um", "rig_accuracy.py",
+       {"FPS": "90", "COUNTS": "20", "EXEC": "numba", "HOLD_S": "3", "STEP_NM": str(nm), "SPEED_MM_S": "0.001"})
+      for nm in (20, 50, 100)],
+    ("ppm1_v1um", "rig_accuracy.py", {"FPS": "90", "COUNTS": "20", "EXEC": "numba", "SPEED_MM_S": "0.001"}),
     ("g90", "gui_rig_isolate.py", {"FPS": "90", **GUI}),
     ("g150", "gui_rig_isolate.py", {"FPS": "150", **GUI}),
     ("g248", "gui_rig_isolate.py", {"FPS": "max", **GUI}),

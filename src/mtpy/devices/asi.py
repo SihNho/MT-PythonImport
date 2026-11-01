@@ -268,16 +268,18 @@ class AsiFocus(Device):
         return _num(self._io().ask("S Z?"), "Z")
 
     def set_speed(self, mm_s):
-        """Z speed in mm/s, at most the speed the session opened with (slower only: the bench of 2026-11-01)."""
+        """Z speed in mm/s, at most the speed the session opened with (slower only: the bench of 2026-11-01). The
+        controller may round a very low speed to its nearest step; the read-back is returned (owner 2026-11-01: "1 um/s
+        or the closest possible") and refused only when it is not a speed in (0, cap]."""
         L = self._io()
         cap = self.speed0 if self.speed0 is not None else self.speed()
         if not (isinstance(mm_s, (int, float)) and 0 < mm_s <= cap):
             raise ValueError(f"ASI Z speed {mm_s!r} mm/s outside (0, {cap}] (the session's opening speed is the cap)")
-        reply = L.ask(f"S Z={float(mm_s):.4f}")
+        reply = L.ask(f"S Z={float(mm_s):.6f}".rstrip("0").rstrip("."))
         if not reply.startswith(":A"):
             raise ValueError(f"ASI S Z: reply {reply!r}")
         got = self.speed()
-        if got is None or abs(got - mm_s) > 1e-3 * max(1.0, mm_s):
+        if got is None or not 0 < got <= cap * (1 + 1e-6):
             raise ValueError(f"ASI Z speed read back {got} after S Z={mm_s}")
         return got
 

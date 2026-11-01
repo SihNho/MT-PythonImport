@@ -38,6 +38,7 @@ COUNTS = [int(c) for c in os.environ.get("COUNTS", "5,10,20").split(",")]
 Z_METHODS = os.environ.get("ZMETHODS", "current,spline,phase_spline").split(",")
 EXECUTORS = [(e, e == "gpu") for e in os.environ.get("EXEC", "numba,gpu").split(",")]
 SPEED_FACTOR = float(os.environ.get("SPEED_FACTOR", "1"))     # focus speed = opening speed x this (1/10 in the bench)
+SPEED_MM_S = float(os.environ["SPEED_MM_S"]) if os.environ.get("SPEED_MM_S") else None   # or an absolute speed (0.001 = 1 um/s)
 STEP_NM = float(os.environ["STEP_NM"]) if os.environ.get("STEP_NM") else None   # staircase of 5 steps up and down
 STAGE = os.environ.get("STAGE", "1") != "0"                   # include the stage xy steps (owner: "motor motion too")
 M.HOLD_S = float(os.environ.get("HOLD_S", "2"))
@@ -217,7 +218,7 @@ def table(rows):
 
 def main():
     os.makedirs(OUT, exist_ok=True)
-    report = {"date": time.strftime("%Y-%m-%d %H:%M:%S"), "cal": CAL or "per frame rate", "speed_factor": SPEED_FACTOR,
+    report = {"date": time.strftime("%Y-%m-%d %H:%M:%S"), "cal": CAL or "per frame rate", "speed_factor": SPEED_FACTOR, "speed_mm_s": SPEED_MM_S,
               "step_nm": STEP_NM, "stage": STAGE, "stage_um": M.STAGE_UM, "executors": [e for e, _ in EXECUTORS], "fps": FPS, "counts": COUNTS, "hold_s": M.HOLD_S,
               "focus_um": M.FOCUS_UM, "magnet_mm": M.MAGNET_MM, "runs": []}
     with events.as_caller("script:rig-accuracy@1"):
@@ -226,8 +227,8 @@ def main():
         roi0 = tuple(report["connect"]["camera"]["settings"]["roi"])
         try:
             report["focus_speed_mm_s"] = speed0 = api.focus.speed()
-            if SPEED_FACTOR != 1:
-                report["focus_speed_set_mm_s"] = api.focus.set_speed(speed0 * SPEED_FACTOR)
+            if SPEED_FACTOR != 1 or SPEED_MM_S:
+                report["focus_speed_set_mm_s"] = api.focus.set_speed(SPEED_MM_S or speed0 * SPEED_FACTOR)
                 say(f"focus speed {speed0} -> {report['focus_speed_set_mm_s']} mm/s")
             if ROI:
                 report["roi"] = api.camera.set_roi(*ROI, confirm=True)
@@ -275,7 +276,7 @@ def main():
                 api.acq.stop()
             try:
                 say("camera rate back:", api.camera.set_rate(rate0, confirm=True))      # initial condition
-                if SPEED_FACTOR != 1:
+                if SPEED_FACTOR != 1 or SPEED_MM_S:
                     say("focus speed back:", api.focus.set_speed(report["focus_speed_mm_s"]))
                 if ROI:
                     say("camera ROI back:", api.camera.set_roi(*roi0, confirm=True))
