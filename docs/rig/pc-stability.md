@@ -42,11 +42,11 @@ A line every 10 s (time, uptime, CPU %, free memory, written through to disk) in
 per 10 s against a 11 ms frame budget met with a ring buffer). Registered by the owner as a logon task:
 
 ```
-schtasks /Create /TN "mtpy pc heartbeat" /TR "\"G:\Codes\LabVIEW2Scr\.venv\Scripts\pythonw.exe\" \"G:\Codes\LabVIEW2Scr\tools\pc_heartbeat.py\"" /SC ONLOGON /F
+schtasks /Create /TN "mtpy pc heartbeat" /TR "G:\Codes\LabVIEW2Scr\.venv\Scripts\pythonw.exe G:\Codes\LabVIEW2Scr\tools\pc_heartbeat.py" /SC ONLOGON /F
 schtasks /Run /TN "mtpy pc heartbeat"
 ```
 
-(Two lines: Windows PowerShell 5.1 has no `&&`.)
+(Two lines, no inner quotes: Windows PowerShell 5.1 has no `&&` and mangles `\"`; the paths have no spaces.)
 
 Reading it after the next death (`python tools/pc_heartbeat.py --report`): 10 s spacing right up to the last line
 = the machine stopped at once (power delivery / board); growing gaps or a CPU spike before the end = it hung or
