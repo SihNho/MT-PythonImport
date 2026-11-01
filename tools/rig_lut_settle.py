@@ -18,7 +18,8 @@ from mtpy import api
 from mtpy.api import events
 from mtpy.gui import zscan
 
-OUT = r"G:\l2s_rig_data\2026-11-01_lut_settle"
+OUT = os.environ.get("OUT", r"G:\l2s_rig_data\2026-11-01_lut_settle")
+Z_METHODS = os.environ.get("ZMETHODS", "current").split(",")     # owner 2026-11-01 (max light): all three
 T.OUT = OUT
 # the sample moved (+54, +7) px between 2026-10-31 23:24 and 2026-11-01 13:53 (the PC rebooted in between);
 # the four beads found again by correlation and refined on the 13:53 frame
@@ -34,6 +35,7 @@ def check_picks():
     finally:
         api.acq.stop()
     np.save(os.path.join(OUT, "frame.npy"), np.clip(np.rint(img), 0, 255).astype(np.uint8))
+    say(f"  frame mean {img.mean():.1f}, max {img.max():.0f}, pixels at 255: {(img >= 254.5).sum()}")
     xy = []
     for x, y in T.PICKS:
         xo, yo, _ = zscan.bead_profile(img, x, y, 120)
@@ -68,10 +70,14 @@ def main():
             ids = list(range(1, len(xy) + 1))
             api.beads.select(ids, cal_path=cal_path)
             roles = {i: "reference" for i in ids}
-            report["runs"].append(T.one_run("piezo_settle_current_numba", "current", False, 0, roles, during=T.piezo_steps))
+            for zm in Z_METHODS:
+                report["runs"].append(T.one_run(f"piezo_settle_{zm}_numba", zm, False, 0, roles, during=T.piezo_steps))
+                T.dump(report, "report.json")
             report["piezo_um"] = T.PIEZO_UM
         except Exception as e:  # noqa: BLE001
             say(f"RESULT session FAILED: {type(e).__name__}: {e}")
+            say("acq status:", json.dumps(api.acq.status(), default=str)[:1200])
+            say("camera:", json.dumps(api.devices.info("camera").get("settings"), default=str)[:400])
             traceback.print_exc()
             report["error"] = f"{type(e).__name__}: {e}"
         finally:

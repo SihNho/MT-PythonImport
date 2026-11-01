@@ -48,3 +48,27 @@ the hysteresis shows (the 1 um step reads 0.95 um going up, 1.03 um coming down)
   an open recording as ended at the last frame (fault list D4).
 - The PI session limits (TMN/TMX) stay in the controller after a kill; the next open sets them again from the safety
   profile; the magnet was at 0 mm and stays there.
+
+## Max light, three Z methods (owner 14:19: light at maximum; "track with all three methods")
+New LUT at the new light (frame mean 115 vs 59; max 195, nothing saturated), 0.2 s settle, 21 s; then the same piezo
+step sequence once per Z method (numba executor), ~4083 frames each at 89.97 Hz, 0 gaps, 0 drops.
+Data `G:\l2s_rig_data6-11-01_lut_maxlight`.
+
+| Z method | slope (4 beads) | rms residual | diff noise x / y / z (nm per frame) | 1 um step up / down (bead 1) | track ms p50 / p99 |
+|---|---|---|---|---|---|
+| current (LabVIEW's) | 0.986 - 0.990 | 49 - 51 nm | 4.2 / 7.4 / 5.0 | 0.94 / 1.12 um | 0.36 / 0.67 |
+| phase_spline | 0.983 - 0.985 | 68 - 71 nm | 4.3 / 8.4 / 5.0 | 0.88 / 1.19 um | 0.46 / 0.98 |
+| spline | 0.970 - 0.977 | 79 - 80 nm | 4.6 / 8.6 / 6.0 | 0.86 / 1.18 um | 0.35 / 0.45 |
+
+- `current` stays the best of the three on this sample: the closest slope, the smallest residual, the lowest noise.
+  The order current > phase_spline > spline holds on every bead.
+- The 100 nm steps differ from run to run (current: +81, +3, +159, +13, +139 nm; phase_spline: +33, +112, +39, +138,
+  +110; spline: +142, +166, -30, +11, +77): the same commanded sequence gives different holds each time, so this is
+  the piezo (small-step hysteresis / creep), not the trackers. The 1 um step also reads short going up and long
+  coming down in all three runs (0.86-0.94 / 1.12-1.19 um; the dim-light run at 13:57 gave 0.95 / 1.03).
+- The slope drop from 0.992-0.994 (13:57, dim light) to 0.986-0.990 (14:21, max light, `current`) is within the
+  run-to-run spread the hysteresis makes; a slope from a single up-down sequence is good to about +-1 %.
+- **One unexplained failure:** the first attempt at 14:19 got 0 frames in 10 s at the first z-scan slice, right after
+  the pick-check acquisition had stopped (frames fine there, 12 saturated pixels at that moment); no device error,
+  no event; the rerun one minute later went through. Open: an IMAQdx restart that delivers nothing after a quick
+  stop / start (fault list candidate; `api.acq.status()` of that moment was not captured - the script now dumps it).

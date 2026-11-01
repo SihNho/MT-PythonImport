@@ -87,7 +87,7 @@ def main():
             continue
         out["runs"][name] = stats(run)
         if name.startswith("piezo"):
-            out["piezo"] = piezo(run, rep)
+            out["piezo"] = out.setdefault("piezo_runs", {})[name] = piezo(run, rep)
     # repeatability: the first bead's mean position across the repeats of each method, and across methods
     by_method = {}
     for name, s in out["runs"].items():
@@ -120,6 +120,9 @@ def main():
               f"{d[0]:6.1f}/{d[1]:5.1f}/{d[2]:6.1f} {[round(v, 3) for v in r['z_mean_um']]!s:>28s} "
               f"{r['x_mean_spread_nm']:5.1f}/{r['y_mean_spread_nm']:5.1f}/{r['z_mean_spread_nm']:5.1f} "
               f"{r['track_ms_p50_median']:5.2f}/{r['track_ms_p99_max']:5.2f}")
+    for pname, pz in out.get("piezo_runs", {}).items():
+        print(f"{pname}: slopes " + ", ".join(f"{f['slope']:.4f}" for f in pz["fit_per_bead"]) + "; rms resid nm "
+              + ", ".join(f"{f['rms_resid_nm']:.0f}" for f in pz["fit_per_bead"]))
     if out.get("piezo"):
         print("piezo: dz_um -> tracked z (um) per bead")
         for h in out["piezo"]["holds"]:
