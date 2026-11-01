@@ -46,6 +46,7 @@ M.FOCUS_UM = ([k * STEP_NM / 1000.0 for k in (0, 1, 2, 3, 4, 5, 4, 3, 2, 1, 0)] 
 M.STAGE_UM = [tuple(int(v) for v in p.split(":")) for p in
               os.environ.get("STAGE_UM", "0:0,1:0,2:0,5:0,0:0,0:1,0:2,0:5,0:0").split(",")]
 M.MAGNET_MM = [float(v) for v in os.environ.get("MAGNET_MM", "0,10,30,0").split(",")]
+LATEST = r"G:\l2s_rig_data\bead_picks_latest.json"    # the owner's four beads where they were last found (full frame)
 say = T.say
 
 
@@ -83,7 +84,14 @@ def make_cal(path):
         img = api.acq.average(10, timeout_s=10)
         np.save(os.path.join(OUT, "frame.npy"), np.clip(np.rint(img), 0, 255).astype(np.uint8))
         origin = np.array(ROI[:2] if ROI else (0, 0), dtype=float)      # bead positions are ROI pixels
-        xy = find_picks(img, [np.array(M.PICKS[i - 1]) - origin for i in PICK_IDS])
+        picks = M.PICKS
+        if os.path.exists(LATEST):              # the beads drift ~15 px/h: start from where they were last found
+            with open(LATEST, encoding="utf-8") as f:
+                picks = json.load(f)["picks"]
+        xy = find_picks(img, [np.array(picks[i - 1]) - origin for i in PICK_IDS])
+        if PICK_IDS == [1, 2, 3, 4]:
+            with open(LATEST, "w", encoding="utf-8") as f:
+                json.dump({"picks": (xy + origin).tolist(), "time": time.strftime("%Y-%m-%d %H:%M:%S")}, f)
         zscan.run(path, xy, slices=60, step_nm=100.0, n_avg=10, cross=120)
         say(f"RESULT z scan done -> {path}; focus back at {api.focus.position():.3f} um")
     finally:
