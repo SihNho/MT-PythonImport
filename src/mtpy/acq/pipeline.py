@@ -123,6 +123,14 @@ def _pct(values, q):
     return float(np.percentile(values, q)) if len(values) else None
 
 
+def _std(values):
+    return float(np.std(values)) if len(values) else None
+
+
+def _max(values):
+    return float(np.max(values)) if len(values) else None
+
+
 class Pipeline:
     """One acquisition run. `source` has the camera's frame path `next_frame(timeout_s)` -> Frame or None.
     The API opens / closes segments around every camera start / stop (`begin_segment`, `end_segment`)."""
@@ -405,8 +413,11 @@ class Pipeline:
                 "camera_gaps": sum(s["camera_gaps"] for s in segs),
                 "pipeline_drops": sum(s["pipeline_drops"] for s in segs),
                 "unknown_loss_segments": sum(s["end_pc_s"] is not None and s["end_loss"] is UNKNOWN for s in segs),
-                "track_ms_p50": _pct(tm, 50), "track_ms_p99": _pct(tm, 99),
-                "latency_ms_p50": _pct(lat, 50), "latency_ms_p99": _pct(lat, 99),
+                # owner 2026-11-01: bench numbers as median / std / slowest 1 % (p99) / max
+                "track_ms_p50": _pct(tm, 50), "track_ms_std": _std(tm), "track_ms_p99": _pct(tm, 99),
+                "track_ms_max": _max(tm),
+                "latency_ms_p50": _pct(lat, 50), "latency_ms_std": _std(lat), "latency_ms_p99": _pct(lat, 99),
+                "latency_ms_max": _max(lat),
                 "ring_fill": len(self.ring), "tracking_errors": self.tracking_errors,
                 "last_tracking_error": self.last_tracking_error, "sink_failures": self.sink_failures,
                 "sink_error": self.sink_error, "camera_error": self.camera_error,

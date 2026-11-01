@@ -139,6 +139,7 @@ def main():
                 ticks = sorted(tick_ms)
                 row = {"beads": n, "gpu": gpu, "condition": c, "frames": st.get("frames_tracked"),
                        "drops": st.get("pipeline_drops"), "track_p50": st.get("track_ms_p50"), "track_p99": st.get("track_ms_p99"),
+                       "track_std": st.get("track_ms_std"), "track_max": st.get("track_ms_max"),
                        "latency_p99": st.get("latency_ms_p99"), "display_updates": st.get("display_updates"),
                        "ticks": len(ticks), "tick_ms_p50": ticks[len(ticks) // 2] if ticks else None,
                        "tick_ms_max": ticks[-1] if ticks else None}
@@ -163,10 +164,11 @@ def main():
         say("engine exited", proc.returncode)
     with open(OUT / "isolate.json", "w", encoding="utf-8") as f:
         json.dump(R, f, indent=1, default=str)
-    say("beads exec  condition    frames drops  track p50/p99   lat p99   GUI tick p50/max ms (n)")
+    say("beads exec  condition    frames drops  track ms median/std/p99/max   lat p99   GUI tick p50/max ms (n)")
     for r in R["runs"]:
         say(f"{r['beads']:4d}  {'gpu' if r['gpu'] else 'numba':5s} {r['condition']:11s} {r['frames']:6d} {r['drops']:5d}  "
-            f"{r['track_p50']:5.2f}/{r['track_p99']:6.2f}   {r['latency_p99']:6.2f}   "
+            f"{r['track_p50']:5.2f}/{r['track_std'] or 0:5.2f}/{r['track_p99']:6.2f}/{r['track_max'] or 0:6.2f}   "
+            f"{r['latency_p99']:6.2f}   "
             f"{r['tick_ms_p50'] or 0:5.1f}/{r['tick_ms_max'] or 0:6.1f} ({r['ticks']})")
 
 

@@ -36,6 +36,12 @@ def say(*a):
     print(time.strftime("%H:%M:%S"), *a, flush=True)
 
 
+def ms4(st, key="track_ms"):
+    """`median/std/p99/max` ms of a status timing (owner 2026-11-01: how bench numbers are shown)."""
+    v = [st.get(f"{key}_{k}") for k in ("p50", "std", "p99", "max")]
+    return "/".join("-" if x is None else f"{x:.2f}" for x in v)
+
+
 def dump(obj, name):
     with open(os.path.join(OUT, name), "w", encoding="utf-8") as f:
         json.dump(obj, f, indent=1, default=str)
@@ -123,10 +129,11 @@ def one_run(name, zm, gpu, seconds, roles, during=None):
             say("  stop also failed:", e2)
         return {"name": name, "z_method": zm, "gpu": gpu, "error": f"{type(e).__name__}: {e}"}
     keep = ("frames_received", "frames_tracked", "fps_measured", "camera_gaps", "pipeline_drops", "track_ms_p50",
-            "track_ms_p99", "latency_ms_p50", "latency_ms_p99", "tracking_errors", "sink_failures", "frames_not_written")
+            "track_ms_std", "track_ms_p99", "track_ms_max", "latency_ms_p50", "latency_ms_std", "latency_ms_p99",
+            "latency_ms_max", "tracking_errors", "sink_failures", "frames_not_written")
     row = {"name": name, "z_method": zm, "gpu": gpu, "wall_s": time.monotonic() - t0, **{k: st.get(k) for k in keep}}
     say(f"RESULT run {name} ({zm}, gpu={gpu}): {row['frames_tracked']} tracked, fps {row['fps_measured']}, gaps "
-        f"{row['camera_gaps']}, drops {row['pipeline_drops']}, track ms p50/p99 {row['track_ms_p50']}/{row['track_ms_p99']}, "
+        f"{row['camera_gaps']}, drops {row['pipeline_drops']}, track ms median/std/p99/max {ms4(row)}, "
         f"errors {row['tracking_errors']}")
     return row
 

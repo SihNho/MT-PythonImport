@@ -44,6 +44,8 @@ or MT-TIRF work. Written 2026-10-24; keep it current when a document is added or
 - [methods/tracking-benchmarks-explained.md](../methods/tracking-benchmarks-explained.md) (+ `.ko.md`) — how the
   tracker works, what was tested, results, error budget, references.
 - [results/](../results/) — raw bench reports.
+- Bench numbers (timings, noise) are given as **median / std / slowest 1 % (p99) / max** (owner 2026-11-01, side
+  chat); `api.acq.status()` carries the four for the tracking time and the latency (`*_p50`, `*_std`, `*_p99`, `*_max`).
 - [literature/reports/](../literature/reports/) — literature survey of tracking methods.
 
 ## 6. Look and feel

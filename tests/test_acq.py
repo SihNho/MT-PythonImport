@@ -499,3 +499,12 @@ def test_frame_tap_sees_every_frame_and_a_failing_tap_does_not_end_the_worker(ca
         time.sleep(0.02)
     assert api.acq.status()["frames_tracked"] > n
 
+
+def test_status_carries_median_std_p99_and_max_of_the_timings(cam):
+    """Owner 2026-11-01 (side chat): bench numbers as median / std / slowest 1 % / max."""
+    api.acq.start()
+    assert api.acq.wait_frames(30, 10)
+    st = api.acq.stop()
+    for key in ("track_ms", "latency_ms"):
+        p50, sd, p99, mx = (st[f"{key}_{k}"] for k in ("p50", "std", "p99", "max"))
+        assert 0 <= p50 <= p99 <= mx and sd >= 0

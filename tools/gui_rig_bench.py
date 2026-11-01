@@ -17,6 +17,7 @@ sys.path.insert(0, r"G:\Codes\LabVIEW2Scr\tools")
 sys.path.insert(0, r"G:\Codes\rig")
 import riglock
 from rig_motion_noise import FOCUS_UM, MAGNET_MM, STAGE_UM, analyze, report_noise
+from rig_refbead_track import ms4
 
 from mtpy import api  # noqa: F401 - rebound to the engine client in CLIENT mode (main)
 
@@ -189,11 +190,12 @@ def main():
                 rec(False)
                 st = acq_stop()
                 keep = ("frames_received", "frames_tracked", "fps_measured", "camera_gaps", "pipeline_drops",
-                        "track_ms_p50", "track_ms_p99", "latency_ms_p50", "latency_ms_p99", "display_updates")
+                        "track_ms_p50", "track_ms_std", "track_ms_p99", "track_ms_max", "latency_ms_p50",
+                        "latency_ms_std", "latency_ms_p99", "latency_ms_max", "display_updates")
                 R["runs"][name] = {k: st.get(k) for k in keep}
                 R["runs"][name]["wall_s"] = time.monotonic() - t0
                 say(f"RESULT {name}: {st.get('frames_tracked')} tracked, gaps {st.get('camera_gaps')}, drops "
-                    f"{st.get('pipeline_drops')}, track ms {st.get('track_ms_p50'):.2f}/{st.get('track_ms_p99'):.2f}, "
+                    f"{st.get('pipeline_drops')}, track ms median/std/p99/max {ms4(st)}, "
                     f"display updates {st.get('display_updates')}")
                 if axis == "stage" and ex == "numba":
                     shot("03_stage_run")
@@ -212,7 +214,7 @@ def main():
                                                           "track_ms_p50", "track_ms_p99", "latency_ms_p50", "latency_ms_p99",
                                                           "display_updates")}
                 say(f"RESULT {name}: {st.get('frames_tracked')} tracked, drops {st.get('pipeline_drops')}, track ms "
-                    f"{st.get('track_ms_p50'):.2f}/{st.get('track_ms_p99'):.2f}, display updates {st.get('display_updates')}")
+                    f"median/std/p99/max {ms4(st)}, display updates {st.get('display_updates')}")
                 if n == 256 and ex == "numba":
                     shot("04_256_beads")
     except Exception as e:  # noqa: BLE001

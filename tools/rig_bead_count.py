@@ -67,14 +67,13 @@ def main():
     report["error_events"] = [{"kind": e.kind, "extra": e.extra} for e in events.events()
                               if e.kind in ("device_error", "refused", "estop")]
     T.dump(report, "report.json")
-    say("beads  exec   frames  fps    gaps drops  track ms p50/p99   latency ms p50/p99  ring  not written")
+    say("beads  exec   frames  fps    gaps drops  track ms median/std/p99/max   latency ms median/std/p99/max  not written")
     for r in report["runs"]:
         if "error" in r:
             say(f"{r['beads']:5d}  {r['name'].split('_')[-1]:5s}  {r['error'][:80]}")
             continue
         say(f"{r['beads']:5d}  {r['name'].split('_')[-1]:5s}  {r['frames_tracked']:6d}  {r['fps_measured']:.2f}  {r['camera_gaps']:4d} "
-            f"{r['pipeline_drops']:5d}  {r['track_ms_p50']:6.2f} / {r['track_ms_p99']:6.2f}   "
-            f"{r['latency_ms_p50']:6.2f} / {r['latency_ms_p99']:6.2f}   {r.get('frames_not_written')}")
+            f"{r['pipeline_drops']:5d}  {T.ms4(r):>28s}   {T.ms4(r, 'latency_ms'):>28s}   {r.get('frames_not_written')}")
     say(json.dumps(report["error_events"], default=str)[:400])
 
 

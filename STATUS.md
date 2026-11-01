@@ -117,6 +117,8 @@ Short and current. Details live in the linked documents; the history is in git a
   (drawing) is the remaining item.
 - **2026-11-01 17:20 (owner: no drawing rework; the plot Hz as a user control):** "Plot refresh" (1-30 Hz, default 10)
   in the plot bar paces the redraw only; the data keep arriving at the display rate.
+- **2026-11-01 17:30 (owner, side chat on how benches are shown):** timings as **median / std / slowest 1 % (p99) / max**;
+  `acq.status()` carries the four for tracking time and latency, the rig tools print them (design/README.md).
 - **Next:** protocols on hardware (force ramps, rotation, 3-state clamp, autofocus), the stop / watchdog paths
   exercised on the rig, then the tethered-bead calibration.
 - **Queued (owner 2026-10-30):** lock the camera settings while a z scan runs (the GUI must not change exposure,
