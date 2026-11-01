@@ -78,3 +78,11 @@ Data `G:\l2s_rig_data\2026-11-01_lut_maxlight`.
   the pick-check acquisition had stopped (frames fine there, 12 saturated pixels at that moment); no device error,
   no event; the rerun one minute later went through. Open: an IMAQdx restart that delivers nothing after a quick
   stop / start (fault list candidate; `api.acq.status()` of that moment was not captured - the script now dumps it).
+
+## Owner's judgement on the beads (same day)
+- Bead 1 is two beads stuck together; bead 4 has a ring radius unlike the others and is a fragment or dust: **both
+  invalid**. Beads 2 and 3 are valid single beads; only their numbers count (their slopes above: 10-31-style scan
+  0.994 / 0.994; max light `current` 0.987 / 0.986, `phase_spline` 0.984 / 0.985, `spline` 0.970 / 0.972).
+- The owner calibrates with the focus set so the ring radius is small: the ring pattern grows linearly with defocus
+  only over a limited range and then flattens. The scans of this page were taken at the focus found after the
+  reboot, not at that setting. The owner sets the focus by hand before the next scan.

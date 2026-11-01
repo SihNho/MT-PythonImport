@@ -82,6 +82,9 @@ Short and current. Details live in the linked documents; the history is in git a
   10-28 offline bench (same frames) stands: the continuous-LUT methods have the smaller slice bias. A fair rig
   test = the same recorded frames through all three. One unexplained 0-frame acquisition restart (rerun fine) is
   open in the results page.
+- **Owner 2026-11-01 (beads):** of the four reference beads 1 (doublet) and 4 (fragment) are invalid, 2 and 3 valid;
+  calibration is done at a focus where the ring radius is small (linear region). The owner sets that focus by hand
+  before the next scan; the fair three-method comparison (same frames) starts from there.
 - **Next:** protocols on hardware (force ramps, rotation, 3-state clamp, autofocus), the stop / watchdog paths
   exercised on the rig, then the tethered-bead calibration.
 - **Queued (owner 2026-10-30):** lock the camera settings while a z scan runs (the GUI must not change exposure,
