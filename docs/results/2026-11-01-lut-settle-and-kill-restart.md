@@ -60,8 +60,14 @@ Data `G:\l2s_rig_data\2026-11-01_lut_maxlight`.
 | phase_spline | 0.983 - 0.985 | 68 - 71 nm | 4.3 / 8.4 / 5.0 | 0.88 / 1.19 um | 0.46 / 0.98 |
 | spline | 0.970 - 0.977 | 79 - 80 nm | 4.6 / 8.6 / 6.0 | 0.86 / 1.18 um | 0.35 / 0.45 |
 
-- `current` stays the best of the three on this sample: the closest slope, the smallest residual, the lowest noise.
-  The order current > phase_spline > spline holds on every bead.
+- **This is not a fair comparison of the three methods** (owner's objection, same day): each method tracked its
+  own piezo run, one after the other, and the piezo's run-to-run variation (the 100 nm holds differ by more than
+  100 nm between runs, below) is larger than the differences between the methods. The residual and the slope
+  therefore mix the tracker with the piezo of that run; only the per-frame noise column compares trackers on
+  nearly equal footing, and there the three are within 0.5 nm of each other, as on 10-31. The controlled
+  comparison stays the 10-28 offline bench (same frames for every method): `spline` / `phase_spline` have the
+  smaller bias between the LUT slices (4.9 vs 7.7 nm), `current` the 5-point quadratic's bias. A fair rig test
+  needs the same frames tracked by all three methods (record the bead windows of one piezo run, track offline).
 - The 100 nm steps differ from run to run (current: +81, +3, +159, +13, +139 nm; phase_spline: +33, +112, +39, +138,
   +110; spline: +142, +166, -30, +11, +77): the same commanded sequence gives different holds each time, so this is
   the piezo (small-step hysteresis / creep), not the trackers. The 1 um step also reads short going up and long

@@ -77,9 +77,11 @@ Short and current. Details live in the linked documents; the history is in git a
   and a STALE lock that the restart refuses by the rules - the owner takes it over by hand after checking the rig
   ([results/2026-11-01-lut-settle-and-kill-restart.md](docs/results/2026-11-01-lut-settle-and-kill-restart.md)).
 - **2026-11-01 14:20 (owner: max light, all three Z methods):** new LUT, piezo steps per method: slopes `current`
-  0.986-0.990 / `phase_spline` 0.983-0.985 / `spline` 0.970-0.977; `current` lowest residual and noise. The 100 nm
-  steps differ run to run (piezo hysteresis, not the trackers). One unexplained 0-frame acquisition restart (rerun
-  fine) is noted as open in the results page.
+  0.986-0.990 / `phase_spline` 0.983-0.985 / `spline` 0.970-0.977 - **not a fair comparison**: each method got its
+  own piezo run and the piezo's run-to-run variation exceeds the method differences (owner's objection). The
+  10-28 offline bench (same frames) stands: the continuous-LUT methods have the smaller slice bias. A fair rig
+  test = the same recorded frames through all three. One unexplained 0-frame acquisition restart (rerun fine) is
+  open in the results page.
 - **Next:** protocols on hardware (force ramps, rotation, 3-state clamp, autofocus), the stop / watchdog paths
   exercised on the rig, then the tethered-bead calibration.
 - **Queued (owner 2026-10-30):** lock the camera settings while a z scan runs (the GUI must not change exposure,
