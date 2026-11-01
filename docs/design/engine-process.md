@@ -83,5 +83,13 @@ client can ask `events.events()` for the history).
    a Motion, two error classes, acquisition with recording, the snapshot through shared memory, the event stream and
    the exit with cleanup against a launched engine. Not yet: the API suite parametrised over both modes (the one
    engine test covers the representative calls).
-2. the GUI on the client; the GUI tests green; the shutdown dialog through the client.
+2. the GUI on the client - **done 2026-11-01**: `gui.app.use_client(client)` rebinds `api` / `events` / `estop` /
+   `safety` of the window and of the shutdown sequence to the client (`use_inprocess()` for the tests); the z scan
+   moved into the API (`mtpy.api.zscan`, `progress()` polled by the window at 2 Hz; `gui/zscan.py` re-exports);
+   module constants the window read became calls (`devices.default_mode()`, `devices.close_order()`);
+   `python -m mtpy.gui` launches the engine for the real backends (`--engine` / `--no-engine`) and ends it after the
+   window closes. `tests/test_gui_client.py`: connect, display from the snapshot, picks + z scan in the engine,
+   bead selection, recording, Disconnect through the shutdown sequence, all on a launched engine. Found on the
+   way: a result the wire cannot pickle (the read-only safety profile) silently ended the engine's sender thread -
+   results are made plain and checked before sending, a sender failure answers with an error instead of dying.
 3. the rig: tools/gui_rig_bench.py and gui_rig_isolate.py repeated through the client; acceptance of 0029 item 7.

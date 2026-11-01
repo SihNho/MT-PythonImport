@@ -50,8 +50,25 @@ from mtpy.api import estop, events, safety
 from mtpy.lvfiles import read_cal
 from mtpy.track import Z_METHODS
 
+from . import shutdown as _shutdown
 from . import zscan
 from .shutdown import run_shutdown
+
+
+def use_client(client):
+    """Decision 0029: run the window as a client of an engine process. Every `api.` / `events.` / `estop.` /
+    `safety.` name in this module and in the shutdown sequence becomes the client's; nothing else changes."""
+    global api, events, estop, safety
+    api, events, estop, safety = client.api, client.events, client.api.estop, client.api.safety
+    _shutdown.api, _shutdown.events = client.api, client.events
+
+
+def use_inprocess():
+    """Back to the in-process API (tests)."""
+    global api, events, estop, safety
+    from mtpy import api as a
+    api, events, estop, safety = a, a.events, a.estop, a.safety
+    _shutdown.api, _shutdown.events = a, a.events
 
 pg.setConfigOptions(imageAxisOrder="row-major", background="k", foreground="w")
 
@@ -313,7 +330,7 @@ class MainWindow(QMainWindow):
         self.mode = QComboBox()          # owner 2026-10-30: MT and MT-TIRF are distinct modes of the program
         self.mode.addItem("MT: tracking (JAI, motors)", "MT")
         self.mode.addItem("MT-TIRF: tracking + EMCCD, Arduino sync, lasers, light gating (phase 10a)", "MT-TIRF")
-        self.mode.setCurrentIndex(self.mode.findData(api.devices.DEFAULT_MODE))
+        self.mode.setCurrentIndex(self.mode.findData(api.devices.default_mode()))
         self.mode.currentIndexChanged.connect(self._apply_mode)
         f.addRow("Mode", self.mode)
         self.cam_sdk = QComboBox()       # owner 2026-11-01: the JAI's SDK is chosen here; it must match the USB3 Vision driver bound
@@ -946,8 +963,7 @@ class MainWindow(QMainWindow):
         self.cal_status.setText("running...")
 
         def job():
-            return zscan.run(path, xy, slices, step, avg, cross, settle_s=settle,
-                             progress=lambda i, n: self.cal_status.setText(f"slice {i} / {n}"))
+            return api.zscan.run(str(path), xy.tolist(), slices, step, avg, cross, settle_s=settle)
 
         def done(cal):
             self.cal_status.setText(f"done: {len(cal['xy'])} beads, {slices} slices x {step:.0f} nm -> {path}")
@@ -1099,6 +1115,11 @@ class MainWindow(QMainWindow):
             st = api.devices.status()
         except Exception:  # noqa: BLE001
             st = {}
+        if self.cal_status.text().startswith(("running", "slice")):
+            with contextlib.suppress(Exception):
+                i, n = api.zscan.progress()
+                if n:
+                    self.cal_status.setText(f"slice {i} / {n}")
         if st and st.get("magnet", {}).get("state") == "connected":
             try:
                 self._mag = api.magnet.position()

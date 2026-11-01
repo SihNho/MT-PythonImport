@@ -27,7 +27,8 @@ def steps():
     st = api.devices.status()
     out = [("stop the protocol", lambda: api.protocol.running() and (api.protocol.stop(), api.protocol.wait(10))),
            ("stop acquisition (recording closed)", lambda: api.acq.running() and api.acq.stop())]
-    names = [n for n in api.devices.CLOSE_ORDER if n in st] + [n for n in st if n not in api.devices.CLOSE_ORDER]
+    order = api.devices.close_order()
+    names = [n for n in order if n in st] + [n for n in st if n not in order]
     notes = {"magnet": " (home 0 mm, limits released)", "stage": " (limits released)",
              "emccd": " (shutter closed, warm-up through the set point to -20 C: minutes, ShutDown)"}
     out += [(f"close {n}{notes.get(n, '')}", lambda n=n: api.devices.close(n)) for n in names]

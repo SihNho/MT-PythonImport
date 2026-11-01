@@ -26,11 +26,11 @@ owner change): `end protocol` ends the run only; it no longer switches the MT re
 from . import errors, estop, events, safety  # noqa: I001 - must load before the device groups (they import them)
 from . import camera, devices, emccd, focus, light, magnet, rig, rotor, stage, sync
 from . import acq, beads, data, tracking
-from . import protocol
+from . import protocol, zscan
 from .errors import DeviceError, MagnetStall, MtpyError, NotReady, SafetyRefused, ScriptError, Timeout
 
 VERSION = "0.10.1"
 
 __all__ = ["VERSION", "DeviceError", "MagnetStall", "MtpyError", "NotReady", "SafetyRefused", "ScriptError", "Timeout",
            "acq", "beads", "camera", "data", "devices", "emccd", "errors", "estop", "events", "focus", "light", "magnet",
-           "protocol", "rig", "rotor", "safety", "stage", "sync", "tracking"]
+           "protocol", "rig", "rotor", "safety", "stage", "sync", "tracking", "zscan"]

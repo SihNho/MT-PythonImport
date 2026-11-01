@@ -8,8 +8,10 @@ A `Motion` the API returns is kept in a table and handed over as `("motion", id,
 first call, and holds the rig lock as in-process (0026). On exit with devices still open the engine runs
 `api.devices.disconnect()` (cleanup rule).
 """
+import contextlib
 import json
 import os
+import pickle
 import queue
 import struct
 import threading
@@ -17,6 +19,7 @@ import time
 from concurrent.futures import ThreadPoolExecutor
 from multiprocessing import shared_memory
 from multiprocessing.connection import Listener
+from types import MappingProxyType
 
 import numpy as np
 
@@ -122,6 +125,10 @@ class Engine:
                         conn.send(msg)
                 except (OSError, EOFError, ValueError):
                     return
+                except Exception as e:  # noqa: BLE001 - one unpicklable message (an event's extra) must not end the link
+                    if msg[0] != "event":
+                        with lock, contextlib.suppress(Exception):
+                            conn.send(("err", msg[1], type(e).__name__, f"reply not picklable: {e}"))
         threading.Thread(target=sender, name="engine-send", daemon=True).start()
         unsubscribe = events.subscribe(lambda ev: send(("event", ev)))
         try:
@@ -141,7 +148,9 @@ class Engine:
         try:
             with events.as_caller(caller):
                 result = self._dispatch(name, args, kwargs)
-            send(("ok", seq, self._wrap(result)))
+            result = _plain(self._wrap(result))
+            pickle.dumps(result)                       # a result the wire cannot carry is an error, not a lost reply
+            send(("ok", seq, result))
         except BaseException as e:  # noqa: BLE001 - every failure crosses the wire as the exception's class + text
             send(("err", seq, type(e).__name__, str(e)))
 
@@ -191,6 +200,15 @@ class Engine:
             self.pool.shutdown(wait=False)
             if os.path.exists(INFO_FILE):
                 os.remove(INFO_FILE)
+
+
+def _plain(x):
+    """Read-only mappings (safety.profile()) and tuples of them become plain dicts / lists for the wire."""
+    if isinstance(x, MappingProxyType | dict):
+        return {k: _plain(v) for k, v in x.items()}
+    if isinstance(x, list | tuple) and not (isinstance(x, tuple) and x and x[0] == "motion"):
+        return type(x)(_plain(v) for v in x)
+    return x
 
 
 def serve(address=("127.0.0.1", 0)):

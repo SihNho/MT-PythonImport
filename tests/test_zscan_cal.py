@@ -42,7 +42,7 @@ def test_select_refuses_an_empty_band(tmp_path):
 
 
 def test_zscan_writes_the_band_not_the_position(sim, tmp_path, monkeypatch):
-    from mtpy.gui import zscan
+    from mtpy.api import zscan
     frames = iter([np.full((1024, 1280), 100.0) + k for k in range(200)])
     monkeypatch.setattr(api.acq, "average", lambda n, timeout_s=10.0: next(frames))
 
@@ -62,7 +62,7 @@ def test_zscan_writes_the_band_not_the_position(sim, tmp_path, monkeypatch):
 
 def test_zscan_refuses_an_empty_pick_list(tmp_path):
     """Rig 2026-10-31: an empty pick list scanned 60 slices and then crashed in write_cal; refuse before any move."""
-    from mtpy.gui import zscan
+    from mtpy.api import zscan
     with pytest.raises(ValueError, match="no bead positions"):
         zscan.run(tmp_path / "cal_none", [], slices=5, n_avg=1)
 
@@ -70,8 +70,8 @@ def test_zscan_refuses_an_empty_pick_list(tmp_path):
 def test_zscan_locks_the_camera_settings_while_it_runs(sim, tmp_path, monkeypatch):
     """Fault list P5 / G5 (owner 2026-10-30): a .cal must come from one camera setting; every camera change is
     refused while the scan runs and allowed again afterwards (also after a failed scan)."""
+    from mtpy.api import zscan
     from mtpy.api.errors import SafetyRefused
-    from mtpy.gui import zscan
     seen = []
 
     def average(n, timeout_s=10.0):

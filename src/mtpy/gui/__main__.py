@@ -9,6 +9,8 @@
 --sim-dev   SIMULATOR ONLY: work on a copy of config/ whose focus and rotor limits are TEST values (as the tests do),
             so the whole flow - z scan included - runs without the rig; the shipped config is never written
 --screenshot  save a picture of the window after 3 s and quit (smoke test)
+--engine / --no-engine  run the API in an engine process and the window as its client (decision 0029); the default
+            is --engine for the real backends and --no-engine for sim
 """
 import argparse
 import json
@@ -47,12 +49,20 @@ def main(argv=None):
     ap.add_argument("--sim-dev", action="store_true")
     ap.add_argument("--backend", choices=("sim", "real", "real-motors"), default="sim")
     ap.add_argument("--screenshot", default=None)
+    ap.add_argument("--engine", action=argparse.BooleanOptionalAction, default=None)
     a = ap.parse_args(argv)
     from PySide6.QtCore import QTimer
     from PySide6.QtWidgets import QApplication
 
     from .app import MainWindow
     cfg = sim_dev_config() if a.sim_dev else None
+    client = proc = None
+    if a.engine if a.engine is not None else a.backend != "sim":
+        from mtpy.client import launch
+
+        from . import app as gui_app
+        client, proc = launch(config=cfg)
+        gui_app.use_client(client)
     app = QApplication(sys.argv[:1])
     w = MainWindow(fixture=a.fixture, out=a.out, sim_dev=cfg, backend=a.backend)
     w.show()
@@ -63,6 +73,11 @@ def main(argv=None):
             app.quit()
         QTimer.singleShot(3000, shot)
     rc = app.exec()
+    if client is not None:
+        try:
+            client.exit_engine()           # after the shutdown sequence; the engine's own cleanup covers "close anyway"
+        finally:
+            proc.wait(120)
     if cfg is not None:
         shutil.rmtree(cfg.parent, ignore_errors=True)
     return rc

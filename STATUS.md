@@ -107,6 +107,10 @@ Short and current. Details live in the linked documents; the history is in git a
   listener, Motion handles, event stream, shared-memory display snapshot, cleanup on exit) and `mtpy.client` (`api`
   proxy with the same names, `events` replay, snapshot reader, watchdog ping, launch / connect); `tests/test_engine.py`
   on the simulator. Next steps of 0029: the GUI on the client, then the rig bench as acceptance.
+- **2026-11-01 17:30 (owner "2단계 진행"): 0029 step 2 done** - the window runs as a client (`gui.app.use_client`), the
+  z scan is an API function run in the engine, `python -m mtpy.gui` launches the engine for the real backends;
+  `tests/test_gui_client.py` drives the whole flow on a launched engine. 301 tests. Step 3 (the rig bench through
+  the client, acceptance of 0029) is next.
 - **Next:** protocols on hardware (force ramps, rotation, 3-state clamp, autofocus), the stop / watchdog paths
   exercised on the rig, then the tethered-bead calibration.
 - **Queued (owner 2026-10-30):** lock the camera settings while a z scan runs (the GUI must not change exposure,

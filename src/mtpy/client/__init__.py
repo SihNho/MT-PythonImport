@@ -28,7 +28,7 @@ from mtpy.api import errors
 from mtpy.engine import GOOD_OFF, HEADER, HEADER_SIZE, IMG_OFF, INFO_FILE, XYZ_OFF
 
 API_MODULES = ("acq", "beads", "camera", "data", "devices", "emccd", "estop", "focus", "light", "magnet", "protocol",
-               "rig", "rotor", "safety", "stage", "sync", "tracking")
+               "rig", "rotor", "safety", "stage", "sync", "tracking", "zscan")
 
 
 class EngineError(errors.MtpyError):
@@ -170,7 +170,7 @@ class Client:
             return r
         cls_name, text = rest
         cls = getattr(errors, cls_name, None) or {"ValueError": ValueError, "TypeError": TypeError,
-                                                  "KeyError": KeyError, "AttributeError": AttributeError,
+                                                  "KeyError": KeyError, "AttributeError": AttributeError, "IndexError": IndexError,
                                                   "RuntimeError": RuntimeError, "TimeoutError": TimeoutError,
                                                   "FileNotFoundError": FileNotFoundError}.get(cls_name, EngineError)
         raise cls(text)

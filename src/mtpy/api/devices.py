@@ -17,6 +17,16 @@ from .errors import DeviceError, NotReady
 
 _services = {}
 CLOSE_ORDER = ("magnet", "rotor", "stage", "focus", "emccd", "camera", "arduino", "light")   # docs/design/shutdown.md
+
+
+def default_mode():
+    """DEFAULT_MODE as a call (the GUI client cannot read module attributes)."""
+    return DEFAULT_MODE
+
+
+def close_order():
+    """CLOSE_ORDER as a call (the GUI client cannot read module attributes)."""
+    return list(CLOSE_ORDER)
 # Owner 2026-10-30: "MT, MT-TIRF 모드 구분이 필요함" / "Arduino는 mt-tirf 용도". MT = tracking alone (the JAI and
 # the motors); MT-TIRF = everything (plan phase 10a: the iXon, the Arduino sync box, the lasers / light gating). The
 # mode chooses which devices a connect opens and is written into every run file; the default keeps today's behaviour.
