@@ -70,8 +70,12 @@ Short and current. Details live in the linked documents; the history is in git a
   recording off), D13 (dead camera thread visible), D6 (e-stop reason shown), D4 (atexit closes the run file; the
   lock refusal names the recovery) fixed with tests. Open from the owner: item 1 (40.9 mm travel, at the lab),
   item 3 decided ("0.2초로 넣어": 0.2 s settle per slice in `zscan.run`, a Calibrate field; the slope re-check with a
-  new LUT is still to run on the rig), item 5 (eBUS extras when the MT experiment is fixed, selectable in
+  new LUT **verified 13:57: slope 0.992-0.994**, results/2026-11-01-lut-settle-and-kill-restart.md), item 5 (eBUS extras when the MT experiment is fixed, selectable in
   the GUI), then a UI/UX discussion.
+- **2026-11-01 13:50 (the PC rebooted without a clean shutdown at 07:53, cause unknown, nothing of ours running):**
+  all eight devices reconnect cleanly; a program killed while recording leaves a readable run file (526 / 545 frames)
+  and a STALE lock that the restart refuses by the rules - the owner takes it over by hand after checking the rig
+  ([results/2026-11-01-lut-settle-and-kill-restart.md](docs/results/2026-11-01-lut-settle-and-kill-restart.md)).
 - **Next:** protocols on hardware (force ramps, rotation, 3-state clamp, autofocus), the stop / watchdog paths
   exercised on the rig, then the tethered-bead calibration.
 - **Queued (owner 2026-10-30):** lock the camera settings while a z scan runs (the GUI must not change exposure,
