@@ -29,7 +29,7 @@ from ..base import IMMEDIATE, NEEDS_PAUSE, Device
 
 SENSOR_W, SENSOR_H = 1280, 1024          # binned 2 x 2
 DEFAULTS = {"exposure_ms": 1.909, "gain_dB": 0.0, "rate_Hz": 1e6 / 11111, "roi": (0, 0, SENSOR_W, SENSOR_H)}
-RATE_MAX_HZ = 247.9544                   # at 1280 x 1024; shortcut: the same cap for every ROI, refine with the driver
+RATE_MAX_HZ = 247.9544                   # at 1280 x 1024; the simulator's cap for every ROI (jai.py asks the driver)
 GAIN_DB = (0.0, 24.0)                    # sim range only: the JAI gain range is not in docs/manuals yet
 
 

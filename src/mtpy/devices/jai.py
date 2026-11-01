@@ -18,6 +18,7 @@ import sys
 import threading
 import time
 
+from ..api.errors import SafetyRefused
 from .base import NEEDS_PAUSE, Device
 from .imaqdx import ACQ, F64, I64, IMG, STR, A, ImaqdxCamera
 from .sim.camera import Frame, SimCamera
@@ -45,7 +46,26 @@ class JaiCamera(Device):
     timestamp_source = "PC receive time (s since acquisition start; the JAI has no hardware timestamp, 0005)"
     settings_kinds = SimCamera.settings_kinds
     open_timeout_s = 30.0                   # IMAQdxOpenCamera reloads the .icd and took > 5 s on the rig (2026-10-29)
-    check_setting, tol, limits = SimCamera.check_setting, SimCamera.tol, SimCamera.limits
+    tol = SimCamera.tol
+    _rate_max = None                        # the driver's frame-rate cap at the ROI in force, read by settings()
+
+    def limits(self):
+        lim = dict(SimCamera.limits(self))
+        if self._rate_max:
+            lim["rate_Hz"] = (1.0, self._rate_max)
+        return lim
+
+    def check_setting(self, name, value, rate_Hz, exposure_ms):
+        """As the simulator, except the rate cap: the camera's own maximum at the ROI in force (owner 2026-11-01:
+        the maximum rate of a half-size ROI; the simulator keeps one cap for every ROI)."""
+        if name == "rate_Hz" and self._rate_max:
+            if not (isinstance(value, (int, float)) and not isinstance(value, bool) and 1.0 <= value <= self._rate_max):
+                raise SafetyRefused(f"camera rate {value!r} Hz is outside [1, {self._rate_max:.4f}] Hz at this ROI")
+            if 1000.0 / value < exposure_ms:
+                raise SafetyRefused(f"camera rate {value:g} Hz: frame period {1000.0 / value:.4f} ms is shorter than "
+                                    f"the exposure {exposure_ms:g} ms; shorten the exposure first")
+            return
+        SimCamera.check_setting(self, name, value, rate_Hz, exposure_ms)
 
     def __init__(self, ring_size=64):
         self.cam = None
@@ -78,6 +98,7 @@ class JaiCamera(Device):
 
     def settings(self):
         c = self._io()
+        self._rate_max = c.get_max(ACQ + "AcquisitionFrameRate", F64)
         return {"exposure_ms": c.get(ACQ + "ExposureTime", F64) / 1000.0, "gain_dB": c.get(GAIN, F64),
                 "rate_Hz": c.get(ACQ + "AcquisitionFrameRate", F64),
                 "roi": tuple(int(c.get(IMG + k, I64)) for k in ("OffsetX", "OffsetY", "Width", "Height")),

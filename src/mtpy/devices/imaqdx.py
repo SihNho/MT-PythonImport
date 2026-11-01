@@ -66,6 +66,12 @@ class ImaqdxCamera:
         self._ok(self.dx.IMAQdxGetAttribute(self.sess, name.encode(), C.c_uint32(t), C.byref(v)), f"get {name}")
         return v.value
 
+    def get_max(self, name, t):
+        """The driver's maximum of a numeric attribute now (the frame-rate cap depends on the ROI)."""
+        v = C.c_double() if t == F64 else C.c_int64()
+        self._ok(self.dx.IMAQdxGetAttributeMaximum(self.sess, name.encode(), C.c_uint32(t), C.byref(v)), f"max {name}")
+        return v.value
+
     def set(self, name, t, value):
         arg = {STR: lambda v: v.encode(), F64: C.c_double, I64: C.c_int64}[t](value)
         self._ok(self.dx.IMAQdxSetAttribute(self.sess, name.encode(), C.c_uint32(t), arg), f"set {name}")

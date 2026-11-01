@@ -203,6 +203,7 @@ class AsiFocus(Device):
         L = self.line or _line(self.port_name)
         sl, su = self._zlimits(L)
         self.line, self.window = L, (sl / UNIT_MM, su / UNIT_MM)
+        self.speed0 = self.speed()              # the session's initial speed: the cap of set_speed, restored at close
 
     def close(self):
         L = self.line
@@ -211,6 +212,8 @@ class AsiFocus(Device):
         sl, su = self._zlimits(L)
         if abs(sl / UNIT_MM - self.window[0]) > 5 or abs(su / UNIT_MM - self.window[1]) > 5:
             raise ConnectionError(f"ASI SL/SU Z changed during the session: {sl} / {su} mm")   # port kept for the retry (D1)
+        if self.speed0 is not None and self.speed() != self.speed0:
+            self.set_speed(self.speed0)         # initial condition (RULES.md 3)
         self.line, self.window = None, None
         _release(L)
 
@@ -258,8 +261,25 @@ class AsiFocus(Device):
             raise ValueError(f"ASI Z={z} outside SL/SU Z; halt sent")
         return "B" in L.ask("/")
 
+    speed0 = None
+
     def speed(self):
-        return float("nan")                  # not read: the API never checks a focus speed
+        """Z speed in mm/s (Tiger `S Z?`)."""
+        return _num(self._io().ask("S Z?"), "Z")
+
+    def set_speed(self, mm_s):
+        """Z speed in mm/s, at most the speed the session opened with (slower only: the bench of 2026-11-01)."""
+        L = self._io()
+        cap = self.speed0 if self.speed0 is not None else self.speed()
+        if not (isinstance(mm_s, (int, float)) and 0 < mm_s <= cap):
+            raise ValueError(f"ASI Z speed {mm_s!r} mm/s outside (0, {cap}] (the session's opening speed is the cap)")
+        reply = L.ask(f"S Z={float(mm_s):.4f}")
+        if not reply.startswith(":A"):
+            raise ValueError(f"ASI S Z: reply {reply!r}")
+        got = self.speed()
+        if got is None or abs(got - mm_s) > 1e-3 * max(1.0, mm_s):
+            raise ValueError(f"ASI Z speed read back {got} after S Z={mm_s}")
+        return got
 
     def position(self):
         return self._z_units(self._io()) / 10.0

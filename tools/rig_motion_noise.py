@@ -28,6 +28,7 @@ T.OUT = OUT
 PICKS = [(1074.06, 573.43), (679.15, 704.65), (563.62, 793.33), (429.28, 478.23)]   # owner's beads 1, 13, 11, 8 (15:02)
 NM_PX = 203.0
 HOLD_S = 3.0
+SLEEP = time.sleep                       # rig_accuracy / gui_rig_isolate rebind it to a Qt-pumping wait
 FOCUS_UM = [0.0, 0.5, 1.0, 0.5, 0.0, -0.5, -1.0, -0.5, 0.0]
 STAGE_UM = [(0, 0), (1, 0), (2, 0), (5, 0), (2, 0), (0, 0), (0, 1), (0, 2), (0, 5), (0, 2), (0, 0), (-5, 0), (0, 0),
             (0, -5), (0, 0)]
@@ -59,7 +60,7 @@ def focus_steps():
         for dz in FOCUS_UM:
             got = api.focus.move_to(z0 + dz).wait(10)
             api.acq.mark(f"focus {dz:+.2f} um (read back {got})")
-            time.sleep(HOLD_S)
+            SLEEP(HOLD_S)
     finally:
         api.focus.move_to(z0).wait(10)
         api.acq.mark("focus back to start")
@@ -71,7 +72,7 @@ def stage_steps():
         for dx, dy in STAGE_UM:
             got = api.stage.move_to(x0 + dx / 1000.0, y0 + dy / 1000.0).wait(10)
             api.acq.mark(f"stage {dx:+d} {dy:+d} um (read back {got})")
-            time.sleep(HOLD_S)
+            SLEEP(HOLD_S)
     finally:
         api.stage.move_to(x0, y0).wait(10)
         api.acq.mark("stage back to start")
@@ -82,7 +83,7 @@ def magnet_steps():
         for p in MAGNET_MM:
             got = api.magnet.move_to(p).wait(30)
             api.acq.mark(f"magnet {p:+.1f} mm (read back {got})")
-            time.sleep(HOLD_S)
+            SLEEP(HOLD_S)
     finally:
         api.magnet.move_to(0.0).wait(30)
         api.acq.mark("magnet back to start")

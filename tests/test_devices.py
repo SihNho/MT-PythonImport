@@ -873,6 +873,9 @@ class _FakeImaqdx:
     def get(self, n, t):
         return self.a[n]
 
+    def get_max(self, n, t):
+        return 247.9544                      # the full-frame cap; the real driver's depends on the ROI
+
     def set(self, n, t, v):
         self.a[n] = 1e6 / round(1e6 / v) if n == self.rate_key else v     # 1 us period steps, as the camera
 
@@ -1052,3 +1055,14 @@ def test_touch_position_is_fixed_while_a_protocol_runs(monkeypatch):
     with pytest.raises(SafetyRefused, match="while a protocol runs"):
         api.magnet.set_touch_position(40.0)
     assert [e.kind for e in events.events()[n0:]] == ["refused"]
+
+
+def test_focus_speed_is_read_and_set_through_the_api(rig):
+    """Owner 2026-11-01: the bench runs the focus at its current speed and at a tenth of it."""
+    s0 = api.focus.speed()
+    assert s0 > 0
+    assert api.focus.set_speed(s0 / 10) == pytest.approx(s0 / 10)
+    assert api.focus.speed() == pytest.approx(s0 / 10)
+    with pytest.raises(ValueError):
+        api.focus.set_speed(0)
+    api.focus.set_speed(s0)

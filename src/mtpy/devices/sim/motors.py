@@ -96,6 +96,13 @@ class SimMotor(Device):
         self._io()
         self.axis.move_to(target, speed)
 
+    def set_speed(self, speed):
+        self._io()
+        if not (isinstance(speed, (int, float)) and speed > 0):
+            raise ValueError(f"speed {speed!r} must be > 0")
+        self.axis.speed = float(speed)
+        return self.axis.speed
+
     def moving(self):
         self._io()
         return self.axis.moving()

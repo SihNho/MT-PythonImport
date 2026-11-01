@@ -130,7 +130,7 @@ def one_run(name, zm, gpu, seconds, roles, during=None):
         return {"name": name, "z_method": zm, "gpu": gpu, "error": f"{type(e).__name__}: {e}"}
     keep = ("frames_received", "frames_tracked", "fps_measured", "camera_gaps", "pipeline_drops", "track_ms_p50",
             "track_ms_std", "track_ms_p99", "track_ms_max", "latency_ms_p50", "latency_ms_std", "latency_ms_p99",
-            "latency_ms_max", "tracking_errors", "sink_failures", "frames_not_written")
+            "latency_ms_max", "tracking_errors", "sink_failures", "frames_not_written", "camera_error")
     row = {"name": name, "z_method": zm, "gpu": gpu, "wall_s": time.monotonic() - t0, **{k: st.get(k) for k in keep}}
     say(f"RESULT run {name} ({zm}, gpu={gpu}): {row['frames_tracked']} tracked, fps {row['fps_measured']}, gaps "
         f"{row['camera_gaps']}, drops {row['pipeline_drops']}, track ms median/std/p99/max {ms4(row)}, "
