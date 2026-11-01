@@ -52,7 +52,7 @@ the hysteresis shows (the 1 um step reads 0.95 um going up, 1.03 um coming down)
 ## Max light, three Z methods (owner 14:19: light at maximum; "track with all three methods")
 New LUT at the new light (frame mean 115 vs 59; max 195, nothing saturated), 0.2 s settle, 21 s; then the same piezo
 step sequence once per Z method (numba executor), ~4083 frames each at 89.97 Hz, 0 gaps, 0 drops.
-Data `G:\l2s_rig_data6-11-01_lut_maxlight`.
+Data .
 
 | Z method | slope (4 beads) | rms residual | diff noise x / y / z (nm per frame) | 1 um step up / down (bead 1) | track ms p50 / p99 |
 |---|---|---|---|---|---|
