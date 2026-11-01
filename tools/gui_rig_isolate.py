@@ -21,7 +21,12 @@ CLIENT = bool(os.environ.get("CLIENT"))          # decision 0029 step 3: the win
 OUT = Path(os.environ.get("OUT", r"G:\l2s_rig_data\2026-11-01_gui_isolate"))
 COUNT_CALS = Path(os.environ.get("COUNT_CALS", r"G:\l2s_rig_data\2026-11-01_bead_count"))
 RUN_S = float(os.environ.get("RUN_S", "10"))
-CASES = [(int(c.split(":")[0]), c.split(":")[1] == "gpu") for c in os.environ.get("CASES", "4:numba,256:numba,256:gpu").split(",")]
+def _case(c):
+    n, ex, *zm = c.split(":")
+    return int(n), ex == "gpu", (zm[0] if zm else "current")
+
+
+CASES = [_case(c) for c in os.environ.get("CASES", "4:numba,256:numba,256:gpu").split(",")]   # n:exec[:z_method]
 CONDITIONS = tuple(os.environ.get("CONDITIONS", "normal,display_off,no_plot,no_log,timers_off").split(","))
 R = {"runs": []}
 
@@ -121,11 +126,12 @@ def main():
         w._connect()
         until(lambda: "/ 8" in w.dev_summary.text() and not w._workers, 120, "connect")
         say("connected:", w.dev_summary.text())
-        for n, gpu in CASES:
+        for n, gpu, zm in CASES:
             if not select_from_cal(COUNT_CALS / f"cal_{n}", n):
                 raise RuntimeError(f"selection of {n} beads failed")
+            w.z_method.setCurrentText(zm)
             for c in CONDITIONS:
-                name = f"iso_{n}_{'gpu' if gpu else 'numba'}_{c}"
+                name = f"iso_{n}_{zm}_{'gpu' if gpu else 'numba'}_{c}"
                 set_condition(c)
                 tick_ms.clear()
                 if not acq_start(name, gpu):
@@ -137,7 +143,7 @@ def main():
                 st = acq_stop()
                 set_condition("normal")
                 ticks = sorted(tick_ms)
-                row = {"beads": n, "gpu": gpu, "condition": c, "frames": st.get("frames_tracked"),
+                row = {"beads": n, "gpu": gpu, "z_method": zm, "condition": c, "frames": st.get("frames_tracked"),
                        "drops": st.get("pipeline_drops"), "track_p50": st.get("track_ms_p50"), "track_p99": st.get("track_ms_p99"),
                        "track_std": st.get("track_ms_std"), "track_max": st.get("track_ms_max"),
                        "latency_p99": st.get("latency_ms_p99"), "display_updates": st.get("display_updates"),
@@ -164,9 +170,9 @@ def main():
         say("engine exited", proc.returncode)
     with open(OUT / "isolate.json", "w", encoding="utf-8") as f:
         json.dump(R, f, indent=1, default=str)
-    say("beads exec  condition    frames drops  track ms median/std/p99/max   lat p99   GUI tick p50/max ms (n)")
+    say("beads z method      exec  condition    frames drops  track ms median/std/p99/max   lat p99   GUI tick p50/max ms (n)")
     for r in R["runs"]:
-        say(f"{r['beads']:4d}  {'gpu' if r['gpu'] else 'numba':5s} {r['condition']:11s} {r['frames']:6d} {r['drops']:5d}  "
+        say(f"{r['beads']:4d}  {r.get('z_method', 'current'):12s} {'gpu' if r['gpu'] else 'numba':5s} {r['condition']:11s} {r['frames']:6d} {r['drops']:5d}  "
             f"{r['track_p50']:5.2f}/{r['track_std'] or 0:5.2f}/{r['track_p99']:6.2f}/{r['track_max'] or 0:6.2f}   "
             f"{r['latency_p99']:6.2f}   "
             f"{r['tick_ms_p50'] or 0:5.1f}/{r['tick_ms_max'] or 0:6.1f} ({r['ticks']})")

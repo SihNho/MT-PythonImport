@@ -145,3 +145,43 @@ Windows does not give either way) or for far more beads at far higher rates than
 - **Acceptance of 0029 item 7 met:** p50 / p99 under the GUI within 20 % of the script at 4 and 256 beads, numba
   (10 threads) and GPU; shutdown through the dialog released the lock; the engine exited 0.
 
+## 5 / 10 / 20 beads x 3 Z methods x 2 executors (17:34-17:47; owner: "so we can guess how far the hardware goes")
+Pipeline alone (tools/rig_bead_count.py, 15 s each) and under the client GUI (tools/gui_rig_isolate.py CLIENT=1, 10 s
+each, plot at 10 Hz); 90 Hz, the owner's four beads copied to the count; 0 drops and 0 gaps in all 36 runs.
+Numbers: median / std / slowest 1 % (p99) / max of the per-frame tracking time, ms (frame budget 11.1 ms).
+
+| beads | Z method | exec | pipeline alone: median / std / p99 / max ms | under the client GUI: median / std / p99 / max ms |
+|---|---|---|---|---|
+| 5 | current | numba | 0.38 / 0.71 / 1.01 / 17.15 | 0.38 / 0.06 / 0.55 / 1.38 |
+| 5 | current | gpu | 2.16 / 0.14 / 2.55 / 3.08 | 2.23 / 0.23 / 3.16 / 4.22 |
+| 5 | spline | numba | 0.37 / 1.40 / 1.05 / 31.77 | 0.37 / 1.26 / 0.93 / 29.88 |
+| 5 | spline | gpu | 2.18 / 0.15 / 2.60 / 3.13 | 2.23 / 0.24 / 3.18 / 4.06 |
+| 5 | phase_spline | numba | 0.49 / 0.18 / 0.61 / 6.69 | 0.49 / 0.07 / 0.81 / 1.27 |
+| 5 | phase_spline | gpu | 2.38 / 0.39 / 2.77 / 15.44 | 2.42 / 0.27 / 3.47 / 4.26 |
+| 10 | current | numba | 0.39 / 0.08 / 0.66 / 1.93 | 0.40 / 0.08 / 0.76 / 1.72 |
+| 10 | current | gpu | 2.19 / 0.50 / 2.74 / 15.99 | 2.23 / 0.27 / 3.33 / 3.51 |
+| 10 | spline | numba | 0.37 / 0.08 / 0.65 / 1.89 | 0.39 / 0.10 / 0.90 / 1.52 |
+| 10 | spline | gpu | 2.21 / 0.40 / 2.68 / 14.21 | 2.25 / 0.26 / 3.29 / 3.83 |
+| 10 | phase_spline | numba | 0.50 / 0.10 / 0.90 / 2.13 | 0.51 / 0.10 / 0.94 / 2.09 |
+| 10 | phase_spline | gpu | 2.38 / 0.41 / 2.99 / 12.50 | 2.42 / 0.26 / 3.46 / 4.05 |
+| 20 | current | numba | 0.67 / 0.09 / 1.13 / 2.04 | 0.70 / 1.95 / 1.57 / 61.64 |
+| 20 | current | gpu | 2.18 / 0.41 / 2.70 / 11.54 | 2.23 / 0.22 / 3.13 / 3.85 |
+| 20 | spline | numba | 0.67 / 0.10 / 1.10 / 2.24 | 0.68 / 0.09 / 1.11 / 2.03 |
+| 20 | spline | gpu | 2.20 / 0.25 / 2.65 / 8.86 | 2.24 / 2.07 / 3.20 / 94.08 |
+| 20 | phase_spline | numba | 0.91 / 0.17 / 1.66 / 3.54 | 0.93 / 0.17 / 1.64 / 2.22 |
+| 20 | phase_spline | gpu | 2.40 / 2.44 / 2.93 / 91.41 | 2.42 / 0.21 / 3.23 / 4.94 |
+
+- **Up to 20 beads the tracker is far from the budget on either path**: numba 0.4-0.9 ms median, p99 under 1.7 ms;
+  the GPU executor sits at 2.2-2.4 ms whatever the count (its per-frame CUDA launch cost), so below ~100 beads numba
+  is the better executor, as the 10-29 offline bench said.
+- **Z method cost**: `phase_spline` is ~30 % slower than `current` / `spline` on numba (0.49 vs 0.38 ms at 5 beads,
+  0.93 vs 0.68 at 20); `spline` costs the same as `current`. On the GPU the three are within 0.2 ms.
+- **The GUI (engine client) adds nothing to the median** and 0.1-0.5 ms to the p99 at these counts.
+- **Single-frame outliers of 15-95 ms** appear in a few runs on both paths (std inflated to 1-2.5 ms by one frame,
+  the max column): one frame per run at most, not tied to the count, method or path; the ring absorbs them (0
+  drops). Likely an OS / driver pause or a GC; worth a look only if they recur in long runs (the 10-31 20-minute runs
+  had none visible in their loss counts).
+- GPU runs under the GUI show more frames per "10 s" (up to 3188): the GPU executor's start-up (CUDA context, first
+  kernel) delays the recording start, and the frame count runs from acquisition start; the timing columns are
+  unaffected.
+

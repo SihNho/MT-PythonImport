@@ -25,6 +25,7 @@ T.OUT = OUT
 COUNTS = [int(c) for c in os.environ.get("COUNTS", "4,16,64,128,256").split(",")]
 RUN_S = float(os.environ.get("RUN_S", "15"))
 EXECUTORS = [("numba", False), ("gpu", True)]
+Z_METHODS = os.environ.get("ZMETHODS", "current").split(",")     # owner 2026-11-01: the third bench dimension
 say = T.say
 
 
@@ -47,11 +48,12 @@ def main():
                 ids = list(range(1, n + 1))
                 api.beads.select(ids, cal_path=cal_path)
                 roles = {i: "reference" for i in ids}
-                for ex, gpu in EXECUTORS:
-                    row = T.one_run(f"count_{n}_{ex}", "current", gpu, RUN_S, roles)
-                    row["beads"] = n
-                    report["runs"].append(row)
-                    T.dump(report, "report.json")
+                for zm in Z_METHODS:
+                    for ex, gpu in EXECUTORS:
+                        row = T.one_run(f"count_{n}_{zm}_{ex}", zm, gpu, RUN_S, roles)
+                        row["beads"], row["z_method"] = n, zm
+                        report["runs"].append(row)
+                        T.dump(report, "report.json")
         except Exception as e:  # noqa: BLE001
             say(f"RESULT session FAILED: {type(e).__name__}: {e}")
             traceback.print_exc()
@@ -67,12 +69,12 @@ def main():
     report["error_events"] = [{"kind": e.kind, "extra": e.extra} for e in events.events()
                               if e.kind in ("device_error", "refused", "estop")]
     T.dump(report, "report.json")
-    say("beads  exec   frames  fps    gaps drops  track ms median/std/p99/max   latency ms median/std/p99/max  not written")
+    say("beads  z method      exec   frames  fps    gaps drops  track ms median/std/p99/max   latency ms median/std/p99/max  not written")
     for r in report["runs"]:
         if "error" in r:
-            say(f"{r['beads']:5d}  {r['name'].split('_')[-1]:5s}  {r['error'][:80]}")
+            say(f"{r['beads']:5d}  {r.get('z_method', ''):12s}  {r['name'].split('_')[-1]:5s}  {r['error'][:80]}")
             continue
-        say(f"{r['beads']:5d}  {r['name'].split('_')[-1]:5s}  {r['frames_tracked']:6d}  {r['fps_measured']:.2f}  {r['camera_gaps']:4d} "
+        say(f"{r['beads']:5d}  {r.get('z_method', ''):12s}  {r['name'].split('_')[-1]:5s}  {r['frames_tracked']:6d}  {r['fps_measured']:.2f}  {r['camera_gaps']:4d} "
             f"{r['pipeline_drops']:5d}  {T.ms4(r):>28s}   {T.ms4(r, 'latency_ms'):>28s}   {r.get('frames_not_written')}")
     say(json.dumps(report["error_events"], default=str)[:400])
 

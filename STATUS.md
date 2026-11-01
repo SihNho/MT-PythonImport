@@ -119,6 +119,10 @@ Short and current. Details live in the linked documents; the history is in git a
   in the plot bar paces the redraw only; the data keep arriving at the display rate.
 - **2026-11-01 17:30 (owner, side chat on how benches are shown):** timings as **median / std / slowest 1 % (p99) / max**;
   `acq.status()` carries the four for tracking time and latency, the rig tools print them (design/README.md).
+- **2026-11-01 17:47 (owner: 5 / 10 / 20 beads on the rig, the three Z methods as a bench dimension):** 36 runs
+  (3 counts x 3 methods x 2 executors, pipeline alone and under the client GUI): numba 0.4-0.9 ms median, p99 < 1.7
+  ms; GPU 2.2-2.4 ms flat; phase_spline ~30 % dearer than current / spline on numba; the GUI adds nothing to the
+  median; 0 drops. Rare single-frame 15-95 ms outliers noted (results page).
 - **Next:** protocols on hardware (force ramps, rotation, 3-state clamp, autofocus), the stop / watchdog paths
   exercised on the rig, then the tethered-bead calibration.
 - **Queued (owner 2026-10-30):** lock the camera settings while a z scan runs (the GUI must not change exposure,
