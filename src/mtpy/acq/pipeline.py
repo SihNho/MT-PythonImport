@@ -147,6 +147,7 @@ class Pipeline:
         self.tracking_errors, self.last_tracking_error = 0, None
         self.sink_failures, self.sink_error = 0, None
         self.camera_error, self.on_fault = None, None   # on_fault(kind, exc): first sink failure / camera thread death
+        self.frame_tap, self.tap_error = None, None      # fn(rec, image, result) on the worker, every frame (tools)
         self._avg = None  # [acc, frames left, Event] while average() collects
         self._latest = None
         self._cam_on, self._worker_on = threading.Event(), threading.Event()
@@ -303,6 +304,12 @@ class Pipeline:
             if rec.recording:
                 self._out.put(("frame", res))
             self.display.offer(rec, image, res)
+            tap = self.frame_tap
+            if tap is not None:
+                try:
+                    tap(rec, image, res)
+                except Exception as e:  # noqa: BLE001 - a tool's tap must not end the tracking worker
+                    self.frame_tap, self.tap_error = None, f"{type(e).__name__}: {e}"
             req = self._avg
             if req is not None:
                 img = image.astype(np.float64)

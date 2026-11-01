@@ -471,3 +471,31 @@ def test_camera_thread_death_is_visible_in_status_and_as_an_event(cam):
     faults = [e for e in events.events()[n0:] if e.kind == "acquisition" and e.extra.get("action") == "fault"]
     assert len(faults) == 1 and faults[0].extra["source"] == "camera"
     assert api.acq.stop()["camera_error"] == "RuntimeError: frame path broke"
+
+
+def test_frame_tap_sees_every_frame_and_a_failing_tap_does_not_end_the_worker(cam):
+    """tools hook (rig 2026-11-01): `Pipeline.frame_tap` runs on the worker for every frame; its exception is kept in
+    `tap_error`, the tap dropped, tracking goes on."""
+    api.acq.start()
+    seen = []
+    api.acq._pipe.frame_tap = lambda rec, image, res: seen.append((rec.buffer_number, image.shape))
+    assert api.acq.wait_frames(10, 5)
+    t0 = time.time()
+    while len(seen) < 5 and time.time() - t0 < 5:
+        time.sleep(0.02)
+    assert len(seen) >= 5 and seen[0][1] == tuple(api.acq.status()["segments"][0]["roi"][2:][::-1])
+
+    def boom(rec, image, res):
+        raise RuntimeError("tap broke")
+    api.acq._pipe.frame_tap = boom
+    t0 = time.time()
+    while api.acq._pipe.tap_error is None and time.time() - t0 < 5:
+        time.sleep(0.02)
+    assert api.acq._pipe.tap_error == "RuntimeError: tap broke" and api.acq._pipe.frame_tap is None
+    n = api.acq.status()["frames_tracked"]
+    assert api.acq.wait_frames(10, 5)
+    t0 = time.time()
+    while api.acq.status()["frames_tracked"] <= n and time.time() - t0 < 5:
+        time.sleep(0.02)
+    assert api.acq.status()["frames_tracked"] > n
+

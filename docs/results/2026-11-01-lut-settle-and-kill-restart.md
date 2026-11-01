@@ -86,3 +86,31 @@ Data `G:\l2s_rig_data\2026-11-01_lut_maxlight`.
 - The owner calibrates with the focus set so the ring radius is small: the ring pattern grows linearly with defocus
   only over a limited range and then flattens. The scans of this page were taken at the focus found after the
   reboot, not at that setting. The owner sets the focus by hand before the next scan.
+
+## The fair comparison at the owner's focus (15:02-15:05; owner: small ring radius, beads chosen by the owner)
+Owner closed the GUI; the four beads are the ones the owner named on the numbered frame (candidates 1, 13, 11, 8:
+(1074, 573), (679, 705), (564, 793), (429, 478) px), all clean single beads with a small ring. Script
+tools/rig_fair_compare.py, data `G:\l2s_rig_data6-11-01_fair_compare2` (the first attempt in `_fair_compare` lost its
+piezo run to a bug in the frame tap; its five 20 s runs are fine).
+
+**Five 20 s runs** (`current`, numba): 9004 frames, 0 lost, 0 dropped, 0 camera gaps; differential noise
+**1.3 / 1.1 / 2.2 nm** in x / y / z per frame (the morning's large-ring focus gave 5 / 8 / 12 nm); spread of the run
+means 23 / 30 / 36 nm over 2 minutes (drift); 0.36 / 0.71 ms per frame.
+
+**The same frames through the three Z methods** (the bead windows of one piezo run saved by the pipeline's frame tap,
+tracked offline on a 2 x 2 canvas; the offline `current` reproduces the online run to 0.000 nm):
+
+| Z method | slope (4 beads) | rms residual | z noise beads 2-3 (nm) | 1 um step up / down | 100 nm steps (nm) |
+|---|---|---|---|---|---|
+| current | 1.011 - 1.014 | 84 nm | 2.9 | 1.10 / 0.97 um | +83, +40, +151, +267, +11 |
+| spline | 1.008 - 1.012 | 85 nm | 2.6 | 1.10 / 0.96 um | +79, +36, +156, +260, +13 |
+| phase_spline | 1.007 - 1.011 | 85 nm | 2.7 | 1.10 / 0.96 um | +79, +36, +156, +259, +13 |
+
+- On the same frames the three methods agree to 0.3 % in slope and 0.3 nm in noise; `spline` and `phase_spline` are
+  the quieter two by 0.2-0.3 nm, as in the 10-28 bench. The residual (84 nm) is the same for all three: it is the
+  piezo, not the tracker.
+- **The focus piezo is the limit now:** the 100 nm commands land at +11 to +267 nm, the 1 um step reads 1.10 um up
+  and 0.97 um down this time (0.94 / 1.12 at 14:21, 0.95 / 1.03 at 13:57): the ASI Z's small steps are not
+  repeatable at the 100 nm level, in either direction. Any calibration of the LUT scale needs a better z reference
+  (a longer settle, a slower scan, or an independent z measurement) before the trackers can be told apart further.
+

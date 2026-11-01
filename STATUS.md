@@ -85,6 +85,10 @@ Short and current. Details live in the linked documents; the history is in git a
 - **Owner 2026-11-01 (beads):** of the four reference beads 1 (doublet) and 4 (fragment) are invalid, 2 and 3 valid;
   calibration is done at a focus where the ring radius is small (linear region). The owner sets that focus by hand
   before the next scan; the fair three-method comparison (same frames) starts from there.
+- **2026-11-01 15:05 (owner's focus, owner's beads, fair comparison):** five 20 s runs 9004 frames, 0 lost / dropped;
+  noise 1.3 / 1.1 / 2.2 nm x / y / z (small-ring focus). The same frames through the three Z methods (pipeline frame
+  tap, offline): slopes agree to 0.3 %, noise to 0.3 nm (spline / phase_spline 0.2-0.3 nm quieter); the 84 nm
+  residual is the focus piezo, whose 100 nm steps land anywhere between +11 and +267 nm (results page).
 - **Next:** protocols on hardware (force ramps, rotation, 3-state clamp, autofocus), the stop / watchdog paths
   exercised on the rig, then the tethered-bead calibration.
 - **Queued (owner 2026-10-30):** lock the camera settings while a z scan runs (the GUI must not change exposure,
