@@ -235,3 +235,14 @@ def test_apply_preset_asks_before_a_guarded_change_while_recording(window, monke
     monkeypatch.setattr(QMessageBox, "question", staticmethod(lambda *a, **k: QMessageBox.StandardButton.Yes))
     w._apply_preset()
     _until(app, lambda: calls == [True], 5, "preset applied after yes")
+
+
+def test_bead_chips_wrap_into_rows(window):
+    """G16 (rig 2026-11-01): 256 chips in one row made the window 14 726 px wide; they wrap after CHIPS_PER_ROW."""
+    from mtpy.gui.app import CHIPS_PER_ROW
+    _, w = window
+    w.bead_ids = list(range(1, 41))
+    w._rebuild_chips()
+    assert w.bead_chips.count() == 40 and w.bead_chips.rowCount() == -(-40 // CHIPS_PER_ROW)
+    assert w.bead_chips.columnCount() == CHIPS_PER_ROW
+

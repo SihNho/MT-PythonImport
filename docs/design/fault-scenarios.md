@@ -15,6 +15,7 @@ behaviour is on purpose), `owner` (needs the owner's decision).
 | D7 | PI serial cable pulled mid-move | **confirmed (code):** `PiMagnet.moving` read a silent `ONT?` as "still moving" until the move timeout (60 s) | no reply to `ONT?` raises at once (DeviceError through the service). Test `test_pi_no_reply_to_ont_is_an_error_not_still_moving` |
 | D1 / G14 / D11 | a failed device close is retried (shutdown dialog Retry, `api.devices.close` again) | **confirmed on the sim:** the retry re-OPENED the device before closing it: for the PI limits written + FNL reference move, for the iXon Initialize + a cold set point adopted again | owner "둘 다 고쳐": the PI, ASI and iXon drivers keep their handle on a failed close, and `api.devices.close` repeats the cleanup on the still-open device, never `open()`. Tests `test_close_retry_repeats_the_cleanup_without_reopening`, `test_pi_failed_home_keeps_the_port_and_limits_for_the_retry`, cooler test extended |
 | G15 | Connect clears an engaged emergency stop | **confirmed (code):** `_connect` called `estop.clear()` unconditionally | Connect is refused while the stop is engaged ("press Acknowledge first"); only the Acknowledge button clears. Test `test_connect_is_refused_while_the_emergency_stop_is_engaged` |
+| G16 | 256 beads selected | **confirmed on the rig 2026-11-01:** the bead-chip row (one checkbox per bead) did not wrap; the window grew to 14 726 px | the chips are a 16-column grid (`CHIPS_PER_ROW`, owner "지금 고쳐"). Test `test_bead_chips_wrap_into_rows` |
 | - | z scan with an empty pick list (happened on the rig the same evening) | 60 slices scanned, then `write_cal` crashed | `gui/zscan.run` refuses before any move. Test `test_zscan_refuses_an_empty_pick_list` |
 
 ## Fixed on 2026-11-01 (owner: "진행해야")
@@ -30,7 +31,6 @@ behaviour is on purpose), `owner` (needs the owner's decision).
 ## Confirmed, open (ranked by risk)
 | id | scenario | finding | proposed |
 |---|---|---|---|
-| G16 | 256 beads selected | **confirmed on the rig 2026-11-01:** the bead-chip row (one checkbox per bead) does not wrap; the window grew to 14 726 px | a wrapping layout for the chips, or chips only up to N with a count label |
 | G17 | the stage jogged 5 um during a recording | **confirmed on the rig 2026-11-01:** the beads are lost and restart from the calibration position (the VI's rule), so they stay lost until the stage returns | owner's call: a wider search after a lost frame, or a re-pick from the display; at least a visible 'beads lost' state |
 | G2 | window closed during a z scan | the scan worker is not a shutdown step; its `finally` moves the focus back while "close focus" may run; `progress` sets a label from a worker thread | add "stop the calibration scan" as step 0 of the shutdown; progress through a signal |
 | G3 | Close / Disconnect pressed while a GUI-started move waits (`move_to().wait(60)`) | the `_call` workers are never joined; devices close under a move | cancel pending motions (e-stop generation) or wait for `_workers` before the close steps |

@@ -23,6 +23,7 @@ from PySide6.QtWidgets import (
     QFileDialog,
     QFormLayout,
     QFrame,
+    QGridLayout,
     QGroupBox,
     QHBoxLayout,
     QLabel,
@@ -61,6 +62,7 @@ TITLES = {"setup": "Setup: devices, camera, analysis", "explore": "Explore (no r
           "save": "Save and export"}
 AXES = {"t": "Time (s)", "mag": "Magnet (mm)", "force": "Force (pN)", "z": "z (um)", "x": "x (px)", "y": "y (px)"}
 COLORS = ["#60A5FA", "#F472B6", "#34D399", "#FBBF24", "#A78BFA", "#F87171", "#2DD4BF", "#FB923C"]
+CHIPS_PER_ROW = 16                     # bead check boxes wrap after this many (G16)
 EXAMPLE_PROTOCOL = """grammar 0.1
 protocol "example"
 # edit freely; Check validates against the API and the rig safety profile
@@ -281,7 +283,7 @@ class MainWindow(QMainWindow):
         self.follow.setChecked(True)
         self.auto_scale = QCheckBox("Auto scale")
         self.auto_scale.setChecked(True)
-        self.bead_chips = QHBoxLayout()
+        self.bead_chips = QGridLayout()      # G16 (rig 2026-11-01): 256 chips in one row stretched the window to 14 726 px
         for lab, wdg in (("Y", self.ax_y), ("X", self.ax_x)):
             ctl.addWidget(QLabel(lab))
             ctl.addWidget(wdg)
@@ -866,7 +868,7 @@ class MainWindow(QMainWindow):
             c = QCheckBox(f"b{i}")
             c.setChecked(True)
             c.setStyleSheet(f"color:{COLORS[k % len(COLORS)]}")
-            self.bead_chips.addWidget(c)
+            self.bead_chips.addWidget(c, k // CHIPS_PER_ROW, k % CHIPS_PER_ROW)
             self.chips[i] = c
         self.plot.clear()
         self.plot.addLegend(offset=(10, 10))
