@@ -67,13 +67,30 @@ def find_picks(img, picks, cross=120):
                 return x, y
         raise RuntimeError(f"bead near {x, y} not found (frame.npy saved)")
 
+    def from_shift(shift):
+        out = np.array([refine(*(p + shift)) for p in picks])
+        median = np.median(out - picks, axis=0)
+        for i in np.flatnonzero(np.abs(out - picks - median).max(axis=1) > 5):
+            out[i] = refine(*(picks[i] + median))
+        if np.abs(out - picks - median).max() > 5:
+            raise RuntimeError(f"the beads did not move alike (shifts {(out - picks).round(1).tolist()}); frame.npy saved")
+        return out
+
     picks = np.array(picks, dtype=float)
-    out = np.array([refine(*p) for p in picks])
-    median = np.median(out - picks, axis=0)
-    for i in np.flatnonzero(np.abs(out - picks - median).max(axis=1) > 5):
-        out[i] = refine(*(picks[i] + median))
-    if np.abs(out - picks - median).max() > 5:
-        raise RuntimeError(f"the beads did not move alike (shifts {(out - picks).round(1).tolist()}); frame.npy saved")
+    try:
+        out = from_shift(np.zeros(2))
+    except (RuntimeError, IndexError, ValueError, TypeError) as e:
+        # 23:19: the beads moved 27 px during one GUI block (~55 px/h), past what one Croquette start converges from:
+        # search the common shift on a grid around the last positions, nearest first, until all beads agree
+        grid = sorted(((dx, dy) for dx in range(-90, 91, 10) for dy in range(-90, 91, 10)), key=lambda d: d[0] ** 2 + d[1] ** 2)
+        for d in grid[1:]:
+            try:
+                out = from_shift(np.array(d, dtype=float))
+                break
+            except (RuntimeError, IndexError, ValueError, TypeError):
+                continue
+        else:
+            raise RuntimeError(f"beads not found within 90 px of the last positions ({e}); frame.npy saved") from e
     for (x0, y0), (x, y) in zip(picks, out):
         say(f"  pick ({x0:.1f}, {y0:.1f}) -> ({x:.2f}, {y:.2f}), moved {np.hypot(x - x0, y - y0):.1f} px")
     return out
