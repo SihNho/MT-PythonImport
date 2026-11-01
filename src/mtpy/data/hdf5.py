@@ -881,7 +881,10 @@ def _value(ds):
     if ds.attrs.get("content") == "json":
         if isinstance(v, str):
             return json.loads(v)
-        return np.array([json.loads(s) for s in v.ravel()], dtype=object).reshape(v.shape) if v.size else v
+        out = np.empty(v.size, dtype=object)              # element-wise: a JSON list must not become a 2nd axis
+        for i, s in enumerate(v.ravel()):
+            out[i] = json.loads(s)
+        return out.reshape(v.shape)
     return v
 
 

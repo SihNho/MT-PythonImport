@@ -89,6 +89,13 @@ Short and current. Details live in the linked documents; the history is in git a
   noise 1.3 / 1.1 / 2.2 nm x / y / z (small-ring focus). The same frames through the three Z methods (pipeline frame
   tap, offline): slopes agree to 0.3 %, noise to 0.3 nm (spline / phase_spline 0.2-0.3 nm quieter); the 84 nm
   residual is the focus piezo, whose 100 nm steps land anywhere between +11 and +267 nm (results page).
+- **2026-11-01 15:15-15:33 (owner: noise under focus / stage / magnet motion, numba and GPU; frame time against the
+  bead count; the same through the GUI):** [results/2026-11-01-motion-noise-bead-count-gui.md](docs/results/2026-11-01-motion-noise-bead-count-gui.md).
+  Holds: 1 / 1 / 2 nm whatever moves; the magnet's travel does not shake the beads; a 5 um stage jump loses the
+  beads (the VI's restart-from-calibration rule); 256 beads at 90 Hz: numba 6.3 / 11.2 ms, GPU 5.6 / 7.3 ms, 0
+  drops. Through the GUI the noise is the same but the tracking p99 is 3-4x (29 ms at 256 beads numba, 39 ms GPU):
+  ~100 beads is the comfortable GUI limit at 90 Hz. GUI bug: the bead-chip row does not wrap (14 726 px window at
+  256 beads). read_run fixed for JSON list cells.
 - **Next:** protocols on hardware (force ramps, rotation, 3-state clamp, autofocus), the stop / watchdog paths
   exercised on the rig, then the tethered-bead calibration.
 - **Queued (owner 2026-10-30):** lock the camera settings while a z scan runs (the GUI must not change exposure,

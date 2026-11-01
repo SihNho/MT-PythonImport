@@ -30,6 +30,8 @@ behaviour is on purpose), `owner` (needs the owner's decision).
 ## Confirmed, open (ranked by risk)
 | id | scenario | finding | proposed |
 |---|---|---|---|
+| G16 | 256 beads selected | **confirmed on the rig 2026-11-01:** the bead-chip row (one checkbox per bead) does not wrap; the window grew to 14 726 px | a wrapping layout for the chips, or chips only up to N with a count label |
+| G17 | the stage jogged 5 um during a recording | **confirmed on the rig 2026-11-01:** the beads are lost and restart from the calibration position (the VI's rule), so they stay lost until the stage returns | owner's call: a wider search after a lost frame, or a re-pick from the display; at least a visible 'beads lost' state |
 | G2 | window closed during a z scan | the scan worker is not a shutdown step; its `finally` moves the focus back while "close focus" may run; `progress` sets a label from a worker thread | add "stop the calibration scan" as step 0 of the shutdown; progress through a signal |
 | G3 | Close / Disconnect pressed while a GUI-started move waits (`move_to().wait(60)`) | the `_call` workers are never joined; devices close under a move | cancel pending motions (e-stop generation) or wait for `_workers` before the close steps |
 | D18 | rotor open fails after the port opened | `self.line = L` is set after the first read; a timeout there leaks the port | set `line` before the reads, or close `L` on failure |

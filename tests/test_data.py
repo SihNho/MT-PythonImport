@@ -581,3 +581,18 @@ def test_cal_stored_from_acquisition_start_event(tmp_path):
     assert run["metadata"]["calibration"]["exp_ref"].tolist() == [0, 1, 1, 1, 1]
     assert run["beads"]["role"][0] == "reference"
     assert export_cal(tmp_path / "c.h5", tmp_path / "c.cal").read_bytes() == (FIXTURE / "cal002").read_bytes()
+
+
+def test_read_run_keeps_a_json_list_column_one_dimensional(tmp_path):
+    """Rig 2026-11-01: a `mark` whose data held a list (a stage read-back (x, y)) made read_run build a 2-D object
+    array and fail on the reshape; every JSON cell is one object."""
+    import h5py
+
+    from mtpy.data import read_run
+    with h5py.File(tmp_path / "j.h5", "w") as f:
+        d = f.create_dataset("events/mark/data", data=np.array(['{"a": [1, 2]}', '{"a": [3, 4]}'], dtype=object),
+                             dtype=h5py.string_dtype())
+        d.attrs["content"] = "json"
+    r = read_run(tmp_path / "j.h5")
+    assert r["events"]["mark"]["data"].shape == (2,) and r["events"]["mark"]["data"][1] == {"a": [3, 4]}
+
