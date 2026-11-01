@@ -80,3 +80,49 @@ the shutdown dialog closed everything in 1.7 s and released the lock.
   z / xy calibration now; the owner decides the tracker's response to a lost bead.
 - The GUI's tail cost: a lower display rate or a plot that draws less while recording would give the tracker back
   its p99; the chip row must wrap.
+
+## Why the GUI slows the tracker (16:00, tools/gui_rig_isolate.py; owner: "run the isolation measurement")
+The same window, 10 s recorded runs, the GUI's 33 ms tick timed; conditions: normal | display off (no image, no bead
+boxes; plot on) | no plot | no event log | timers off (GUI idle, the pipeline alone).
+
+| beads / exec | condition | track ms p50 / p99 | latency p99 | GUI tick ms p50 / max (ticks in 10 s) |
+|---|---|---|---|---|
+| 4 numba | normal | 0.39 / 3.21 | 3.5 | 6.3 / 15.6 (236) |
+| 4 numba | display off | 0.38 / 2.18 | 2.7 | 1.8 / 3.4 |
+| 4 numba | no plot | 0.37 / 0.90 | 1.2 | 4.4 / 10.0 |
+| 4 numba | no log | 0.39 / 2.50 | 3.0 | 6.2 / 11.8 |
+| 4 numba | timers off | 0.36 / 0.76 | 1.2 | - |
+| 256 numba | normal | 11.09 / 15.14 | 86 | 317 / 2319 (26) |
+| 256 numba | display off | 11.00 / 13.63 | 22 | 53 / 84 (64) |
+| 256 numba | no plot | 11.03 / 12.30 | 16 | 257 / 309 (40) |
+| 256 numba | no log | 11.04 / 16.98 | 71 | 315 / 2215 (28) |
+| 256 numba | timers off | 6.34 / 11.32 | 12 | - |
+| 256 GPU | normal | 7.10 / 34.39 | 56 | - / 1128 (163) |
+| 256 GPU | display off | 6.60 / 41.13 | 163 | 36 / 40 (92) |
+| 256 GPU | no plot | 7.11 / 33.06 | 55 | 206 / 2171 (75) |
+| 256 GPU | no log | 7.17 / 35.97 | 58 | 246 / 2204 (54) |
+| 256 GPU | timers off | 5.66 / 7.40 | 7.5 | - |
+
+- **With the GUI idle the Python pipeline is the script's pipeline** (256 beads: 6.3 / 11.3 ms numba, 5.7 / 7.4 ms
+  GPU): the slowdown is entirely the GUI thread's work competing with the worker for the interpreter (GIL).
+- **What the GUI thread does per tick is far too heavy at 256 beads:** 317 ms per tick (2.3 s worst), i.e. the
+  "30 Hz" tick runs 2.6 times a second. Two culprits, both in `app.py`: `_draw_boxes` removes and recreates 2 x N
+  QGraphicsItems (a rect and a text per bead = 512 items) every tick, and `_update_plot` rebuilds the whole 30 s
+  history (900 rows x 256 beads x 3) into numpy arrays and re-sets 256 curves every tick. Display off (no boxes)
+  brings the tick to 53 ms and the p99 to 13.6; no plot to 12.3; the event log is minor.
+- **Even at 4 beads the plot is the tail:** p99 3.2 -> 0.9 ms without the plot (the tick is 6 ms with 4 curves).
+- **The GPU executor suffers most** (p99 33-41 ms whatever is switched off, 7.4 ms idle): its per-frame CUDA calls
+  are Python-side and need the interpreter many times per frame, so every GUI tick lands inside them.
+- At 256 beads numba the p50 itself goes 6.3 -> 11.0 ms under the GUI: the worker gets about half the interpreter.
+
+**Conclusion.** Not a Python-speed problem: the tracker itself holds 256 beads at 90 Hz. It is (1) a GUI drawing
+problem - items recreated and history rebuilt every tick - and (2) the shared interpreter. Fixes, in order:
+1. cheap drawing: one scatter item for all boxes (update data, never recreate), a bounded history array with a
+   plot refresh at 10 Hz and only the checked beads' curves, labels only when few beads - expected to give back
+   most of the p99 at any count;
+2. the pipeline in its own process (camera -> tracking -> file in a worker process; the GUI receives display
+   snapshots and results through shared memory / a queue): removes the interpreter sharing entirely, which is what
+   LabVIEW's separate loops gave for free. A design change: a decision record.
+A change of language is not needed for this; it would buy something only for hard real-time guarantees (which
+Windows does not give either way) or for far more beads at far higher rates than the camera delivers.
+

@@ -96,6 +96,10 @@ Short and current. Details live in the linked documents; the history is in git a
   drops. Through the GUI the noise is the same but the tracking p99 is 3-4x (29 ms at 256 beads numba, 39 ms GPU):
   ~100 beads is the comfortable GUI limit at 90 Hz. GUI bug: the bead-chip row does not wrap (14 726 px window at
   256 beads). read_run fixed for JSON list cells.
+- **2026-11-01 16:00 (isolation, owner):** with the GUI idle the pipeline equals the script (256 beads 6.3 / 11.3 ms);
+  the GUI tick is 317 ms at 256 beads (boxes recreated and the history rebuilt every tick) and shares the interpreter
+  with the worker; the GPU executor suffers most. Fix order: cheap drawing, then the pipeline in its own process
+  (decision needed). No language change needed for this (results page, last section).
 - **Next:** protocols on hardware (force ramps, rotation, 3-state clamp, autofocus), the stop / watchdog paths
   exercised on the rig, then the tethered-bead calibration.
 - **Queued (owner 2026-10-30):** lock the camera settings while a z scan runs (the GUI must not change exposure,
