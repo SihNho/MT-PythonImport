@@ -52,6 +52,14 @@ Reading it after the next death (`python tools/pc_heartbeat.py --report`): 10 s 
 = the machine stopped at once (power delivery / board); growing gaps or a CPU spike before the end = it hung or
 slowed first (memory / a hang). One or two events decide the direction.
 
+## First death under the heartbeat (2026-11-01 23:58)
+The PC died at 23:58:15-25 on 2026-11-01 (event 6008: last alive 23:58:15; heartbeat's last line 23:58:25) and was
+switched on at 11:43 the next day. The heartbeat kept its 10-s spacing to the last line with no gap anywhere in
+the 4 h before; CPU 0.2-2.2 %, 52 GB free: the machine was idle (the bench had ended at 23:20) and **stopped at
+once** - no slowdown, no hang, no WHEA record. By the reading above this is the power-delivery / board family,
+not memory or a hang. One event; a second one of the same shape settles it. (The 07:53 death of 11-01 preceded
+the heartbeat.)
+
 ## Why it matters for the experiments
 A weekly death at night ends any long recording (LabVIEW or this program) and leaves the rig in whatever state the
 devices were in (the PI keeps its position and limits, the iXon keeps cooling, a run file loses its last second).

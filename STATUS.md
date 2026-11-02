@@ -150,6 +150,9 @@ Short and current. Details live in the linked documents; the history is in git a
   equals the script (0 drops to 100 beads). The sample drifted ~40 px/h in the stage-step blocks (the ASI stage
   returns 0.1-0.2 um off) and left focus at 23:19, so GUI 248 / 555 Hz and the 1 um/s blocks did not run (open
   cells in design/bench-matrix.md). 2026-11-02 12:35: rig state `experiment` on the owner's words ("곧 실험 시작").
+- **2026-11-02 13:30 (owner: "꺼진 것 같음"):** the PC died 2026-11-01 23:58, the first death under the heartbeat:
+  10-s lines to the last one, idle (CPU 0.3 %), no WHEA - an instant stop, the power-delivery / board family
+  ([rig/pc-stability.md](docs/rig/pc-stability.md)).
 - **Next:** protocols on hardware (force ramps, rotation, 3-state clamp, autofocus), the stop / watchdog paths
   exercised on the rig, then the tethered-bead calibration.
 - **Queued (owner 2026-10-30):** lock the camera settings while a z scan runs (the GUI must not change exposure,
