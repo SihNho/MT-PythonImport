@@ -35,7 +35,12 @@ the GUI, so they are measured in one condition (90 Hz, 20 beads, numba, script) 
 - GUI client, 5-100 beads x 4 rates x 3 methods x 2 executors (120 runs), a fresh LUT per rate.
 About 260 runs, 2.5 h of rig time.
 
+## What ran on 2026-11-01 night (results: [results/2026-11-01-bench-matrix.md](../results/2026-11-01-bench-matrix.md))
+Script 50 / 100 beads at the four rates (48 runs), the focus block (21 runs), GUI 90 Hz (30, valid to 50 beads), GUI 150 Hz
+(30, valid at 5 beads). Not run: GUI 248 / 555 Hz and the 1 um/s focus speed (the sample left focus at 23:19).
+
 ## Open cells (for the full bench later)
+- GUI 248 / 555 Hz; GUI 90 Hz at 100 beads and 150 Hz from 10 beads (drift-spoiled); focus speed 1 um/s (4 blocks);
 - speed 1/10 and the 20 / 50 / 100 nm steps at the other rates, bead counts, the GPU and under the GUI;
 - stage xy steps for the 72 early script runs (they had focus + magnet only);
 - a second sample / day (all of tonight is one dry channel with stuck beads, drifting ~15 px/h);

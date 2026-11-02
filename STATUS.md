@@ -131,6 +131,25 @@ Short and current. Details live in the linked documents; the history is in git a
   Ingested as [rig/pc-stability.md](docs/rig/pc-stability.md) (+ .ko.md for the 2026-11-02 meeting). The owner
   experiments tonight. 19:54: the owner registered and started the logon task "mtpy pc heartbeat" (log lines
   arriving); after the next death run `tools/pc_heartbeat.py --report`.
+- **2026-11-01 20:06-20:59 (owner: the accuracy test, per method, rate and bead count, piezo and magnet moving, raw and
+  reference-corrected; then the camera's maximum rate and a half-size ROI):** 72 script runs at 90 / 150 / 248 Hz
+  (full frame) and 555 Hz (640 x 512, the driver's cap at that ROI, now read by `JaiCamera.limits`). Reference-
+  corrected step error 1-33 nm median at every rate and method; the raw 5-190 nm is drift / creep of the focus
+  drive, not tracking. 0 drops at 90 / 150; 2 runs drop at 248 (phase_spline numba); 16 of 18 drop 0.06-1.9 % at
+  555 Hz with 0.3-1.1 ms tracking (overhead outside the kernel, to profile). A LUT must be made at the rate it
+  is used at (a 90-Hz LUT at 150 Hz: z 0.9 um low, bead 1 ambiguous). Bead 1 is ambiguous ~1.4 um below the LUT
+  centre. [results/2026-11-01-accuracy-fps-roi.md](docs/results/2026-11-01-accuracy-fps-roi.md).
+  21:07: the reduced matrix (owner's list, [design/bench-matrix.md](docs/design/bench-matrix.md)) runs:
+  `tools/rig_bench_matrix.py`, 15 blocks (50 / 100 beads, the focus speed / step block, the GUI client at the
+  four rates), ~2.5 h; `api.focus.set_speed` added for it (ASI `S Z`, capped at the opening speed, restored at
+  close). The rig lock went stale once (a bench killed from outside) and was released on the owner's words.
+- **2026-11-01 21:07-23:20, the reduced matrix** ([results/2026-11-01-bench-matrix.md](docs/results/2026-11-01-bench-matrix.md)):
+  script 50 / 100 beads at 90-555 Hz (48 runs), focus step 20 / 50 / 100 nm x speed 4.96 / 0.50 mm/s (21), GUI client
+  90 Hz (30) and 150 Hz (30). 555 Hz carries ~20 beads, 248 Hz ~100 on numba; accuracy independent of the bead
+  count (corrected 1-12 nm); focus speed changes nothing (overshoot 14-63 vs 11-54 nm); the GUI client at 90 Hz
+  equals the script (0 drops to 100 beads). The sample drifted ~40 px/h in the stage-step blocks (the ASI stage
+  returns 0.1-0.2 um off) and left focus at 23:19, so GUI 248 / 555 Hz and the 1 um/s blocks did not run (open
+  cells in design/bench-matrix.md). 2026-11-02 12:35: rig state `experiment` on the owner's words ("곧 실험 시작").
 - **Next:** protocols on hardware (force ramps, rotation, 3-state clamp, autofocus), the stop / watchdog paths
   exercised on the rig, then the tethered-bead calibration.
 - **Queued (owner 2026-10-30):** lock the camera settings while a z scan runs (the GUI must not change exposure,
