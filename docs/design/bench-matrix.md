@@ -47,7 +47,11 @@ Script 50 / 100 beads at the four rates (48 runs), the focus block (21 runs), GU
   (low / high) and the forget radius, three z methods. Offline first: saved frame windows + a recorded or synthetic
   defocused pattern added at several amplitudes and offsets, the same kernel as online (rig_fair_compare's offline
   path); then on a real ceiling-bead frame when one is recorded. Output: the bandpass that keeps the bead tracked
-  at the largest overlap, and the overlap at which each setting loses it.
+  at the largest overlap, and the overlap at which each setting loses it. Owner: the channel is 0.2 mm deep, so a
+  ceiling bead is ~200 um out of focus (its pattern is wider than the field: at the window scale a slow background,
+  the easy case) while a tethered bead moves 1-2 um; the dangerous band is beads a few to tens of um up, whose
+  pattern is window-sized. So the disturber's height is a dimension (5, 20, 50, 200 um or as far as the focus
+  drive reaches), its pattern recorded by defocusing a reference bead by that much.
 - calibration frame count: 10 vs rate-matched n_avg (same light per slice as 10 frames at 90 Hz) at 150 / 248 / 555 Hz,
   20 beads, 3 methods; expected: the per-hold noise falls by up to 30 % at the fast rates, the step error's fixed part more;
 - GUI 248 / 555 Hz; GUI 90 Hz at 100 beads and 150 Hz from 10 beads (drift-spoiled); focus speed 1 um/s (4 blocks);
