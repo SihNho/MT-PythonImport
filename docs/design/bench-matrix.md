@@ -51,7 +51,11 @@ Script 50 / 100 beads at the four rates (48 runs), the focus block (21 runs), GU
   ceiling bead is ~200 um out of focus (its pattern is wider than the field: at the window scale a slow background,
   the easy case) while a tethered bead moves 1-2 um; the dangerous band is beads a few to tens of um up, whose
   pattern is window-sized. So the disturber's height is a dimension (5, 20, 50, 200 um or as far as the focus
-  drive reaches), its pattern recorded by defocusing a reference bead by that much.
+  drive reaches), its pattern recorded by defocusing a reference bead by that much. The tracked bead's place in
+  that pattern is the other dimension (owner): at the pattern's centre the overlap is symmetric about the bead and
+  biases z only (the profile lifts as a whole, the LUT match slides); where a fringe crosses the window it pulls xy
+  and breaks the symmetry (the lost case); outside, nothing. Offsets: centre, mid, fringe crossing, outside; measure
+  the xy bias with the z bias and the noise.
 - calibration frame count: 10 vs rate-matched n_avg (same light per slice as 10 frames at 90 Hz) at 150 / 248 / 555 Hz,
   20 beads, 3 methods; expected: the per-hold noise falls by up to 30 % at the fast rates, the step error's fixed part more;
 - GUI 248 / 555 Hz; GUI 90 Hz at 100 beads and 150 Hz from 10 beads (drift-spoiled); focus speed 1 um/s (4 blocks);
