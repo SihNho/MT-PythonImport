@@ -47,6 +47,8 @@ M.FOCUS_UM = ([k * STEP_NM / 1000.0 for k in (0, 1, 2, 3, 4, 5, 4, 3, 2, 1, 0)] 
 M.STAGE_UM = [tuple(int(v) for v in p.split(":")) for p in
               os.environ.get("STAGE_UM", "0:0,1:0,2:0,5:0,0:0,0:1,0:2,0:5,0:0").split(",")]
 M.MAGNET_MM = [float(v) for v in os.environ.get("MAGNET_MM", "0,10,30,0").split(",")]
+RING_PX = float(os.environ.get("RING_PX") or 0) if "RING_PX" in os.environ else 12.2     # bright-ring radius of beads 2-4 at the owner's 11-01 focus; "" = no match
+RING_TOL, RING_PX_PER_UM = 0.15, 0.9                 # the 11-01 LUT: the ring grows 0.9 px per um of focus
 LATEST = r"G:\l2s_rig_data\bead_picks_latest.json"    # the owner's four beads where they were last found (full frame)
 say = T.say
 
@@ -96,6 +98,33 @@ def find_picks(img, picks, cross=120):
     return out
 
 
+def ring_radius(prof, lo=5, hi=40):
+    """Radius (px, sub-pixel) of the first bright ring of a mirrored radial profile: the brightest point within
+    `hi` px of the centre, parabola-refined. Grows ~0.9 px per um of focus (11-01 LUT), 12.2 px at the owner's focus."""
+    half = len(prof) // 2
+    p = np.asarray(prof, dtype=float)[half:]
+    i = lo + int(np.argmax(p[lo:hi]))
+    a, b, c = p[i - 1], p[i], p[i + 1]
+    return i + ((a - c) / (2 * (a - 2 * b + c)) if (a - 2 * b + c) != 0 else 0.0)
+
+
+def focus_match(xy, target=RING_PX, tol=RING_TOL, tries=8):
+    """Owner 2026-11-03: "check the bead radius before the calibration and match it with the piezo". Steps the focus
+    until the beads' median bright-ring radius is within `tol` px of `target` (the owner's focus of 11-01); the focus
+    stays where it ends. Acquisition must be running. Returns (radius, focus z um)."""
+    z = api.focus.position()
+    for _ in range(tries):
+        img = api.acq.average(5, timeout_s=10)
+        r = float(np.median([ring_radius(zscan.bead_profile(img, x, y, 120)[2]) for x, y in xy]))
+        say(f"  ring radius {r:.2f} px (target {target}), focus {z:.3f} um")
+        if abs(r - target) <= tol:
+            return r, z
+        dz = float(np.clip((target - r) / RING_PX_PER_UM, -1.5, 1.5))
+        z = api.focus.move_to(z + dz).wait(10)
+        time.sleep(0.3)
+    raise RuntimeError(f"focus match did not converge: ring radius {r:.2f} px, target {target}")
+
+
 def make_cal(path):
     api.acq.start(record=False, name="check")
     try:
@@ -107,6 +136,11 @@ def make_cal(path):
             with open(LATEST, encoding="utf-8") as f:
                 picks = json.load(f)["picks"]
         xy = find_picks(img, [np.array(picks[i - 1]) - origin for i in PICK_IDS])
+        if RING_PX:
+            r, z = focus_match(xy[1:] if PICK_IDS == [1, 2, 3, 4] else xy)      # bead 1 reads 1.2 px larger: use 2-4
+            say(f"RESULT focus matched: ring {r:.2f} px at focus {z:.3f} um")
+            img = api.acq.average(10, timeout_s=10)
+            xy = find_picks(img, xy)
         if PICK_IDS == [1, 2, 3, 4]:
             with open(LATEST, "w", encoding="utf-8") as f:
                 json.dump({"picks": (xy + origin).tolist(), "time": time.strftime("%Y-%m-%d %H:%M:%S")}, f)
