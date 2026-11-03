@@ -253,7 +253,7 @@ def accuracy(path, nb=4):
             "stage_raw_nm": mm(err["stage"]["raw"]), "stage_ref_nm": mm(err["stage"]["ref"]),
             "magnet_raw_nm": mm(err["magnet"]["raw"]), "magnet_ref_nm": mm(err["magnet"]["ref"]),
             "noise_nm": mm(noise)[0], "follow_ms": mm(follow), "overshoot_nm": mm(overshoot),
-            "mag_bead_magnet_nm": {"raw": [round(v) for v in mag["raw"]], "ref": [round(v) for v in mag["ref"]]}}
+            "mag_bead_magnet_nm": {k: [None if np.isnan(v) else round(v) for v in vs] for k, vs in mag.items()}}
 
 
 def fmt(a):
