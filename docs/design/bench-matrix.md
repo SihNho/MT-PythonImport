@@ -41,6 +41,13 @@ Script 50 / 100 beads at the four rates (48 runs), the focus block (21 runs), GU
 (30, valid at 5 beads). Not run: GUI 248 / 555 Hz and the 1 um/s focus speed (the sample left focus at 23:19).
 
 ## Open cells (for the full bench later)
+- **bandpass against a ceiling bead's pattern** (owner 2026-11-03: a bead that flew to the ceiling lays a wide
+  interference pattern over the beads below; LabVIEW mostly ends in bead loss there): tracking noise, z bias and
+  lost-frame rate of a bead under a superimposed far-defocus pattern, as a function of the calibration bandpass
+  (low / high) and the forget radius, three z methods. Offline first: saved frame windows + a recorded or synthetic
+  defocused pattern added at several amplitudes and offsets, the same kernel as online (rig_fair_compare's offline
+  path); then on a real ceiling-bead frame when one is recorded. Output: the bandpass that keeps the bead tracked
+  at the largest overlap, and the overlap at which each setting loses it.
 - calibration frame count: 10 vs rate-matched n_avg (same light per slice as 10 frames at 90 Hz) at 150 / 248 / 555 Hz,
   20 beads, 3 methods; expected: the per-hold noise falls by up to 30 % at the fast rates, the step error's fixed part more;
 - GUI 248 / 555 Hz; GUI 90 Hz at 100 beads and 150 Hz from 10 beads (drift-spoiled); focus speed 1 um/s (4 blocks);
