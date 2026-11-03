@@ -16,6 +16,7 @@ that follows it.
 | executor | numba (CPU), GPU (CUDA) | |
 | focus (piezo) speed | the opening speed, 1/10 of it | `api.focus.set_speed`; a slower move may leave less to correct after arrival |
 | focus step size | 20, 50, 100 nm (staircase of five up, five down) and the +-1 um pattern (0, +0.5, +1, 0, -1, 0) | 20 nm is the size of the per-hold noise: compare hold means, hold 3 s |
+| calibration frames (n_avg per LUT slice) | 10 (today's), and the rate-matched count that collects the same light as 10 at 90 Hz: 17 at 150, 28 at 248, 62 at 555 Hz | owner 2026-11-03: "put it on the list, later when there is time"; the LUT's own noise is a fixed bias, the live frame's noise averages out |
 | motion in a run | focus steps, then stage xy steps 1 / 2 / 5 um in x and in y, then magnet 0, 10, 30, 0 mm | the 5-um stage step is the one that lost beads on 11-01 afternoon |
 | where it runs | script alone, the GUI as a client of the engine process | the GUI has no ROI control and offers 90 / 150 Hz only: the tool sets those through the API and says so |
 
@@ -40,6 +41,8 @@ Script 50 / 100 beads at the four rates (48 runs), the focus block (21 runs), GU
 (30, valid at 5 beads). Not run: GUI 248 / 555 Hz and the 1 um/s focus speed (the sample left focus at 23:19).
 
 ## Open cells (for the full bench later)
+- calibration frame count: 10 vs rate-matched n_avg (same light per slice as 10 frames at 90 Hz) at 150 / 248 / 555 Hz,
+  20 beads, 3 methods; expected: the per-hold noise falls by up to 30 % at the fast rates, the step error's fixed part more;
 - GUI 248 / 555 Hz; GUI 90 Hz at 100 beads and 150 Hz from 10 beads (drift-spoiled); focus speed 1 um/s (4 blocks);
 - speed 1/10 and the 20 / 50 / 100 nm steps at the other rates, bead counts, the GPU and under the GUI;
 - stage xy steps for the 72 early script runs (they had focus + magnet only);
