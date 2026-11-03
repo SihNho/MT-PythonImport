@@ -33,7 +33,9 @@ CAL = os.environ.get("CAL")                 # None: a fresh z scan per frame rat
 T.OUT = OUT
 FPS = [f if f == "max" else float(f) for f in os.environ.get("FPS", "90,150").split(",")]   # max: the camera's cap
 ROI = tuple(int(v) for v in os.environ["ROI"].split(",")) if os.environ.get("ROI") else None     # x,y,w,h
-PICK_IDS = [int(i) for i in os.environ.get("PICK_IDS", "1,2,3,4").split(",")]   # of M.PICKS; a half ROI holds 2-4
+PICK_IDS = [int(i) for i in os.environ.get("PICK_IDS", "1,2,3,4").split(",")]   # of the pick list; a half ROI holds fewer
+ACC_NB = int(os.environ.get("ACC_NB", "0"))          # reference beads at the front of the picks (0 = all); the next one
+                                                     # is a magnetic bead tracked alongside (owner 2026-11-03: 5, 6, 7 + 1)
 COUNTS = [int(c) for c in os.environ.get("COUNTS", "5,10,20").split(",")]
 Z_METHODS = os.environ.get("ZMETHODS", "current,spline,phase_spline").split(",")
 EXECUTORS = [(e, e == "gpu") for e in os.environ.get("EXEC", "numba,gpu").split(",")]
@@ -141,7 +143,7 @@ def make_cal(path):
             say(f"RESULT focus matched: ring {r:.2f} px at focus {z:.3f} um")
             img = api.acq.average(10, timeout_s=10)
             xy = find_picks(img, xy)
-        if PICK_IDS == [1, 2, 3, 4]:
+        if ROI is None:
             with open(LATEST, "w", encoding="utf-8") as f:
                 json.dump({"picks": (xy + origin).tolist(), "time": time.strftime("%Y-%m-%d %H:%M:%S")}, f)
         zscan.run(path, xy, slices=60, step_nm=100.0, n_avg=10, cross=120)
@@ -212,7 +214,19 @@ def accuracy(path, nb=4):
     for the focus holds the corrected change must be zero (all beads move together), so the error is the change itself.
     Each as median |error| / max |error| over beads 2..nb and holds; noise = median per-hold std of a bead's z."""
     run = read_run(path)
-    holds = _holds(run, nb)
+    n_total = run["mt"]["z_um"].shape[1]
+    holds = _holds(run, min(nb + 1, n_total))          # one more column: the magnetic bead, when there is one
+    mag = {"raw": [], "ref": []}
+    if n_total > nb:
+        first = None
+        for kind, value, mean, std, _lost, fol, over in holds:
+            if kind != "magnet":
+                continue
+            if first is None:
+                first = mean
+            mag["raw"].append(float(mean[nb] - first[nb]))
+            mag["ref"].append(float((mean[nb] - mean[0]) - (first[nb] - first[0])))
+        holds = [(k, v, m[:nb], sd[:nb], lost, fol, over) for k, v, m, sd, lost, fol, over in holds]
     err = {k: {"raw": [], "ref": []} for k in ("focus", "stage", "magnet")}
     noise, follow, overshoot = [], [], []
     first = {}
@@ -238,7 +252,8 @@ def accuracy(path, nb=4):
             "focus_raw_nm": mm(err["focus"]["raw"]), "focus_ref_nm": mm(err["focus"]["ref"]),
             "stage_raw_nm": mm(err["stage"]["raw"]), "stage_ref_nm": mm(err["stage"]["ref"]),
             "magnet_raw_nm": mm(err["magnet"]["raw"]), "magnet_ref_nm": mm(err["magnet"]["ref"]),
-            "noise_nm": mm(noise)[0], "follow_ms": mm(follow), "overshoot_nm": mm(overshoot)}
+            "noise_nm": mm(noise)[0], "follow_ms": mm(follow), "overshoot_nm": mm(overshoot),
+            "mag_bead_magnet_nm": {"raw": [round(v) for v in mag["raw"]], "ref": [round(v) for v in mag["ref"]]}}
 
 
 def fmt(a):
@@ -314,8 +329,9 @@ def main():
                                 row = T.one_run(name, zm, gpu, 0, roles, during=steps)
                             row["fps"], row["beads"], row["z_method"] = fps, n, zm
                             if "error" not in row and row.get("frames_tracked"):
-                                row["accuracy"] = accuracy(os.path.join(OUT, name + ".h5"), min(nb, n))
-                                say("   accuracy:", fmt(row["accuracy"]))
+                                row["accuracy"] = accuracy(os.path.join(OUT, name + ".h5"), min(ACC_NB or nb, n))
+                                say("   accuracy:", fmt(row["accuracy"]), " mag bead over magnet holds raw/ref nm:",
+                                    row["accuracy"]["mag_bead_magnet_nm"])
                             report["runs"].append(row)
                             T.dump(report, "report.json")
         except Exception as e:  # noqa: BLE001

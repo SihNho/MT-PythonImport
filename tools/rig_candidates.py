@@ -66,6 +66,28 @@ def candidates(frame):
     return picks
 
 
+def magnet_check(frame, picks):
+    """Ring radius of every candidate at the magnet's current position and 20 mm away (then back): a tethered magnetic
+    bead changes its z, so its ring; a stuck reference bead does not. Acquisition must be running."""
+    from rig_accuracy import ring_radius
+
+    from mtpy import api
+    from mtpy.api import zscan
+    p0 = api.magnet.position()
+    p1 = p0 + 20.0 if p0 < 15 else p0 - 20.0
+    say(f"magnet check: {p0:.1f} -> {p1:.1f} mm")
+    r0 = [ring_radius(zscan.bead_profile(frame, x, y, 120)[2]) for x, y, _ in picks]
+    api.magnet.move_to(p1).wait(30)
+    time.sleep(1.0)
+    img = api.acq.average(10, timeout_s=10)
+    r1 = [ring_radius(zscan.bead_profile(img, x, y, 120)[2]) for x, y, _ in picks]
+    api.magnet.move_to(p0).wait(30)
+    say(f"magnet back at {api.magnet.position():.1f} mm")
+    for i, (a, b) in enumerate(zip(r0, r1), 1):
+        say(f"  {i:2d}: ring {a:.2f} -> {b:.2f} px  ({b - a:+.2f}{'  MAGNETIC?' if abs(b - a) > 0.3 else ''})")
+    return r0, r1
+
+
 def draw(frame, picks, path):
     im = Image.fromarray(frame).convert("RGB")
     d = ImageDraw.Draw(im)
@@ -88,6 +110,8 @@ def main():
                 api.acq.start(record=False, name="candidates")
                 try:
                     frame = np.clip(np.rint(api.acq.average(10, timeout_s=10)), 0, 255).astype(np.uint8)
+                    if os.environ.get("MAGNET_CHECK"):      # owner 2026-11-03: "pull with the magnet and watch the pattern"
+                        magnet_check(frame, candidates(frame))
                 finally:
                     api.acq.stop()
             finally:

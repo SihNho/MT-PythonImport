@@ -23,7 +23,8 @@ ROOT = Path(r"G:\Codes\LabVIEW2Scr")
 PY = ROOT / ".venv" / "Scripts" / "python.exe"
 LOGS = ROOT / "bench_out" / "matrix"
 DATA = r"G:\l2s_rig_data\2026-11-01_m_"
-ROI = {"ROI": "344,376,640,512", "PICK_IDS": "2,3,4"}
+# 11-03 channel (owner: reference 5, 6, 7 + magnetic 1 of candidates_numbered.png): the half ROI holds 5, 6 and 1
+ROI = {"ROI": "296,300,640,512", "PICK_IDS": "1,2,4"}      # 19:09 magnet check: none of the four responds, all reference
 CASES = ",".join(f"{n}:{ex}:{zm}" for n in (5, 10, 20, 50, 100) for zm in ("current", "spline", "phase_spline")
                  for ex in ("numba", "gpu"))
 GUI = {"CLIENT": "1", "STEPS": "1", "MAKE_CAL": "1", "CONDITIONS": "normal", "CASES": CASES}

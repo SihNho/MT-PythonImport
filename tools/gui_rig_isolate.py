@@ -37,7 +37,7 @@ CONDITIONS = tuple(os.environ.get("CONDITIONS", "normal,display_off,no_plot,no_l
 STEPS = bool(os.environ.get("STEPS"))
 FPS = [f if f == "max" else float(f) for f in os.environ["FPS"].split(",")] if os.environ.get("FPS") else [None]
 ROI = tuple(int(v) for v in os.environ["ROI"].split(",")) if os.environ.get("ROI") else None   # x,y,w,h (no GUI control)
-NB = len(A.PICK_IDS)                             # distinct beads at the front of the cals (3 in the half-ROI bench)
+NB = A.ACC_NB or len(A.PICK_IDS)                 # reference beads at the front of the cals
 MAKE_CAL = bool(os.environ.get("MAKE_CAL"))      # a fresh LUT per frame rate here (the beads drift ~15 px/h)
 R = {"runs": []}
 
@@ -129,6 +129,9 @@ def main():
             w._apply_preset()
             until(lambda: not w._workers, 60, f"camera preset {fps}")
         else:                                   # shortcut: the GUI offers 90 / 150 Hz and no ROI, so the API sets these
+            exp = api.devices.info("camera")["settings"]["exposure_ms"]
+            if exp > 0.95 * 1000.0 / fps:        # the exposure must fit the frame period (555 Hz at 640 x 512)
+                say(f"exposure {exp} ms -> {api.camera.set_exposure(round(0.9 * 1000.0 / fps, 3))}")
             api.camera.set_rate(fps, confirm=True)
         got = api.devices.info("camera")["settings"]["rate_Hz"]
         say(f"camera rate {fps} -> {got}")
