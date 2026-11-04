@@ -164,15 +164,15 @@ class SimCamera(Device):
         with self._lock:
             s = self._s
             if name == "AcquisitionFrameRate":
-                s["rate_Hz"] = float(value)
+                s["rate_Hz"] = 1e6 / round(1e6 / float(value))          # the JAI: a frame period in 1-us steps
             elif name == "ExposureTime":
-                s["exposure_ms"] = float(value) / 1000.0
+                s["exposure_ms"] = round(float(value)) / 1000.0        # 1-us steps
             elif name == "Gain":
                 s["gain_dB"] = float(value)
             elif name in ("Width", "Height", "OffsetX", "OffsetY"):
                 x, y, w, h = s["roi"]
-                s["roi"] = {"Width": (x, y, int(value), h), "Height": (x, y, w, int(value)),
-                            "OffsetX": (int(value), y, w, h), "OffsetY": (x, int(value), w, h)}[name]
+                v = int(round(float(value) / e["step"]) * e["step"])    # the camera's own step (8 px, 2 px)
+                s["roi"] = {"Width": (x, y, v, h), "Height": (x, y, w, v), "OffsetX": (v, y, w, h), "OffsetY": (x, v, w, h)}[name]
             elif e["type"] != "command":
                 self._attrs[name] = bool(value) if e["type"] == "bool" else value
         return self.get_attribute(name)

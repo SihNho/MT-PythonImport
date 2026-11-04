@@ -332,3 +332,22 @@ def test_camera_attribute_panel_lists_sets_and_keeps_favourites(window, monkeypa
     w.cam_attrs.write("DeviceReset", True)                        # refused by the device: shown, nothing reset
     _until(app, lambda: "never written" in w.cam_attrs.status.text() or any(
         "never written" in w.events_list.item(i).text() for i in range(w.events_list.count())), 10, "refusal shown")
+
+
+def test_attribute_panel_shows_the_value_the_device_took(window, monkeypatch, tmp_path):
+    """Owner 2026-11-04: the camera rounds to its steps; after Set the control must show the applied value, not the
+    typed one, and say so."""
+    app, w = window
+    monkeypatch.setattr(w.cam_attrs, "favourites_file", tmp_path / "fav.json")
+    w._connect()
+    _until(app, lambda: "8 / 8" in w.dev_summary.text(), 15, "connect")
+    w.cam_attrs.load()
+    _until(app, lambda: "attributes in" in w.cam_attrs.status.text(), 15, "catalogue loaded")
+    w.cam_attrs.select("AcquisitionFrameRate")
+    w.cam_attrs.control.setValue(150.0)
+    w.cam_attrs.write("AcquisitionFrameRate", 150.0)
+    _until(app, lambda: "the device took" in w.cam_attrs.status.text(), 10, "rounding shown")
+    assert w.cam_attrs.control.value() == pytest.approx(149.9925, abs=1e-3)       # 1e6 / 6667 us
+    w.cam_attrs.select("Width")
+    w.cam_attrs.write("Width", 645)
+    _until(app, lambda: w.cam_attrs.control.value() == 648, 10, "width rounded to the 8-px step")

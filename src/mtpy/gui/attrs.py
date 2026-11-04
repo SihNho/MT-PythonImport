@@ -183,7 +183,7 @@ class AttrPanel(QWidget):
 
     @staticmethod
     def _fmt(v):
-        return "" if v is None else (f"{v:.4g}" if isinstance(v, float) else str(v))
+        return "" if v is None else (f"{v:.6g}" if isinstance(v, float) else str(v))
 
     def _fill_favourites(self):
         while self.fav_form.rowCount():
@@ -231,9 +231,16 @@ class AttrPanel(QWidget):
         self.detail_form.addRow("value", row)
 
     def write(self, name, value):
+        """Write and show what the device took: the camera rounds to its steps (exposure 1 us, rate 1-us period,
+        ROI 8 px), so the control is rebuilt with the read-back (owner 2026-11-04: "show the value that was applied")."""
         def done(got):
             self.values[name] = got
-            self.status.setText(f"{name} = {self._fmt(got)} (read back)")
+            same = got == value or (isinstance(got, (int, float)) and isinstance(value, (int, float))
+                                    and abs(float(got) - float(value)) <= 1e-9 * max(1.0, abs(float(value))))
+            self.status.setText(f"{name} = {self._fmt(got)} (read back)" if same else
+                                f"{name}: asked {self._fmt(value)}, the device took {self._fmt(got)} (its nearest step)")
             self._fill_tree()
             self._fill_favourites()
+            if self.selected == name:
+                self.select(name)                                   # the control now holds the applied value
         self.call(lambda: self.set_fn(name, value), f"{self.title} {name}", done)
