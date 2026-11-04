@@ -266,3 +266,19 @@ def test_plot_refresh_rate_is_the_users_and_paces_only_the_redraw(window, monkey
     w._toggle_acq()
     _until(app, lambda: not api.acq.running(), 10, "stopped")
 
+
+def test_start_runs_the_protocol_a_second_time(window):
+    """Owner 2026-11-04 (from the experiment): "Experiment ran the first time I pressed Start, not the next time" -
+    on the simulators two Starts in a row run; a refusal on the rig shows in the Experiment label and the log."""
+    app, w = window
+    w._connect()
+    _until(app, lambda: "8 / 8" in w.dev_summary.text(), 15, "connect")
+    w._apply_preset()
+    w._call(lambda: api.magnet.set_touch_position(40.0), "touch")
+    _until(app, lambda: api.magnet.force_calibration()["ready"], 10, "touch position")
+    w.prot_edit.setPlainText(PROTOCOL)
+    for n in (1, 2):
+        w._run_protocol()
+        _until(app, lambda: api.protocol.status()["state"] == "completed", 30, f"protocol {n} completed")
+        _until(app, lambda: "completed" in w.prot_status.text(), 5, f"protocol {n} label")
+    assert not [w.events_list.item(i).text() for i in range(w.events_list.count()) if "refused" in w.events_list.item(i).text()]

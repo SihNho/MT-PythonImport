@@ -911,6 +911,11 @@ class MainWindow(QMainWindow):
                 if abs(self.picks[k][0] - x) < 40 and abs(self.picks[k][1] - y) < 40:
                     del self.picks[k]
         elif ev.button() == Qt.LeftButton:
+            img = self.img_item.image
+            why = zscan.outside_margin(img.shape, [(x, y)], self.cal_cross.value()) if img is not None else []
+            if why:                           # owner 2026-11-04: a pick near the edge broke the z scan after 60 slices
+                self._fail("pick", why[0].replace("bead 1 ", ""))
+                return
             self.picks.append((x, y))
         self._draw_picks()
 

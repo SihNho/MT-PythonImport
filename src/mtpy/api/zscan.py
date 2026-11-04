@@ -6,6 +6,7 @@ shortcut: the simulated camera's image does not change with focus, so a .cal mad
 slice alike); it exercises the flow only. Real slices come with phase 6."""
 import time
 from datetime import datetime
+from pathlib import Path
 
 import numpy as np
 
@@ -13,6 +14,22 @@ from mtpy import calib, track
 from mtpy.lvfiles import write_cal
 
 from . import acq, devices, events, focus
+
+
+def outside_margin(shape, xy, cross):
+    """Which of the (x, y) picks sit closer to the frame edge than the tracking window needs (lv_round(cross * 0.6)
+    px on every side; a window cut by the edge gave an IndexError in the profile): [] when all fit, else one line
+    per offending bead with its distance and the margin."""
+    hh, w = shape[0], shape[1]
+    h = track.lv_round(cross * 0.6)
+    out = []
+    for k, (x, y) in enumerate(np.asarray(xy, dtype=np.float64).reshape(-1, 2), 1):
+        xi, yi = int(np.rint(x)), int(np.rint(y))
+        d = min(xi, w - xi, yi, hh - yi)
+        if d < h:
+            edge = ["left", "right", "top", "bottom"][[xi, w - xi, yi, hh - yi].index(d)]
+            out.append(f"bead {k} at ({x:.0f}, {y:.0f}) is {d} px from the {edge} edge; the {cross}-px window needs {h}")
+    return out
 
 
 def bead_profile(image, x, y, cross):
@@ -40,6 +57,14 @@ def run(path, xy, slices=60, step_nm=100.0, n_avg=20, cross=120, nm_per_px=84.0,
     xy = np.asarray(xy, dtype=np.float64).reshape(-1, 2)
     if len(xy) == 0:        # rig 2026-10-31: an empty pick list scanned 60 slices, then write_cal crashed
         raise ValueError("z scan: no bead positions to scan")
+    p = Path(path)          # owner 2026-11-04: a folder in "Write .cal to" failed only after the 60 slices had run
+    if p.is_dir():
+        raise ValueError(f"z scan: {p} is a folder; give the .cal file path, e.g. {p / 'cal001'}")
+    if p.exists():
+        raise FileExistsError(f"z scan: {p} exists; it is never overwritten - choose another name")
+    why = outside_margin(acq.average(1).shape, xy, cross)       # owner 2026-11-04: a pick 50 px from the edge ->
+    if why:                                                     # IndexError after the scan had moved the focus
+        raise ValueError("z scan: " + "; ".join(why))
     z0 = focus.position()
     step_um = step_nm / 1000.0
     stack = np.zeros((len(xy), slices, cross - 1))

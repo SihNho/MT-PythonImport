@@ -94,3 +94,29 @@ def test_zscan_locks_the_camera_settings_while_it_runs(sim, tmp_path, monkeypatc
     with pytest.raises(ZeroDivisionError):
         zscan.run(tmp_path / "cal_fail", [(200.0, 200.0)], slices=3, n_avg=1)
     assert api.camera.set_exposure(3.0) == 3.0                 # a failed scan unlocks too
+
+
+def test_zscan_refuses_a_pick_inside_the_edge_margin_before_any_move(sim, tmp_path, monkeypatch):
+    """Owner 2026-11-04: a pick 50 px from the right edge made the scan move through 60 slices and then fail with an
+    IndexError; refuse first, naming the bead, and move nothing."""
+    from mtpy.api import zscan
+    monkeypatch.setattr(api.acq, "average", lambda n, timeout_s=10.0: np.full((1024, 1280), 100.0))
+    moves = []
+    monkeypatch.setattr(api.focus, "move_to", lambda z: moves.append(z))
+    with pytest.raises(ValueError, match="bead 2 .* 50 px from the right edge; the 120-px window needs 72"):
+        zscan.run(tmp_path / "cal_edge", [(640.0, 512.0), (1230.0, 500.0)], slices=5, n_avg=1)
+    assert moves == []
+    assert zscan.outside_margin((1024, 1280), [(72.0, 72.0), (1208.0, 952.0)], 120) == []
+
+
+def test_zscan_refuses_a_folder_or_an_existing_file_as_the_cal_path(sim, tmp_path, monkeypatch):
+    """Owner 2026-11-04: the GUI's "Write .cal to" held a folder; the scan ran 60 slices and then 'Permission denied'."""
+    from mtpy.api import zscan
+    moves = []
+    monkeypatch.setattr(api.focus, "move_to", lambda z: moves.append(z))
+    with pytest.raises(ValueError, match="is a folder; give the .cal file path"):
+        zscan.run(tmp_path, [(640.0, 512.0)], slices=5, n_avg=1)
+    (tmp_path / "cal_old").write_bytes(b"x")
+    with pytest.raises(FileExistsError, match="never overwritten"):
+        zscan.run(tmp_path / "cal_old", [(640.0, 512.0)], slices=5, n_avg=1)
+    assert moves == []
