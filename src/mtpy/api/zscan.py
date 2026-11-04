@@ -45,6 +45,7 @@ def bead_profile(image, x, y, cross):
 
 
 _progress = (0, 0)                 # (slice done, slices) of the running scan; (0, 0) when none
+_last = None                       # {"slice", "profiles": [[...] per bead]} of the last slice scanned (the GUI's graph)
 SETTLE_S = 0.2      # owner 2026-11-01 "0.2초로 넣어": the piezo settles after the controller reports arrival; the
                     # 8-s scan of 2026-10-31 (no wait) gave LUT slopes 1.04-1.06, the 0.2-s scan of 10-26 gave 1.000
 
@@ -55,7 +56,8 @@ def run(path, xy, slices=60, step_nm=100.0, n_avg=20, cross=120, nm_per_px=84.0,
     """Scan `slices` focus positions `step_nm` apart, from the current focus upwards as the LabVIEW program does
     (owner 2026-11-05: a scan that first jumps down risks drift; the user sets the start), or centred on it
     (centred=True: the bench tools, which put the bead at the LUT's middle first); write the .cal to `path`, return
-    the focus to where it was. xy: (n, 2) bead positions in px. progress(i, slices) is called per slice. settle_s:
+    the focus to the LUT's middle (owner 2026-11-05: tracking must start mid-LUT, else z errs) - to the start after
+    a failure. xy: (n, 2) bead positions in px. progress(i, slices) is called per slice. settle_s:
     wait after each focus move reports arrival before the frames are averaged."""
     xy = np.asarray(xy, dtype=np.float64).reshape(-1, 2)
     if len(xy) == 0:        # rig 2026-10-31: an empty pick list scanned 60 slices, then write_cal crashed
@@ -72,10 +74,10 @@ def run(path, xy, slices=60, step_nm=100.0, n_avg=20, cross=120, nm_per_px=84.0,
     step_um = step_nm / 1000.0
     h = track.lv_round(cross * 0.6)
     stack = np.zeros((len(xy), slices, cross - 1))
-    global _progress
+    global _progress, _last
     cam = devices.service("camera")
     cam.scanning = True                  # api.camera refuses every setting until the scan ends (P5 / G5)
-    _progress = (0, slices)
+    _progress, _last, ok = (0, slices), None, False
     try:
         for s in range(slices):
             focus.move_to(z0 + (s - (slices // 2 if centred else 0)) * step_um).wait(10)
@@ -88,12 +90,15 @@ def run(path, xy, slices=60, step_nm=100.0, n_avg=20, cross=120, nm_per_px=84.0,
                                fit=(float(xo), float(yo)),
                                reason="the xy fit moved more than the window allows: the pick is not on a bead, or the bead is lost at this focus; its LUT is not to be trusted")
             _progress = (s + 1, slices)
+            _last = {"slice": s + 1, "profiles": stack[:, s].tolist()}
             if progress:
                 progress(s + 1, slices)
+        ok = True
     finally:
         cam.scanning = False
         _progress = (0, 0)
-        focus.move_to(z0).wait(10)
+        z_end = z0 + (slices // 2) * step_um if ok and not centred else z0
+        focus.move_to(z_end).wait(10)
     cal = {"xy": xy, "stack": stack, "n_slices": slices,
            # per bead (LOW, HIGH, forget) as LabVIEW's .cal holds it - the band-pass bins and the forget radius the
            # kernel is built from (calib.clusters); NOT the position (rig 2026-10-30: x, y, cross here gave an empty
@@ -104,8 +109,13 @@ def run(path, xy, slices=60, step_nm=100.0, n_avg=20, cross=120, nm_per_px=84.0,
     write_cal(path, cal)
     events.log("calibration", request={"slices": slices, "step_nm": step_nm, "n_avg": n_avg, "cross": cross,
                                            "settle_s": settle_s},
-                   path=str(path), beads=len(xy))
+                   path=str(path), beads=len(xy), focus_start_um=z0, focus_end_um=z_end)
     return cal
+
+
+def last_profiles():
+    """The last slice's radial profiles, {"slice": k, "profiles": [[...] per bead]}, or None (the GUI's graph)."""
+    return _last
 
 
 def progress():

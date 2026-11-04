@@ -92,8 +92,13 @@ zero / bridge / exclude (U12, U14), troubleshooting guide (U9), MT-TIRF mode (10
    speed to the magnet / stage move controls (it is missing); **two PI presets** (the owner keeps "Cal+" and "Cal-"
    positions as two buttons with stored values, editable); after a relative "move by" the entry returns to 0 so the
    next move is typed fresh.
-5. **Calibrate panel**: the bandpass and forget-radius values are not visible, nor the PSF and the result - see the
-   calibration-panel task (card of 2026-11-03).
+5. **Calibrate panel**: the bandpass and forget-radius values are not visible, nor the PSF and the result.
+   **Done 2026-11-05** (`gui/calview.py`): below the scan settings the viewer shows, per bead of the .cal, the raw
+   stack as an image (the PSF through focus), the band-passed stack after the forget radius (what z is matched
+   against) and the self-fit (every slice's own profile through the z method against the LUT: z found against z
+   scanned, the residual in nm); LOW / HIGH / forget spins re-process live and "Save to .cal" writes them into the
+   file's bead_i32 (then select the beads again). Open: the owner's words "delta r vs delta z" may mean another
+   LabVIEW picture than the self-fit - to confirm with the owner.
 6. **Experiment panel**: (a) the owner pressed Start, it ran once, and the next Start did nothing visible. In the
    simulator the API runs protocols one after another (`tests/test_protocol.py`), so the cause is on the GUI path
    (the Start handler only resumes when the state is "paused"; a refusal from `api.protocol.run`, such as a check

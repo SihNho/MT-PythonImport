@@ -69,6 +69,17 @@ def select(ids, cal_path=None):
     return {i: {"x_px": float(x), "y_px": float(y)} for i, (x, y) in zip(ids, _selected.xy0)}
 
 
+def clear():
+    """Drop the selection (owner 2026-11-05: to calibrate again, the beads of the last .cal must go first, then the
+    image takes picks). Refused (NotReady) while acquisition runs."""
+    global _selected
+    from . import acq
+    if acq.running():
+        raise NotReady("beads cannot change while acquisition runs; api.acq.stop() first")
+    _selected = None
+    events.log("beads", request={"select": []})
+
+
 def selected():
     """The selected `mtpy.acq.Beads`, or None."""
     return _selected

@@ -55,6 +55,7 @@ from mtpy.track import Z_METHODS
 from . import shutdown as _shutdown
 from . import zscan
 from .attrs import AttrPanel
+from .calview import CalView
 from .exptable import ExpTable
 from .shutdown import run_shutdown
 
@@ -533,7 +534,9 @@ class MainWindow(QMainWindow):
         self.rotor_speed = _spin(0.1, 10.0, 0.1, 1.0, 1, " turns/s")
         f.addRow("Rotor speed", self.rotor_speed)
         self.rotor_turns = _spin(-50.0, 50.0, 1.0, 0.0, 1, " turns")
-        f.addRow("Rotor (relative)", _row(self.rotor_turns, QPushButton("Rotate", clicked=self._rotate)))
+        f.addRow("Rotor (relative)", _row(self.rotor_turns, QPushButton("Rotate", clicked=self._rotate),
+                                          QPushButton("+1 turn", clicked=lambda: self._rotate(1.0)),
+                                          QPushButton("-1 turn", clicked=lambda: self._rotate(-1.0))))
         self.focus_um = _spin(-1000.0, 1000.0, 0.1, 0.0, 2, " um")
         f.addRow("Focus z", _row(self.focus_um, QPushButton("Move", clicked=self._move_focus)))
         self.focus_by = _spin(-100.0, 100.0, 0.1, 0.0, 2, " um")
@@ -563,7 +566,8 @@ class MainWindow(QMainWindow):
         f.addRow(self.bead_list)
         self.role_ref = QLineEdit("1")
         f.addRow("Reference bead ids (comma)", self.role_ref)
-        f.addRow(QPushButton("Select checked beads", clicked=self._select_beads))
+        f.addRow(_row(QPushButton("Select checked beads", clicked=self._select_beads),
+                      QPushButton("New calibration (drop the beads, pick again)", clicked=self._new_calibration)))
         self.beads_info = QLabel("no beads selected")
         self.beads_info.setWordWrap(True)
         f.addRow(self.beads_info)
@@ -598,6 +602,8 @@ class MainWindow(QMainWindow):
         self.cal_status = QLabel("not run")
         self.cal_status.setWordWrap(True)
         f.addRow(self.cal_status)
+        self.calview = CalView(on_saved=lambda path: (self.ed_cal.setText(path), self._load_cal_list()))
+        f.addRow(self.calview)
         return w
 
     def _panel_exp(self):
@@ -1004,12 +1010,16 @@ class MainWindow(QMainWindow):
         f = self.force_pn.value()
         self._call(lambda: api.magnet.set_force(f).wait(60), f"force -> {f:.2f} pN")
 
-    def _rotate(self):
-        n, v = self.rotor_turns.value(), self.rotor_speed.value()
+    def _rotate(self, n=None):
+        """n: the turns of the +1 / -1 buttons (owner 2026-11-05: one turn at a click), else the entry, which goes
+        back to 0 after the move."""
+        v = self.rotor_speed.value()
+        from_entry = n is None
+        n = self.rotor_turns.value() if from_entry else n
         if n == 0:
             return
         self._call(lambda: api.rotor.rotate(n, v).wait(60), f"rotor {n:+.1f} turns at {v:g} turns/s",
-                   lambda _: self.rotor_turns.setValue(0.0))
+                   lambda _: from_entry and self.rotor_turns.setValue(0.0))
 
     def _move_focus(self):
         z = self.focus_um.value()
@@ -1045,6 +1055,24 @@ class MainWindow(QMainWindow):
             self.bead_list.addItem(it)
         self.beads_info.setText(f"{len(cal['xy'])} beads, {cal['n_slices']} slices x {cal['z_step'] * 1000:.0f} nm, "
                                 f"{cal['date']}")
+        with contextlib.suppress(Exception):           # the viewer (Calibrate) shows the same file
+            self.calview.load(path)
+
+    def _new_calibration(self):
+        """Owner 2026-11-05: to calibrate again while tracking, the beads must go: the acquisition stops, the selection
+        is dropped, the acquisition starts again without beads, and left clicks pick on the image."""
+        was_running = api.acq.running()
+        self.bead_ids, self.roles, self.cal_path = [], {}, None
+        self._clear_picks()
+        self._rebuild_chips()
+        self.history.clear()
+
+        def dropped(_):
+            self.beads_info.setText("no beads selected: left click beads on the image, then Calibrate")
+            self.btn_live.setText("Start acquisition")
+            if was_running:
+                self._toggle_acq()
+        self._call(lambda: (api.acq.running() and api.acq.stop(), api.beads.clear())[1], "new calibration", dropped)
 
     def _select_beads(self):
         self._clear_picks()
@@ -1081,7 +1109,10 @@ class MainWindow(QMainWindow):
     def _on_view_click(self, ev):
         """Pick beads on the JAI image (owner 2026-10-30: tracking before the TIRF set-up): left click adds a bead
         at the click, right click removes the nearest pick; the picks are what the z scan calibrates."""
-        if not self.vb.sceneBoundingRect().contains(ev.scenePos()) or self.bead_ids:
+        if not self.vb.sceneBoundingRect().contains(ev.scenePos()):
+            return
+        if self.bead_ids:                 # owner 2026-11-05: "clicking did nothing" - say why
+            self.statusBar().showMessage("beads are selected from a .cal: press 'New calibration' (Beads) to pick again", 8000)
             return
         pt = self.vb.mapSceneToView(ev.scenePos())
         x, y = float(pt.x()), float(pt.y())
@@ -1170,10 +1201,12 @@ class MainWindow(QMainWindow):
             return api.zscan.run(str(path), xy.tolist(), slices, step, avg, cross, settle_s=settle)
 
         def done(cal):
-            self.cal_status.setText(f"done: {len(cal['xy'])} beads, {slices} slices x {step:.0f} nm -> {path}")
+            self.cal_status.setText(f"done: {len(cal['xy'])} beads, {slices} slices x {step:.0f} nm -> {path}; "
+                                    "the focus is at the LUT's middle - track from here")
             self.ed_cal.setText(str(path))
             self.cal_out.setText(str(next_free(path)))        # the next scan gets the next number unless told otherwise
             self._load_cal_list()
+            self.calview.load(path)
         wk = Worker(job)                 # a failed scan is shown in the Calibrate label, not only in the status bar
         wk.setAutoDelete(False)
         self._workers.add(wk)
@@ -1380,6 +1413,7 @@ class MainWindow(QMainWindow):
                 i, n = api.zscan.progress()
                 if n:
                     d["zscan"] = f"slice {i} / {n}"
+                    d["prof"] = api.zscan.last_profiles()
         if st and st.get("magnet", {}).get("state") == "connected":
             try:
                 self._mag = api.magnet.position()
@@ -1418,6 +1452,8 @@ class MainWindow(QMainWindow):
     def _slow_apply(self, d):
         self._slow_busy = False
         try:
+            if d.get("prof"):
+                self._plot_profiles(d["prof"])
             for key, label in (("zscan", self.cal_status), ("readback", self.readback), ("positions", self.positions),
                                ("em", self.em_readback)):
                 if d.get(key):
@@ -1437,6 +1473,19 @@ class MainWindow(QMainWindow):
             self.statusBar().showMessage("   |   ".join(parts))
         except RuntimeError:                  # the window is closing (widgets deleted) while a read was in flight
             pass
+
+    def _plot_profiles(self, p):
+        """During a z scan the graph shows every pick's radial profile of the slice just taken (owner 2026-11-05)."""
+        if getattr(self, "_prof_slice", None) == p["slice"]:
+            return
+        self._prof_slice = p["slice"]
+        for key in list(self.curves):
+            self.plot.removeItem(self.curves.pop(key))
+        self.plot.setLabel("bottom", "radial profile bin (mirrored; the middle is the bead centre)")
+        self.plot.setLabel("left", f"intensity, slice {p['slice']}")
+        for k, prof in enumerate(p["profiles"]):
+            self.curves[("prof", k)] = self.plot.plot(np.asarray(prof, dtype=np.float64),
+                                                      pen=pg.mkPen(COLORS[k % len(COLORS)], width=1.5), name=f"pick {k + 1}")
 
     def _update_plot(self):
         if not self.history or not self.bead_ids:

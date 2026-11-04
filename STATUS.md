@@ -219,6 +219,14 @@ Short and current. Details live in the linked documents; the history is in git a
   file (the raw data) is `tra001.h5`, its export `tra001-000`, the calibration `cal001`; a typed .cal name that exists
   is overwritten after a prompt, the next scan gets the next number. (4) STOP = emergency stop, understood. (5) The
   owner wants, once the code settles, the means to see where things are set and what state the code is in (not now).
+- **2026-11-05 ~04:00 (owner):** the graph shows every pick's radial profile per slice during the z scan; "New
+  calibration" (Beads) drops the selected beads and restarts the acquisition without them so the image takes picks
+  again (#27); the scan ends with the focus at the LUT's middle (tracking starts there); rotor +1 / -1 turn buttons
+  in Explore; the z scan's IndexError at a runaway pick fixed (#25); #26 (the program ends mid-scan).
+- **2026-11-05 ~04:30 (owner: "why is the calibration not fixed - band-pass, forget radius, PSF"):** the
+  calibration viewer (`gui/calview.py`, in Calibrate): per bead the PSF stack image, the band-passed LUT image and
+  the self-fit (z found vs z scanned, residual nm) with LOW / HIGH / forget spins re-processing live and Save to
+  .cal (bead_i32; select the beads again). To confirm with the owner what LabVIEW's "delta r vs delta z" picture is.
 - **Next:** protocols on hardware (force ramps, rotation, 3-state clamp, autofocus), the stop / watchdog paths
   exercised on the rig, then the tethered-bead calibration.
 - **Queued (owner 2026-10-30):** lock the camera settings while a z scan runs (the GUI must not change exposure,

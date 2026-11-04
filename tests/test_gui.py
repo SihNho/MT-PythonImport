@@ -5,6 +5,7 @@ import os
 import shutil
 import time
 
+import numpy as np
 import pytest
 from conftest import FIXTURE, need
 
@@ -445,3 +446,59 @@ def test_start_replaces_the_running_protocol_and_the_badge_shows_it(window):
     _until(app, lambda: api.protocol.status()["state"] == "completed" and api.protocol.status().get("name") == "short",
            30, "the short one ran")
     _until(app, lambda: w.prot_badge.text() == "no protocol", 5, "badge cleared")
+
+
+def test_new_calibration_drops_the_beads_and_the_rotor_turns_once(window):
+    """Owner 2026-11-05: with beads selected the image took no picks; 'New calibration' drops them (acquisition
+    restarted without beads) so clicks pick again. The +1 / -1 turn buttons rotate one turn and leave the entry."""
+    app, w = window
+    w._connect()
+    _until(app, lambda: "8 / 8" in w.dev_summary.text(), 15, "connect")
+    w._apply_preset()
+    w._load_cal_list()
+    w._select_beads()
+    _until(app, lambda: w.bead_ids, 10, "beads selected")
+    w._toggle_acq()
+    _until(app, lambda: api.acq.running() and "JAI frame" in w.cam_label.text, 20, "acquisition")
+    w._new_calibration()
+    _until(app, lambda: api.beads.selected() is None and w.bead_ids == [] and api.acq.running()
+           and w.btn_live.text() == "Stop acquisition", 30, "beads dropped, acquisition back without them")
+    w.rotor_turns.setValue(3.0)
+    p0 = api.rotor.position()
+    w._rotate(1.0)
+    _until(app, lambda: abs(api.rotor.position() - p0 - 1.0) < 0.01, 30, "+1 turn")
+    assert w.rotor_turns.value() == 3.0
+    w._rotate(-1.0)
+    _until(app, lambda: abs(api.rotor.position() - p0) < 0.01, 30, "-1 turn")
+
+
+def test_calibration_viewer_shows_the_lut_and_saves_the_band_to_the_cal(tmp_path):
+    """Owner 2026-11-05 ("why is the calibration not fixed: band-pass, forget radius, PSF"): the viewer shows one
+    bead's stack, its band-passed LUT and the self-fit; Save writes LOW / HIGH / forget into the .cal's bead_i32."""
+    import shutil
+
+    from PySide6.QtWidgets import QApplication
+
+    from mtpy.gui.calview import CalView, self_fit
+    from mtpy.lvfiles import read_cal
+    need(FIXTURE / "cal002")
+    QApplication.instance() or QApplication([])
+    path = tmp_path / "cal_view"
+    shutil.copy(FIXTURE / "cal002", path)
+    cal = read_cal(path)
+    z, found = self_fit(cal, 0, 0, 40, 10)
+    mid = slice(len(z) // 4, 3 * len(z) // 4)
+    assert len(z) == cal["n_slices"] and np.isfinite(found[mid]).all()
+    assert np.nanmedian(np.abs(found[mid] - z[mid])) < 0.05           # the LUT finds its own slices within 50 nm
+    saved = []
+    v = CalView(on_saved=saved.append)
+    v.load(path)
+    assert v.bead.count() == len(cal["stack"]) and "self-fit residual" in v.info.text()
+    v.forget.setValue(12)
+    v.save()
+    assert saved == [str(path)] and list(read_cal(path)["bead_i32"][0]) == [v.low.value(), v.high.value(), 12]
+    assert list(read_cal(path)["bead_i32"][1]) == list(cal["bead_i32"][1])
+    v.all_beads.setChecked(True)
+    v.high.setValue(30)
+    v.save()
+    assert (read_cal(path)["bead_i32"] == [v.low.value(), 30, 12]).all()

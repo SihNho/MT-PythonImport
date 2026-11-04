@@ -148,7 +148,8 @@ def test_zscan_starts_at_the_current_focus_and_stacks_upwards(sim, tmp_path, mon
     monkeypatch.setattr(api.focus, "move_to", lambda z: (moves.append(round(z, 4)), _M())[1])
     z0 = api.focus.position()
     zscan.run(tmp_path / "cal_up", [(640.0, 512.0)], slices=3, n_avg=1)
-    assert moves == [round(z0, 4), round(z0 + 0.1, 4), round(z0 + 0.2, 4), round(z0, 4)]
+    assert moves == [round(z0, 4), round(z0 + 0.1, 4), round(z0 + 0.2, 4), round(z0 + 0.1, 4)]   # ends mid-LUT
+    assert zscan.last_profiles()["slice"] == 3 and len(zscan.last_profiles()["profiles"]) == 1
     moves.clear()
     zscan.run(tmp_path / "cal_mid", [(640.0, 512.0)], slices=3, n_avg=1, centred=True)
     assert moves == [round(z0 - 0.1, 4), round(z0, 4), round(z0 + 0.1, 4), round(z0, 4)]
