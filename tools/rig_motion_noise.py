@@ -146,7 +146,7 @@ def main():
             cal_path = os.path.join(OUT, "cal_motion")
             api.acq.start(record=False, name="zscan")
             try:
-                zscan.run(cal_path, xy, slices=60, step_nm=100.0, n_avg=10, cross=120)
+                zscan.run(cal_path, xy, slices=60, step_nm=100.0, n_avg=10, cross=120, centred=True)
                 say(f"RESULT z scan done; focus back at {api.focus.position():.3f} um")
             finally:
                 api.acq.stop()

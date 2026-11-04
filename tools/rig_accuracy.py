@@ -146,7 +146,7 @@ def make_cal(path):
         if ROI is None:
             with open(LATEST, "w", encoding="utf-8") as f:
                 json.dump({"picks": (xy + origin).tolist(), "time": time.strftime("%Y-%m-%d %H:%M:%S")}, f)
-        zscan.run(path, xy, slices=60, step_nm=100.0, n_avg=10, cross=120)
+        zscan.run(path, xy, slices=60, step_nm=100.0, n_avg=10, cross=120, centred=True)
         say(f"RESULT z scan done -> {path}; focus back at {api.focus.position():.3f} um")
     finally:
         api.acq.stop()

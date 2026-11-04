@@ -50,8 +50,11 @@ SETTLE_S = 0.2      # owner 2026-11-01 "0.2초로 넣어": the piezo settles aft
 
 
 def run(path, xy, slices=60, step_nm=100.0, n_avg=20, cross=120, nm_per_px=84.0, progress=None,
-        low=calib.DEFAULT_LOW, high=calib.DEFAULT_HIGH, forget=calib.DEFAULT_FORGET, settle_s=SETTLE_S):
-    """Scan `slices` focus positions `step_nm` apart centred on the current focus, write the .cal to `path`, return
+        low=calib.DEFAULT_LOW, high=calib.DEFAULT_HIGH, forget=calib.DEFAULT_FORGET, settle_s=SETTLE_S,
+        centred=False):
+    """Scan `slices` focus positions `step_nm` apart, from the current focus upwards as the LabVIEW program does
+    (owner 2026-11-05: a scan that first jumps down risks drift; the user sets the start), or centred on it
+    (centred=True: the bench tools, which put the bead at the LUT's middle first); write the .cal to `path`, return
     the focus to where it was. xy: (n, 2) bead positions in px. progress(i, slices) is called per slice. settle_s:
     wait after each focus move reports arrival before the frames are averaged."""
     xy = np.asarray(xy, dtype=np.float64).reshape(-1, 2)
@@ -74,7 +77,7 @@ def run(path, xy, slices=60, step_nm=100.0, n_avg=20, cross=120, nm_per_px=84.0,
     _progress = (0, slices)
     try:
         for s in range(slices):
-            focus.move_to(z0 + (s - slices // 2) * step_um).wait(10)
+            focus.move_to(z0 + (s - (slices // 2 if centred else 0)) * step_um).wait(10)
             time.sleep(settle_s)
             img = acq.average(n_avg)
             for b, (x, y) in enumerate(xy):

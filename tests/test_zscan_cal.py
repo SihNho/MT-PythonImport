@@ -120,3 +120,22 @@ def test_zscan_refuses_a_folder_or_an_existing_file_as_the_cal_path(sim, tmp_pat
     with pytest.raises(FileExistsError, match="never overwritten"):
         zscan.run(tmp_path / "cal_old", [(640.0, 512.0)], slices=5, n_avg=1)
     assert moves == []
+
+
+def test_zscan_starts_at_the_current_focus_and_stacks_upwards(sim, tmp_path, monkeypatch):
+    """Owner 2026-11-05: no jump down first (drift); from the start position up, step by step, back at the end.
+    centred=True keeps the bench tools' LUT centred on the start."""
+    from mtpy.api import zscan
+    monkeypatch.setattr(api.acq, "average", lambda n, timeout_s=10.0: np.full((1024, 1280), 100.0))
+    moves = []
+
+    class _M:
+        def wait(self, t):
+            return None
+    monkeypatch.setattr(api.focus, "move_to", lambda z: (moves.append(round(z, 4)), _M())[1])
+    z0 = api.focus.position()
+    zscan.run(tmp_path / "cal_up", [(640.0, 512.0)], slices=3, n_avg=1)
+    assert moves == [round(z0, 4), round(z0 + 0.1, 4), round(z0 + 0.2, 4), round(z0, 4)]
+    moves.clear()
+    zscan.run(tmp_path / "cal_mid", [(640.0, 512.0)], slices=3, n_avg=1, centred=True)
+    assert moves == [round(z0 - 0.1, 4), round(z0, 4), round(z0 + 0.1, 4), round(z0, 4)]

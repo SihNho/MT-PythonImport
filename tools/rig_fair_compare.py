@@ -143,7 +143,7 @@ def main():
             api.acq.start(record=False, name="zscan")
             try:
                 t0 = time.monotonic()
-                zscan.run(cal_path, xy, slices=60, step_nm=100.0, n_avg=10, cross=120,
+                zscan.run(cal_path, xy, slices=60, step_nm=100.0, n_avg=10, cross=120, centred=True,
                           progress=lambda i, n: (i % 20 == 0) and say(f"  slice {i}/{n}"))
                 say(f"RESULT z scan in {time.monotonic() - t0:.0f} s; focus back at {api.focus.position():.3f} um")
             finally:
