@@ -1,0 +1,29 @@
+# Troubleshooting: the error list (started 2026-11-04 on the owner's word)
+
+Owner 2026-11-04: "start an error list now, for troubleshooting, for updating the program, and for writing a new
+one". One entry per symptom the program or the rig has shown: what the message says, what it means, what to do,
+and where the code decides it. Add an entry whenever a new message appears; keep the message text as the program
+prints it so it can be searched. The GUI writes every message to `gui_events.log` in the run folder (2026-11-04),
+so the exact line is always available afterwards.
+
+| # | message / symptom | meaning | what to do | where |
+|---|---|---|---|---|
+| 1 | `rig lock refused: STALE lock: holder mtpy (pid N, since ...) is gone` at Connect | the previous program died without its cleanup (power loss, kill); the shared lock still names it | GUI: answer **Yes** in the "Rig lock left by a dead program" dialog, it takes the lock over on your click and connects. Without the GUI: `python tools/rig_recover.py`. A lock held by a live process is never taken: close that program | `api/rig.py recover_stale`, `gui/app.py _offer_stale_takeover`, `G:/Codes/rig/riglock.py` |
+| 2 | `LabVIEW is running: close it first; the program never closes it itself` | LabVIEW.exe is open; the program refuses the rig beside it (RULES.md) | close LabVIEW, Connect again | `api/rig.py acquire` |
+| 3 | `rig_state is 'experiment' ...` | someone declared an experiment; nobody acquires the rig | the user ends the experiment: `py G:/Codes/rig/riglock.py set-state assembled --by chat --note "..."` (or through the chat) | riglock |
+| 4 | z scan: `bead N at (x, y) is D px from the <edge> edge; the 120-px window needs 72` (2026-11-04: was `IndexError: index 119 is out of bounds`) | a picked bead sits closer to the frame edge than the tracking window | pick a bead at least 72 px (0.6 x cross) from every edge; the image refuses such clicks with the same text | `api/zscan.py outside_margin` |
+| 5 | z scan: `... is a folder; give the .cal file path, e.g. ...\cal001` (was `[Errno 13] Permission denied`) | "Write .cal to" held a folder | write the file path, no extension needed (LabVIEW's `cal002` style; `.cal` also fine) | `api/zscan.py run` |
+| 6 | z scan: `... exists; it is never overwritten` | a .cal of that name is there | another name | `api/zscan.py run` |
+| 7 | Experiment: Start runs once, the next Start does nothing visible | a refusal from `api.protocol.run` (a check against the rig's present state, a protocol still running or paused) shows only in the Experiment label and the log | read the `[gui] run protocol: ...` line in the log pane or `gui_events.log`; the simulators run twice in a row, so the line names the cause | `gui/app.py _run_protocol`, `api/protocol.py run` |
+| 8 | a `ramp` shows stairs in the trace; a 10-s ramp takes 50 s | until 2026-11-04 the engine ramped in 0.5-s force increments, each a magnet move plus a wait | fixed: a ramp is one magnet move at distance / t (a speed above the profile max is coerced to it, `coerced` event) | `protocol/engine.py _do_ramp` |
+| 9 | `camera ... frame period X ms is shorter than the exposure Y ms; shorten the exposure first` | the requested rate does not fit the exposure | lower the exposure first (ExposureTime in the attribute panel), then the rate | `devices/sim/camera.py check_setting`, `devices/jai.py` |
+| 10 | `camera rate X Hz is outside [1, Y] Hz at this ROI` | the driver's cap at the ROI in force (247.95 Hz full frame, 554.9 Hz at 640 x 512) | a smaller ROI for a higher rate | `devices/jai.py check_setting` |
+| 11 | acquisition starts, 0 frames arrive, `camera_error` None | IMAQdx sometimes gives no frame right after a stop / start (seen 2026-11-01 at 248 Hz) | stop and start again (the bench tool retries once) | `acq/pipeline.py`, `devices/jai.py` |
+| 12 | z reads ~1 um off and one bead flips between two values after a frame-rate change | the LUT was made at another rate; the ring image changes with the rate | make the LUT at the rate it is used at | `docs/results/2026-11-01-accuracy-fps-roi.md` |
+| 13 | beads "not found" at the start of a bench; the picks are 15-40 px off | the stuck-bead sample drifts ~15 px/h, more during stage-step blocks | the tools re-find the beads from their last positions (`bead_picks_latest.json`) and refuse when the four do not shift alike | `tools/rig_accuracy.py find_picks` |
+| 14 | `camera attribute X is never written by the program (stored defaults, reset, factory)` | DeviceReset, UserSetSave, FactoryStoreAll, the factory category | not from the program; NI MAX if ever needed | `devices/jai.py set_attribute` |
+| 15 | `X cannot be written while acquiring (stop acquisition first)` from the attribute panel | the API pauses the acquisition for frame-producing categories; this text means the device was asked directly | use the panel / API (they pause and restart around the write) | `api/camera.py set_attribute` |
+| 16 | `camera [...] change how data are read; while recording pass confirm=True` | a frame-producing change while recording | tick "allow a frame-producing change while recording" in the panel, or stop recording | `api/camera.py _guard` |
+| 17 | the PC is off in the morning, Kernel-Power 41, no bugcheck | the rig PC's instant deaths (board / CPU power delivery) | heartbeat log: `tools/pc_heartbeat.py --report`; board replacement planned | `docs/rig/pc-stability.md` |
+| 18 | IMAQdx enumerates no camera after installing JAI's eBUS SDK | the installer bound the camera to Pleora's USB3 Vision driver | bind it back to NI's `niu3vk.inf` (Device Manager) | `docs/manuals/camera-jai-imaqdx.md` |
+| 19 | after a power loss during a bench, the rig lock is stale and the stage / magnet may be off their start | the cleanup never ran | #1, then `tools/rig_restore.py` (stage and magnet to the last run's start, focus by ring radius) or set them by hand in Explore | `tools/rig_restore.py` |

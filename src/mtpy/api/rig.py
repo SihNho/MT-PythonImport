@@ -10,10 +10,13 @@ The rig state (assembled / disassembled / experiment) is only read here; it chan
 
     api.rig.status()     # {"held": bool, "own": bool, "holder": ..., "rig_state": ...}
 """
+import json
 import os
 import subprocess
 import sys
 import threading
+import time
+from pathlib import Path
 
 from . import estop, events
 from .errors import NotReady
@@ -74,6 +77,62 @@ def acquire(purpose):
         events.log("rig_lock", action="adopted" if not own else "acquired", purpose=purpose)
 
 
+RECOVERY_DIR = Path(RIG_DIR) / "recovery"
+
+
+def stale():
+    """The stale lock, if the rig lock is held by a process that no longer runs (a program that died without its
+    cleanup: a power loss, a kill), else None."""
+    st = _riglock().status()
+    h = st.get("holder")
+    return h if h and st.get("holder_alive") is False else None
+
+
+def recover_stale(reason):
+    """Take a STALE rig lock over and release it, on the user's own words (`reason`, e.g. the GUI's "Take over"
+    click), so the program can connect again without a person editing the lock (owner 2026-11-04: "I cannot ask the
+    agent every time"). Refused (NotReady) unless the lock is stale, the rig is not in an experiment and `reason` is
+    given. What it does: riglock's take-over (logged with the reason), a recovery record in G:/Codes/rig/recovery/
+    (the dead holder, the reason, what the next connect re-checks: every device is opened fresh, the PI session
+    limits are rewritten at open and released at close with read-back - devices/pi.py), riglock.recovered with that
+    record, release. The devices themselves are not touched here; the next connect opens them and reads them back.
+    RULES.md 5 still holds: a lock held by a live process is never taken."""
+    if not isinstance(reason, str) or not reason.strip():
+        raise NotReady("a stale lock is taken over only on the user's own words: give the reason")
+    rl = _riglock()
+    h = stale()
+    if h is None:
+        st = rl.status()
+        raise NotReady("no stale lock to recover: " + ("the lock is free" if not st.get("holder") else
+                       f"the lock is held by a live process ({st['holder'].get('name')} pid {st['holder'].get('pid')})"))
+    if (rl.status().get("rig_state") or {}).get("value") == "experiment":
+        raise NotReady("rig state is experiment: no recovery during an experiment")
+    with _lock:
+        if _held["token"]:
+            raise NotReady("this process already holds the lock")
+        token = rl.acquire(HOLDER, "recovery of a stale lock", take_stale=True, reason=reason)
+        rec = RECOVERY_DIR / time.strftime("%Y%m%d_%H%M%S_mtpy")
+        rec.mkdir(parents=True, exist_ok=True)
+        note = {"time": time.strftime("%Y-%m-%d %H:%M:%S"), "reason": reason, "old_holder":
+                {k: h.get(k) for k in ("name", "pid", "since", "purpose", "host")}}
+        files = {}
+        for item, text in (("devices_closed", ("the holder process is gone, so its device handles are closed by the OS; "
+                                              "the next connect opens every device fresh and reads it back")),
+                           ("limits_released", ("no PI command was sent during this take-over; the PI session limits "
+                                               "are rewritten at the next open and released at close with read-back "
+                                               "(mtpy.devices.pi), so a limit left by the dead session cannot survive "
+                                               "the next session"))):
+            p = rec / f"{item}.json"
+            p.write_text(json.dumps({**note, "note": text}, indent=1), encoding="utf-8")
+            files[item] = str(p)
+        try:
+            rl.recovered(token, files)
+        finally:
+            rl.release(token)
+    events.log("rig_lock", action="stale_taken_over", reason=reason, old_holder=note["old_holder"], record=str(rec))
+    return {"old_holder": note["old_holder"], "record": str(rec)}
+
+
 def _heartbeat(token, stop):
     while not stop.wait(HEARTBEAT_S):
         try:
@@ -108,4 +167,4 @@ def release():
 def status():
     st = _riglock().status()
     return {"held": _held["token"] is not None, "own": _held["own"], "holder": st.get("holder"),
-            "rig_state": (st.get("rig_state") or {}).get("value")}
+            "holder_alive": st.get("holder_alive"), "rig_state": (st.get("rig_state") or {}).get("value")}

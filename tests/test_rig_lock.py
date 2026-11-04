@@ -40,7 +40,7 @@ def test_sim_backend_takes_no_lock(fake_real, fake_riglock):
 def test_real_backend_acquires_and_releases(fake_real, fake_riglock):
     api.devices.connect({"backend": "real-test"})
     assert fake_riglock.log == ["acquire"] and os.environ["RIGLOCK_TOKEN"] == "fake-token"
-    assert rig.status() == {"held": True, "own": True, "holder": fake_riglock.holder, "rig_state": "assembled"}
+    assert rig.status() == {"held": True, "own": True, "holder": fake_riglock.holder, "holder_alive": True, "rig_state": "assembled"}
     api.devices.disconnect()
     assert fake_riglock.log == ["acquire", "release"] and "RIGLOCK_TOKEN" not in os.environ
     assert not rig.status()["held"]
@@ -99,3 +99,30 @@ def test_mode_chooses_the_devices(fake_real):
     api.devices.disconnect()
     with pytest.raises(NotReady, match="mode"):
         api.devices.connect({"backend": "sim", "mode": "FRET"})
+
+
+def test_stale_lock_is_taken_over_on_the_users_words_and_connect_works_again(fake_real, fake_riglock, monkeypatch, tmp_path):
+    """Owner 2026-11-04: "how does the program work again after a stale lock? I cannot ask the agent every time" -
+    api.rig.recover_stale(reason) takes a dead holder's lock over (riglock logs the reason), records the recovery,
+    releases, and the next connect is normal. A live holder is never taken; no reason, no take-over."""
+    monkeypatch.setattr(rig, "RECOVERY_DIR", tmp_path / "recovery")
+    fake_riglock.holder = {"name": "mtpy", "purpose": "bench", "token": "old", "pid": 2808, "since": "yesterday"}
+    fake_riglock.alive = True
+    with pytest.raises(NotReady, match="live process"):
+        rig.recover_stale("owner: take over")
+    fake_riglock.alive = False
+    assert rig.stale()["pid"] == 2808
+    with pytest.raises(NotReady, match="own words"):
+        rig.recover_stale("")
+    with pytest.raises(NotReady, match="rig lock refused"):
+        api.devices.connect({"backend": "real-test", "mode": "MT"})
+    res = rig.recover_stale("owner via GUI 'Take over'")
+    assert res["old_holder"]["pid"] == 2808 and fake_riglock.holder is None
+    assert fake_riglock.log[-3:] == ["take-stale", "acquire", "recovered"] or fake_riglock.log[-4:] == ["take-stale", "acquire", "recovered", "release"]
+    rec = tmp_path / "recovery"
+    assert any((d / "devices_closed.json").exists() and (d / "limits_released.json").exists() for d in rec.iterdir())
+    with pytest.raises(NotReady, match="no stale lock"):
+        rig.recover_stale("again")
+    with events.as_caller("gui"):
+        st = api.devices.connect({"backend": "real-test", "mode": "MT"})
+    assert st and rig.status()["held"]

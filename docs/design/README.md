@@ -42,6 +42,8 @@ or MT-TIRF work. Written 2026-10-24; keep it current when a document is added or
 - [bench-matrix.md](bench-matrix.md) — the owner's benchmark dimensions (rate / ROI, bead count, z method, executor,
   focus speed and step size, motion, script / GUI), the measurements, the reduced configuration run 2026-11-01 night
   and the open cells.
+- [troubleshooting.md](../troubleshooting.md) — the error list (owner 2026-11-04): every message or symptom the program
+  or the rig has shown, its meaning, what to do, where the code decides it. Add to it whenever a new one appears.
 - [manuals/camera-jai-attributes.md](../manuals/camera-jai-attributes.md) — the JAI's attribute catalogue as the driver
   reports it (156, with values), what `api.camera.catalogue()` and the generic settings panel are built from;
   [manuals/camera-jai-features.md](../manuals/camera-jai-features.md) — the same tree from the GenICam file (193).

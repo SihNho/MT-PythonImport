@@ -603,6 +603,8 @@ class MainWindow(QMainWindow):
 
     def _fail(self, what, msg):
         self.statusBar().showMessage(f"{what}: {msg}", 15000)
+        if what == "connect" and "STALE lock" in msg:
+            self._offer_stale_takeover(msg)
         if "protocol" in what or what in ("check", "run protocol", "apply edits"):
             self.prot_status.setText(f"{what}: {msg}")
         self._log(f"[gui] {what}: {msg}")
@@ -643,6 +645,24 @@ class MainWindow(QMainWindow):
             self._fail("connect", "emergency stop engaged: press Acknowledge first")
             return
         self._call(lambda: api.devices.connect(preset), "connect", self._connected)
+
+    def _offer_stale_takeover(self, msg):
+        """Owner 2026-11-04: after a crash or a power loss the rig lock stays with the dead process; the owner takes
+        it over here, on their own click (the words riglock logs), and Connect runs again."""
+        st = api.rig.status()
+        h = st.get("holder") or {}
+        ans = QMessageBox.question(
+            self, "Rig lock left by a dead program",
+            f"The rig lock is held by {h.get('name')} (pid {h.get('pid')}, since {h.get('since')}), a process that no "
+            "longer runs - a program ended without its cleanup (a crash, a power loss).\n\n"
+            "Take the lock over and connect? The program then opens every device fresh and reads it back (the PI "
+            "limits are rewritten at open). If you are not sure what state the rig is in, look at it first.\n\n"
+            f"({msg[:300]})",
+            QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
+        if ans != QMessageBox.Yes:
+            return
+        reason = f"owner via GUI 'Take over' at {time.strftime('%Y-%m-%d %H:%M:%S')}: {h.get('name')} pid {h.get('pid')} is gone"
+        self._call(lambda: api.rig.recover_stale(reason), "rig lock take-over", lambda _: self._connect())
 
     def _connected(self, st):
         self._show_devices(st)

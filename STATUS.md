@@ -181,6 +181,11 @@ Short and current. Details live in the linked documents; the history is in git a
   search, level, favourites, read-back) in Setup -> Camera settings for both cameras; refusals for reset / stored
   defaults / factory / non-Mono8; frame-producing categories pause the acquisition and need confirm while
   recording. [manuals/camera-jai-attributes.md](docs/manuals/camera-jai-attributes.md).
+- **2026-11-04 late (owner: "how does the program work again after a stale lock without asking the agent"; "start an
+  error list"):** `api.rig.recover_stale(reason)` takes a dead holder's lock over on the user's own words (riglock
+  take-over + recovery record in G:/Codes/rig/recovery/ + release; a live holder is never taken, not during an
+  experiment); the GUI offers it in a dialog when Connect meets a STALE lock, `tools/rig_recover.py` does it from a
+  prompt. [troubleshooting.md](docs/troubleshooting.md) started with 19 entries.
 - **Next:** protocols on hardware (force ramps, rotation, 3-state clamp, autofocus), the stop / watchdog paths
   exercised on the rig, then the tethered-bead calibration.
 - **Queued (owner 2026-10-30):** lock the camera settings while a z scan runs (the GUI must not change exposure,

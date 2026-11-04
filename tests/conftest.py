@@ -73,19 +73,38 @@ class FakeRiglock:
 
     def __init__(self):
         self.holder, self.state, self.refuse, self.log = None, "assembled", None, []
+        self.alive = True                       # whether the holder's process runs (False = a stale lock)
 
-    def acquire(self, holder, purpose, **_):
+    def acquire(self, holder, purpose, take_stale=False, reason="", **_):
         if self.refuse:
             raise self.Refused(self.refuse)
         if self.holder:
-            raise self.Refused("held")
-        self.holder = {"name": holder, "purpose": purpose, "token": "fake-token"}
+            if self.alive:
+                raise self.Refused("held by {} (pid 1)".format(self.holder["name"]))
+            if not take_stale:
+                raise self.Refused("STALE lock: holder {} (pid 1, since x) is gone. Run its recovery".format(self.holder["name"]))
+            if not reason.strip():
+                raise self.Refused("--take-stale needs --reason")
+            self.log.append("take-stale")
+        recovering = bool(self.holder)
+        self.holder = {"name": holder, "purpose": purpose, "token": "fake-token", "pid": 1, "since": "now", "recovering": recovering}
+        self.alive = True
         self.log.append("acquire")
         return "fake-token"
 
+    def recovered(self, token, evidence, **_):
+        if not self.holder or self.holder["token"] != token or not self.holder.get("recovering"):
+            raise self.Refused("not recovering")
+        missing = [k for k in ("devices_closed", "limits_released") if not evidence.get(k) or not os.path.exists(evidence[k])]
+        if missing:
+            raise self.Refused(f"evidence missing: {missing}")
+        self.holder["recovering"] = False
+        self.log.append("recovered")
+        return True
+
     def permitted(self, token, allowed_states=("assembled",), **_):
         return bool(self.holder) and self.holder["token"] == token and self.state in allowed_states \
-            and self.state != "experiment"
+            and self.state != "experiment" and not self.holder.get("recovering")
 
     def release(self, token, **_):
         if not self.holder or self.holder["token"] != token:
@@ -95,7 +114,7 @@ class FakeRiglock:
         return True
 
     def status(self, **_):
-        return {"holder": self.holder, "rig_state": {"value": self.state}}
+        return {"holder": self.holder, "holder_alive": (self.alive if self.holder else None), "rig_state": {"value": self.state}}
 
 
 @pytest.fixture(autouse=True)
