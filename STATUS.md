@@ -153,6 +153,13 @@ Short and current. Details live in the linked documents; the history is in git a
 - **2026-11-02 13:30 (owner: "꺼진 것 같음"):** the PC died 2026-11-01 23:58, the first death under the heartbeat:
   10-s lines to the last one, idle (CPU 0.3 %), no WHEA - an instant stop, the power-delivery / board family
   ([rig/pc-stability.md](docs/rig/pc-stability.md)).
+- **2026-11-04 (owner: the PC died again; replace the board):** two more instant deaths on 11-03 (07:34 idle; **20:14
+  under the GUI 248-Hz bench, CPU 73 %**) - four in three days, same pattern, the board / CPU power family. Inventory
+  and the replacement spec (LGA1200 B560 / H570 / Z590 micro-ATX, x16 + a free x1/x4 for the SUNIX serial card, 4
+  DIMM) in [rig/pc-stability.md](docs/rig/pc-stability.md). **The 20:14 death cut the bench make-up block (GUI
+  248 Hz, 3 of 16 runs done; GUI 555 Hz make-up not started): the rig lock is stale (pid 2808) and the focus / stage /
+  magnet may stand where the run left them (up to 1 um / 5 um / 30 mm from their start). Nothing touched since; the
+  owner's word is needed for the lock.**
 - **Next:** protocols on hardware (force ramps, rotation, 3-state clamp, autofocus), the stop / watchdog paths
   exercised on the rig, then the tethered-bead calibration.
 - **Queued (owner 2026-10-30):** lock the camera settings while a z scan runs (the GUI must not change exposure,

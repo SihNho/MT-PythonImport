@@ -60,6 +60,46 @@ once** - no slowdown, no hang, no WHEA record. By the reading above this is the 
 not memory or a hang. One event; a second one of the same shape settles it. (The 07:53 death of 11-01 preceded
 the heartbeat.)
 
+## Two more deaths (2026-11-03 07:34 and 20:14) - one of them under load
+- **11-03 07:34** (owner away): heartbeat 10-s lines to 07:34:04, CPU 0.3-0.5 %, idle - the same instant stop as
+  11-01 23:58. Rebooted 11:25.
+- **11-03 20:14**: the heartbeat's last line 20:14:02 shows **CPU 72.7 %**: the GUI 248-Hz bench block was running
+  (its 16th run had just started; the rig lock was held). So the deaths are **not idle-only**; the pattern is the same
+  (no gap, no slowdown, no WHEA). Rebooted 11-04 13:18. The rig was left mid-run (focus / stage / magnet possibly
+  away from their start, the lock stale) - see STATUS 11-04.
+Four deaths in three days, all instant: the board / CPU power-delivery family. The owner decided to replace the
+board (11-04: "메인보드 아무래도 교체해야겠는데").
+
+## The PC and what a replacement board must have (inventory 2026-11-04)
+| part | now |
+|---|---|
+| board | **ASRock H410M-HVS** (micro-ATX, LGA1200, Intel H410, BIOS P1.20 of 2020-07; a budget board: 2 DIMM slots, retailer listings say a 5-phase VRM, no independent VRM review found) |
+| CPU | Intel Core i5-10500 (6 cores, 10th gen, 65 W) |
+| memory | 2 x 32 GB Samsung DDR4-2667 UDIMM (M378A4G43AB2-CWE), non-ECC |
+| GPU | NVIDIA GeForce RTX 2060 (PCIe x16) |
+| cards | SUNIX 2-port serial PCIe card (the ASI / PI serial lines) |
+| drives | Samsung 860 EVO 250 GB SATA SSD (system), Toshiba 4 TB SATA HDD |
+| camera | JAI SP-5000M-USB on USB 3 (the board's own controller) |
+
+**Keep CPU, memory, GPU, drives; replace the board only** (same socket LGA1200). Requirements:
+1. LGA1200 with a chipset that runs a 10th-gen CPU: **B560 / H570 / Z590** (500 series, 10th gen supported out of
+   the box) or B460 / H470 / Z490 (400 series). Avoid H410 / H510 (the same budget class as the failing board).
+2. A sturdier VRM than a 5-phase budget board: the mid-range micro-ATX boards (8+ phases with heatsinks).
+3. Slots: one PCIe x16 for the RTX 2060 **and one free PCIe x1 / x4 for the SUNIX serial card**; at least 2 SATA;
+   4 DIMM slots (room to go to 128 GB later, and a different pair of slots if a slot is suspect).
+4. USB 3.x on the rear panel for the JAI camera (any 500-series board has it); M.2 optional (a later system-drive
+   upgrade).
+5. Form factor: micro-ATX fits the present case; ATX only if the case takes it (check before buying).
+Candidates (LGA1200 is discontinued; new-old stock or lightly used; Korean listings seen 2026-11-04): **ASRock B560M
+Pro4** (4 DIMM, x16 + x1 + x4-wired x16, 6 SATA), **MSI MAG B560M Mortar** (4 DIMM, 12-phase, x16 + x1 + x4),
+**ASUS TUF Gaming B560M-Plus**, **Gigabyte B560M DS3H**; Z590 micro-ATX boards of the same makers if cheaper on the
+day. Used asking prices for the first two were about 100 000 KRW on Bunjang; new prices on Danawa were not readable
+from here - check `B560M Pro4` / `MAG B560M Mortar` there.
+If the deaths continue on the new board, the CPU is next (the 11-01 WHEA parity error came from a core); then the
+memory (memtest86 overnight is still cheap and worth doing before the swap).
+Sources: [Danawa search](https://search.danawa.com/dsearch.php?k1=B560M), [Bunjang B560M](https://m.bunjang.co.kr/keywords/b560m),
+[Newegg MSI B560M Mortar](https://www.newegg.com/p/N82E16813145332), [ASRock H410M-HVS listing (5-phase)](https://www.morele.net/plyta-glowna-asrock-h410m-hvs-r2-0-7893093/).
+
 ## Why it matters for the experiments
 A weekly death at night ends any long recording (LabVIEW or this program) and leaves the rig in whatever state the
 devices were in (the PI keeps its position and limits, the iXon keeps cooling, a run file loses its last second).
