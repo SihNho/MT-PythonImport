@@ -55,3 +55,26 @@ zero / bridge / exclude (U12, U14), troubleshooting guide (U9), MT-TIRF mode (10
 - `--sim-dev` is for the simulators alone: it never touches the shipped config and is removed with the window.
 - Plot bar: "Plot refresh" (1-30 Hz, default 10) paces the live plot's redraw only; the history keeps every displayed
   frame (owner 2026-11-01, after the GUI isolation measurement showed the plot as the GUI's largest cost per tick).
+
+## UX backlog from the owner (2026-11-04, "do not change now, just noting")
+1. **Camera controls are a fraction of the camera.** The panel has exposure, frame rate, gain; the JAI exposes 193
+   features in 12 categories (ROI, binning, pixel format, trigger source / activation / overlap, exposure mode incl.
+   trigger-width, 8 digital I/O lines with TTL / LVDS / opto formats and line sources, two pulse generators, ALC,
+   LUT / gamma, user sets, multi-ROI and sequence modes): [manuals/camera-jai-features.md](../manuals/camera-jai-features.md).
+   1-1. One page cannot hold them: a **settings panel** is needed - a category tree (NI MAX's categories and
+   visibility levels, search), each feature rendered from the device's own catalogue (type, range, enum values, read-
+   only), a **favourites / per-experiment preset** layer on top (the few the experiment changes), and the same
+   guard model as today (needs-a-pause settings, confirm while recording, settings stored with the recording).
+   1-2. **The EMCCD (iXon) is the same case**: today's keys (frame transfer, shutter, exposure, rate, EM gain mode /
+   gain, temperature, cooler, HS / VS speed, output amplifier, read / acquisition / trigger mode) are a subset of the
+   SDK; the panel must be driven by a device-reported catalogue, not hand-written rows, so both cameras (and a later
+   one) get the same panel.
+2. **Bead picking**: left click adds, right click removes the nearest pick - but right click also opens pyqtgraph's
+   context menu (view options). Candidates: left click toggles (click a pick to remove it); right click keeps the
+   menu and gains "remove pick", "set as reference", "details"; double click or hover for the detail window; the
+   Delete key removes the last / highlighted pick. Decide with the owner at the UI/UX session.
+3. **.cal / .tra export status**: `.cal` is written by the z scan (`lvfiles.write_cal`, byte-identical round trip on
+   the owner's files, `tests/test_lvfiles.py`); `.tra` is exported from the run file (`api.data.export(kind="tra")`,
+   GUI "Export .tra"; byte-identical round trip and the frame column from the first recorded frame,
+   `tests/test_data.py`). Not yet checked: a `.tra` / `.cal` from this program opened in the owner's LabVIEW /
+   MATLAB analysis end to end on a real recording (the owner's acceptance).
