@@ -121,3 +121,42 @@ def snap():
     """One frame (uint16 array h x w) from the EMCCD: the acquisition is started if it is not running."""
     svc = service("emccd")
     return svc.call(svc.require().snap, what="snap", timeout_s=15.0)
+
+
+def catalogue():
+    """The EMCCD's settings as a catalogue like api.camera.catalogue() (owner 2026-11-04: the same panel for both
+    cameras): frame transfer, shutter, exposure, rate, EM gain mode and gain, temperature, with the ranges the device
+    reports. The SDK is not attribute-based, so this is the program's table; a setting outside it is set by code."""
+    svc = service("emccd")
+    dev = svc.require()
+    lim = svc.call(dev.limits, what="limits")
+    gain = lim.get("em_gain") if isinstance(lim.get("em_gain"), (tuple, list)) else (0, 1000)
+    temp = lim.get("temperature_C") if isinstance(lim.get("temperature_C"), (tuple, list)) else (-120, 20)
+    rows = [
+        {"name": "frame_transfer", "category": "Readout", "type": "enum", "values": [0, 1], "description": str(lim.get("frame_transfer", ""))},
+        {"name": "shutter", "category": "Readout", "type": "enum", "values": [0, 1, 2], "description": str(lim.get("shutter", ""))},
+        {"name": "exposure_ms", "category": "Acquisition", "type": "float", "min": 0.001, "max": 100000.0, "step": 1.0, "description": str(lim.get("exposure_ms", ""))},
+        {"name": "rate_Hz", "category": "Acquisition", "type": "float", "min": 0.01, "max": 1000.0, "step": 1.0, "description": str(lim.get("rate_Hz", ""))},
+        {"name": "em_gain_mode", "category": "Gain", "type": "enum", "values": [0, 1, 2, 3], "description": str(lim.get("em_gain_mode", ""))},
+        {"name": "em_gain", "category": "Gain", "type": "int", "min": int(gain[0]), "max": int(gain[1]), "step": 1, "description": "EM gain in the mode's unit"},
+        {"name": "temperature_C", "category": "Cooling", "type": "int", "min": int(temp[0]), "max": int(temp[1]), "step": 1, "description": "set-point; the cooler runs towards it"},
+    ]
+    for r in rows:
+        r.update(access="rw", visibility="beginner")
+    return rows
+
+
+def get_attribute(name):
+    return settings()[name]
+
+
+_SETTERS = {"frame_transfer": lambda v: set_frame_transfer(int(v)), "shutter": lambda v: set_shutter(int(v)),
+            "exposure_ms": set_exposure, "rate_Hz": set_rate, "em_gain_mode": lambda v: set_gain_mode(int(v)),
+            "em_gain": lambda v: set_gain(int(v)), "temperature_C": lambda v: set_temperature(int(v))}
+
+
+def set_attribute(name, value, confirm=False):
+    """Write one catalogue entry through its setter (each reads back); confirm is accepted for the panel's sake."""
+    if name not in _SETTERS:
+        raise ValueError(f"emccd has no attribute {name!r}; the catalogue has {sorted(_SETTERS)}")
+    return _SETTERS[name](value)

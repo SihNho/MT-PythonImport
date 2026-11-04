@@ -305,3 +305,30 @@ def test_explore_shows_positions_and_relative_moves_return_to_zero(window, monke
     w._rotate()
     _until(app, lambda: w.rotor_turns.value() == 0.0, 30, "rotor entry back to 0")
     assert (tmp_path / "runs" / "gui_events.log").exists()
+
+
+def test_camera_attribute_panel_lists_sets_and_keeps_favourites(window, monkeypatch, tmp_path):
+    """Owner 2026-11-04: the camera's whole attribute tree in a panel with search, level and favourites; a write
+    goes through api.camera.set_attribute and is read back."""
+    app, w = window
+    monkeypatch.setattr(w.cam_attrs, "favourites_file", tmp_path / "fav.json")
+    w._connect()
+    _until(app, lambda: "8 / 8" in w.dev_summary.text(), 15, "connect")
+    w.cam_attrs.load()
+    _until(app, lambda: "attributes in" in w.cam_attrs.status.text(), 15, "catalogue loaded")
+    assert w.cam_attrs.tree.topLevelItemCount() >= 3            # categories
+    w.cam_attrs.level.setCurrentIndex(2)                           # guru shows DeviceReset too
+    w.cam_attrs.search.setText("trigger")
+    names = [w.cam_attrs.tree.topLevelItem(i).child(j).text(0) for i in range(w.cam_attrs.tree.topLevelItemCount())
+             for j in range(w.cam_attrs.tree.topLevelItem(i).childCount())]
+    assert "TriggerMode" in names and "Width" not in names
+    w.cam_attrs.select("TriggerMode")
+    w.cam_attrs.control.setCurrentIndex(w.cam_attrs.control.findData("On"))
+    w.cam_attrs.write("TriggerMode", w.cam_attrs.control.value())
+    _until(app, lambda: api.camera.get_attribute("TriggerMode") == "On", 10, "attribute written")
+    _until(app, lambda: "read back" in w.cam_attrs.status.text(), 5, "read back shown")
+    w.cam_attrs.toggle_favourite("TriggerMode")
+    assert (tmp_path / "fav.json").exists() and w.cam_attrs.fav_form.rowCount() == 1
+    w.cam_attrs.write("DeviceReset", True)                        # refused by the device: shown, nothing reset
+    _until(app, lambda: "never written" in w.cam_attrs.status.text() or any(
+        "never written" in w.events_list.item(i).text() for i in range(w.events_list.count())), 10, "refusal shown")

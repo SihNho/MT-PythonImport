@@ -31,6 +31,30 @@ SENSOR_W, SENSOR_H = 1280, 1024          # binned 2 x 2
 DEFAULTS = {"exposure_ms": 1.909, "gain_dB": 0.0, "rate_Hz": 1e6 / 11111, "roi": (0, 0, SENSOR_W, SENSOR_H)}
 RATE_MAX_HZ = 247.9544                   # at 1280 x 1024; the simulator's cap for every ROI (jai.py asks the driver)
 GAIN_DB = (0.0, 24.0)                    # sim range only: the JAI gain range is not in docs/manuals yet
+# a slice of the JAI's GenICam tree for the generic settings panel (owner 2026-11-04); the real camera reports ~190
+CATALOGUE = [
+    {"name": "Width", "category": "ImageFormatControl", "type": "int", "access": "rw", "visibility": "beginner", "min": 8, "max": SENSOR_W, "step": 8, "description": "Width of the image provided by the device (in pixels)."},
+    {"name": "Height", "category": "ImageFormatControl", "type": "int", "access": "rw", "visibility": "beginner", "min": 8, "max": SENSOR_H, "step": 2, "description": "Height of the image provided by the device (in pixels)."},
+    {"name": "OffsetX", "category": "ImageFormatControl", "type": "int", "access": "rw", "visibility": "beginner", "min": 0, "max": SENSOR_W - 8, "step": 8, "description": "Horizontal offset from the origin to the region of interest (in pixels)."},
+    {"name": "OffsetY", "category": "ImageFormatControl", "type": "int", "access": "rw", "visibility": "beginner", "min": 0, "max": SENSOR_H - 2, "step": 2, "description": "Vertical offset from the origin to the region of interest (in pixels)."},
+    {"name": "PixelFormat", "category": "ImageFormatControl", "type": "enum", "access": "rw", "visibility": "beginner", "values": ["Mono8", "Mono10", "Mono12"], "description": "Format of the pixels provided by the device."},
+    {"name": "SensorWidth", "category": "ImageFormatControl", "type": "int", "access": "ro", "visibility": "expert", "description": "Effective width of the sensor in pixels."},
+    {"name": "AcquisitionFrameRate", "category": "AcquisitionControl", "type": "float", "access": "rw", "visibility": "beginner", "min": 1.0, "max": RATE_MAX_HZ, "description": "Controls the acquisition rate (in Hertz) at which the frames are captured."},
+    {"name": "ExposureTime", "category": "AcquisitionControl", "type": "float", "access": "rw", "visibility": "beginner", "min": 1.0, "max": 1e6, "description": "Sets the Exposure time (in microseconds)."},
+    {"name": "ExposureAuto", "category": "AcquisitionControl", "type": "enum", "access": "rw", "visibility": "beginner", "values": ["Off", "Once", "Continuous"], "description": "Sets the automatic exposure mode."},
+    {"name": "TriggerMode", "category": "AcquisitionControl", "type": "enum", "access": "rw", "visibility": "beginner", "values": ["Off", "On"], "description": "Controls if the selected trigger is active."},
+    {"name": "TriggerSource", "category": "AcquisitionControl", "type": "enum", "access": "rw", "visibility": "beginner", "values": ["Low", "High", "Software", "JAIPulseGenerator0", "JAIPulseGenerator1"], "description": "Specifies the internal signal or physical input Line to use as the trigger source."},
+    {"name": "TriggerSoftware", "category": "AcquisitionControl", "type": "command", "access": "wo", "visibility": "beginner", "description": "Generates an internal trigger."},
+    {"name": "Gain", "category": "AnalogControl", "type": "float", "access": "rw", "visibility": "beginner", "min": GAIN_DB[0], "max": GAIN_DB[1], "description": "Controls the selected gain as an absolute physical value."},
+    {"name": "LineSelector", "category": "DigitalIOControl", "type": "enum", "access": "rw", "visibility": "expert", "values": ["Line1", "Line2", "Line4", "Line5"], "description": "Selects the physical line (or pin) of the external device connector to configure."},
+    {"name": "LineMode", "category": "DigitalIOControl", "type": "enum", "access": "rw", "visibility": "expert", "values": ["Input", "Output"], "description": "Controls if the physical Line is used to Input or Output a signal."},
+    {"name": "LineInverter", "category": "DigitalIOControl", "type": "bool", "access": "rw", "visibility": "expert", "description": "Controls the inversion of the signal of the selected input or output Line."},
+    {"name": "DeviceReset", "category": "DeviceControl", "type": "command", "access": "wo", "visibility": "guru", "description": "Resets the device to its power up state."},
+    {"name": "FactoryInGain", "category": "JAICustomFactorySetting", "type": "int", "access": "rw", "visibility": "expert", "min": 8192, "max": 24576, "description": "Factory setting."},
+]
+ATTR_REFUSED = {"DeviceReset", "FactoryStoreAll", "UserSetSave", "FactoryBootAreaSet"}
+ATTR_REFUSED_CATEGORIES = {"JAICustomFactorySetting"}
+ATTR_NEEDS_PAUSE = {"ImageFormatControl", "AcquisitionControl", "TransportLayerControl", "UserSetControl", "DeviceControl"}
 
 
 @dataclass(frozen=True)
@@ -70,6 +94,9 @@ class SimCamera(Device):
         self.is_open, self.fault, self.drop_every, self._stall_s = False, None, 0, 0.0
         self.exposure_listeners = []
         self.last_buffer = -1
+        self._attrs = {"ExposureAuto": "Continuous", "TriggerMode": "Off", "TriggerSource": "Low", "PixelFormat": "Mono8",
+                       "LineSelector": "Line1", "LineMode": "Input", "LineInverter": False, "SensorWidth": SENSOR_W,
+                       "FactoryInGain": 16384}
 
     # --- control (called on the service thread) ---------------------------------------------------------------------
     def _io(self):
@@ -98,6 +125,57 @@ class SimCamera(Device):
         self._io()
         with self._lock:
             return {**self._s, "acquiring": self.acquiring()}
+
+    # --- the attribute catalogue (owner 2026-11-04): the core settings seen through their GenICam names ------------
+    def catalogue(self):
+        self._io()
+        return [dict(e) for e in CATALOGUE]
+
+    def _entry(self, name):
+        for e in CATALOGUE:
+            if e["name"] == name:
+                return e
+        raise ValueError(f"camera has no attribute {name!r}")
+
+    def get_attribute(self, name):
+        self._io()
+        e = self._entry(name)
+        with self._lock:
+            s = self._s
+            mirror = {"Width": s["roi"][2], "Height": s["roi"][3], "OffsetX": s["roi"][0], "OffsetY": s["roi"][1],
+                      "AcquisitionFrameRate": s["rate_Hz"], "ExposureTime": s["exposure_ms"] * 1000.0, "Gain": s["gain_dB"]}
+            return mirror.get(name, self._attrs.get(name)) if e["type"] != "command" else None
+
+    def set_attribute(self, name, value):
+        self._io()
+        e = self._entry(name)
+        if e["name"] in ATTR_REFUSED or e["category"] in ATTR_REFUSED_CATEGORIES:
+            raise ValueError(f"camera attribute {e['name']} is never written by the program (stored defaults, reset, factory)")
+        if e["access"] == "ro":
+            raise ValueError(f"camera attribute {e['name']} is read-only")
+        if e["name"] == "PixelFormat" and value != "Mono8":
+            raise ValueError(f"PixelFormat {value!r}: the frame path takes ['Mono8'] only")
+        if e["category"] in ATTR_NEEDS_PAUSE and self.acquiring():
+            raise RuntimeError(f"{e['name']} cannot be written while acquiring (stop acquisition first)")
+        if e["type"] == "enum" and value not in e["values"]:
+            raise ValueError(f"{e['name']}: {value!r} is not one of {e['values']}")
+        if e["type"] in ("int", "float") and not (e.get("min", -1e300) <= float(value) <= e.get("max", 1e300)):
+            raise ValueError(f"{e['name']}: {value!r} is outside [{e.get('min')}, {e.get('max')}]")
+        with self._lock:
+            s = self._s
+            if name == "AcquisitionFrameRate":
+                s["rate_Hz"] = float(value)
+            elif name == "ExposureTime":
+                s["exposure_ms"] = float(value) / 1000.0
+            elif name == "Gain":
+                s["gain_dB"] = float(value)
+            elif name in ("Width", "Height", "OffsetX", "OffsetY"):
+                x, y, w, h = s["roi"]
+                s["roi"] = {"Width": (x, y, int(value), h), "Height": (x, y, w, int(value)),
+                            "OffsetX": (int(value), y, w, h), "OffsetY": (x, int(value), w, h)}[name]
+            elif e["type"] != "command":
+                self._attrs[name] = bool(value) if e["type"] == "bool" else value
+        return self.get_attribute(name)
 
     def limits(self):
         return {"exposure_ms": (0.001, "frame period"), "gain_dB": GAIN_DB, "rate_Hz": (1.0, RATE_MAX_HZ),

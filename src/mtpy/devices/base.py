@@ -71,6 +71,13 @@ class Device:
         """Current settings read back from the device."""
         return {}
 
+    def catalogue(self):
+        """Every control the device exposes beyond `settings` (owner 2026-11-04: the camera's 190-odd features), as
+        [{"name", "category", "type": int | float | enum | bool | command | string, "access": "rw" | "ro" | "wo",
+        "visibility": "beginner" | "expert" | "guru", "min", "max", "step", "values": [...], "description"}].
+        Default: none. `get_attribute(name)` / `set_attribute(name, value)` go with it."""
+        return []
+
     def limits(self):
         """The controller's own limits (limit switches, soft limits, attribute ranges)."""
         return {}

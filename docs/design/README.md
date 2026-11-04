@@ -42,6 +42,9 @@ or MT-TIRF work. Written 2026-10-24; keep it current when a document is added or
 - [bench-matrix.md](bench-matrix.md) — the owner's benchmark dimensions (rate / ROI, bead count, z method, executor,
   focus speed and step size, motion, script / GUI), the measurements, the reduced configuration run 2026-11-01 night
   and the open cells.
+- [manuals/camera-jai-attributes.md](../manuals/camera-jai-attributes.md) — the JAI's attribute catalogue as the driver
+  reports it (156, with values), what `api.camera.catalogue()` and the generic settings panel are built from;
+  [manuals/camera-jai-features.md](../manuals/camera-jai-features.md) — the same tree from the GenICam file (193).
 - [manuals/](../manuals/README.md) — one manual per device; [smcamera-emccd-parameters.md](../manuals/smcamera-emccd-parameters.md)
   for the old fluorescence software.
 

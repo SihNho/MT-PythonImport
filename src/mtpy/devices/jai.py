@@ -13,6 +13,7 @@ is shared, so the API above cannot tell them apart). Differences of the real cam
   (shortcut: gain_dB read-only on the real camera, upgrade when the owner decides on gain).
 """
 import collections
+import contextlib
 import os
 import sys
 import threading
@@ -20,12 +21,20 @@ import time
 
 from ..api.errors import SafetyRefused
 from .base import NEEDS_PAUSE, Device
-from .imaqdx import ACQ, F64, I64, IMG, STR, A, ImaqdxCamera
+from .imaqdx import ACQ, BOOL, CMD, ENUM, F64, I64, IMG, STR, U32, VIS_INTERMEDIATE, VIS_SIMPLE, A, ImaqdxCamera
 from .sim.camera import Frame, SimCamera
 
 RIG_DIR = r"G:\Codes\rig"
 DEV, GAIN = A + "DeviceControl::", A + "AnalogControl::Gain"
 RING_DEPTH = 100
+# attribute catalogue (owner 2026-11-04): what a generic write may never touch - these change the camera's stored
+# defaults, reset it, or break the 8-bit frame path the program's ring buffer assumes
+ATTR_REFUSED = {"DeviceReset", "FactoryStoreAll", "UserSetSave", "FactoryBootAreaSet"}
+ATTR_REFUSED_CATEGORIES = {"JAICustomFactorySetting"}
+ATTR_PIXEL_FORMATS = {"Mono8"}
+# writes in these categories change how frames are produced: refused while acquiring (the API pauses for them)
+ATTR_NEEDS_PAUSE = {"ImageFormatControl", "AcquisitionControl", "TransportLayerControl", "UserSetControl", "DeviceControl"}
+_TYPES = {U32: "int", I64: "int", F64: "float", STR: "string", ENUM: "enum", BOOL: "bool", CMD: "command"}
 
 
 def _permitted():
@@ -73,6 +82,7 @@ class JaiCamera(Device):
         self._ring = collections.deque(maxlen=ring_size)
         self._thread, self._run = None, threading.Event()
         self.error = None                       # why the frame thread ended on its own, if it did
+        self._cat = None
 
     def _io(self):
         if self.cam is None:
@@ -80,6 +90,7 @@ class JaiCamera(Device):
         return self.cam
 
     def open(self):
+        self._cat = None
         _permitted()
         cam = ImaqdxCamera()
         cam.open()                              # every open reloads the .icd: presets are re-applied by the API (U15)
@@ -95,6 +106,70 @@ class JaiCamera(Device):
         c = self._io()
         return {"model": c.model, "serial": c.serial, "firmware": c.get(DEV + "DeviceFirmwareVersion", STR),
                 "port": c.name, "driver": "NI-IMAQdx niimaqdx.dll (mtpy.devices.imaqdx)"}
+
+    _cat = None
+
+    def catalogue(self):
+        """Every camera attribute the driver lists (NI MAX's tree), read once per session: name = the short GenICam
+        name, category = the tree node it sits in. Attributes of IMAQdx itself (AcquisitionAttributes::) are left out."""
+        if self._cat is None:
+            c = self._io()
+            simple = {n for n, *_ in c.attributes("CameraAttributes", VIS_SIMPLE)}
+            inter = {n for n, *_ in c.attributes("CameraAttributes", VIS_INTERMEDIATE)}
+            rows = []
+            for full, t, readable, writable in c.attributes("CameraAttributes"):
+                parts = full.split("::")
+                if len(parts) < 3 or t not in _TYPES:
+                    continue
+                e = {"name": parts[-1], "full": full, "category": parts[1], "type": _TYPES[t], "access":
+                     "rw" if readable and writable else ("ro" if readable else "wo"),
+                     "visibility": "beginner" if full in simple else ("expert" if full in inter else "guru"),
+                     "description": ""}
+                with contextlib.suppress(Exception):                 # a tooltip is a nicety
+                    e["description"] = c.text("IMAQdxGetAttributeTooltip", full)
+                if t in (U32, I64, F64):
+                    with contextlib.suppress(Exception):             # some read-only numbers have no range
+                        e["min"], e["max"] = c.limit("IMAQdxGetAttributeMinimum", full, t), c.limit("IMAQdxGetAttributeMaximum", full, t)
+                        e["step"] = c.limit("IMAQdxGetAttributeIncrement", full, t)
+                if t == ENUM:
+                    try:
+                        e["values"] = c.enum_values(full)
+                    except Exception:  # noqa: BLE001
+                        e["values"] = []
+                rows.append(e)
+            self._cat = rows
+        return self._cat
+
+    def _entry(self, name):
+        for e in self.catalogue():
+            if e["name"] == name or e["full"] == name:
+                return e
+        raise ValueError(f"camera has no attribute {name!r}")
+
+    def get_attribute(self, name):
+        e = self._entry(name)
+        t = {v: k for k, v in _TYPES.items()}[e["type"]]
+        if e["type"] == "enum":
+            return self._io().get(e["full"], STR)
+        if e["type"] == "command":
+            return None
+        return self._io().get(e["full"], t)
+
+    def set_attribute(self, name, value):
+        """A generic write with the refusals above; needs-a-pause categories while acquiring are refused here (the
+        API pauses the acquisition around them)."""
+        e = self._entry(name)
+        if e["name"] in ATTR_REFUSED or e["category"] in ATTR_REFUSED_CATEGORIES:
+            raise ValueError(f"camera attribute {e['name']} is never written by the program (stored defaults, reset, factory)")
+        if e["access"] == "ro":
+            raise ValueError(f"camera attribute {e['name']} is read-only")
+        if e["name"] == "PixelFormat" and value not in ATTR_PIXEL_FORMATS:
+            raise ValueError(f"PixelFormat {value!r}: the frame path takes {sorted(ATTR_PIXEL_FORMATS)} only")
+        if e["category"] in ATTR_NEEDS_PAUSE and self.acquiring():
+            raise RuntimeError(f"{e['name']} cannot be written while acquiring (stop acquisition first)")
+        t = {v: k for k, v in _TYPES.items()}[e["type"]]
+        self._io().set(e["full"], t, value)
+        return self.get_attribute(name)
 
     def settings(self):
         c = self._io()

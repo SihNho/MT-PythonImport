@@ -52,6 +52,7 @@ from mtpy.track import Z_METHODS
 
 from . import shutdown as _shutdown
 from . import zscan
+from .attrs import AttrPanel
 from .shutdown import run_shutdown
 
 
@@ -389,6 +390,12 @@ class MainWindow(QMainWindow):
         gf.addRow("Gain", self.cam_gain)
         gf.addRow(QPushButton("Apply preset and read back", clicked=self._apply_preset))
         cams_lay.addWidget(g)
+        # owner 2026-11-04: every camera attribute, generated from the device's catalogue; favourites per device
+        self.cam_attrs = AttrPanel("Camera", lambda: api.camera.catalogue(), lambda n: api.camera.get_attribute(n),
+                                   self._set_cam_attribute, self._call, TOUCH_FILE.with_name("camera_favourites.json"))
+        self.cam_attrs_confirm = QCheckBox("allow a frame-producing change while recording (confirm=True)")
+        self.cam_attrs.layout().insertWidget(1, self.cam_attrs_confirm)
+        cams_lay.addWidget(self.cam_attrs, 1)
         g4 = self.em_group = QGroupBox("EMCCD (Andor iXon Ultra): core parameters, each read back")
         g4f = QFormLayout(g4)
         self.em_exp = _spin(0.01, 10000.0, 1.0, 30.0, 2, " ms")
@@ -416,6 +423,11 @@ class MainWindow(QMainWindow):
         self.em_readback.setWordWrap(True)
         g4f.addRow(self.em_readback)
         cams_lay.addWidget(g4)
+        self.em_attrs = AttrPanel("EMCCD", lambda: api.emccd.catalogue(), lambda n: api.emccd.get_attribute(n),
+                                  lambda n, v: api.emccd.set_attribute(n, v), self._call,
+                                  TOUCH_FILE.with_name("emccd_favourites.json"))
+        cams_lay.addWidget(self.em_attrs, 1)
+        self.cam_panel.resize(900, 820)
         g2 = QGroupBox("Analysis (decision 0024)")
         g2f = QFormLayout(g2)
         self.z_method = QComboBox()
@@ -798,6 +810,11 @@ class MainWindow(QMainWindow):
             self.dev_table.setItem(i, 2, QTableWidgetItem(str(d.get("last_error") or "")))
         ok = sum(1 for d in st.values() if d.get("state") == "connected")
         self.dev_summary.setText(f"Devices: {ok} / {len(st)} connected" if st else "Devices: not connected")
+
+    def _set_cam_attribute(self, name, value):
+        """Runs on the worker: an attribute that changes how frames are produced needs confirm=True while recording;
+        the refusal names it, so retry confirmed only when the owner said yes beforehand (the panel's checkbox)."""
+        return api.camera.set_attribute(name, value, confirm=self.cam_attrs_confirm.isChecked())
 
     def _apply_preset(self):
         preset = {"name": "gui", "roi": (0, 0, 1280, 1024), "rate_Hz": self.cam_rate.currentData(),

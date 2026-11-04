@@ -57,7 +57,16 @@ zero / bridge / exclude (U12, U14), troubleshooting guide (U9), MT-TIRF mode (10
   frame (owner 2026-11-01, after the GUI isolation measurement showed the plot as the GUI's largest cost per tick).
 
 ## UX backlog from the owner (2026-11-04, "do not change now, just noting")
-1. **Camera controls are a fraction of the camera.** The panel has exposure, frame rate, gain; the JAI exposes 193
+1. **Camera controls are a fraction of the camera** - done 2026-11-04 night: `api.camera.catalogue()` /
+   `get_attribute` / `set_attribute` (the JAI's 156 driver-listed attributes in 10 categories, read from IMAQdx at
+   connect; the simulator a slice of them), `api.emccd.catalogue()` from its settings, and the generic panel
+   `gui/attrs.py` (category tree, search, beginner / expert / guru level, favourites per device in
+   `config/camera_favourites.json` / `emccd_favourites.json`, a control per type, every write read back) inside
+   Setup -> Camera settings. Guards: reset / stored defaults / factory / a pixel format other than Mono8 are refused
+   by the device; ImageFormatControl, AcquisitionControl, TransportLayerControl, UserSetControl and DeviceControl
+   writes pause the acquisition and need the panel's confirm checkbox while recording; each write is a `setting`
+   event in the run file. The driver's catalogue: [manuals/camera-jai-attributes.md](../manuals/camera-jai-attributes.md).
+   Original note: the panel had exposure, frame rate, gain; the JAI exposes 193
    features in 12 categories (ROI, binning, pixel format, trigger source / activation / overlap, exposure mode incl.
    trigger-width, 8 digital I/O lines with TTL / LVDS / opto formats and line sources, two pulse generators, ALC,
    LUT / gamma, user sets, multi-ROI and sequence modes): [manuals/camera-jai-features.md](../manuals/camera-jai-features.md).

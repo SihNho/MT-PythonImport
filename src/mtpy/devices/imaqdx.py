@@ -13,7 +13,8 @@ import time
 import numpy as np
 
 MAXSTR = 512
-U32, I64, F64, STR, ENUM, BOOL = range(6)
+U32, I64, F64, STR, ENUM, BOOL, CMD = range(7)
+VIS_SIMPLE, VIS_INTERMEDIATE, VIS_ADVANCED = 0x1000, 0x2000, 0x4000     # IMAQdxEnumerateAttributes2 visibility
 NEXT, LAST, BUFNUM = 0, 1, 2
 A = "CameraAttributes::"
 IMG, ACQ, TL = A + "ImageFormatControl::", A + "AcquisitionControl::", A + "TransportLayerControl::"
@@ -25,6 +26,14 @@ class CameraInformation(C.Structure):
                 ("InterfaceName", C.c_char * MAXSTR), ("VendorName", C.c_char * MAXSTR),
                 ("ModelName", C.c_char * MAXSTR), ("CameraFileName", C.c_char * MAXSTR),
                 ("CameraAttributeURL", C.c_char * MAXSTR)]
+
+
+class AttributeInformation(C.Structure):
+    _fields_ = [("Type", C.c_uint32), ("Readable", C.c_uint32), ("Writable", C.c_uint32), ("Name", C.c_char * MAXSTR)]
+
+
+class EnumItem(C.Structure):
+    _fields_ = [("Value", C.c_uint32), ("Reserved", C.c_uint32), ("Name", C.c_char * MAXSTR)]
 
 
 class ImaqdxError(RuntimeError):
@@ -62,8 +71,44 @@ class ImaqdxCamera:
             b = C.create_string_buffer(MAXSTR)
             self._ok(self.dx.IMAQdxGetAttribute(self.sess, name.encode(), C.c_uint32(STR), b), f"get {name}")
             return b.value.decode("latin-1")
-        v = C.c_double() if t == F64 else C.c_int64()
+        v = C.c_double() if t == F64 else (C.c_uint32() if t in (U32, BOOL) else C.c_int64())
         self._ok(self.dx.IMAQdxGetAttribute(self.sess, name.encode(), C.c_uint32(t), C.byref(v)), f"get {name}")
+        return bool(v.value) if t == BOOL else v.value
+
+    def attributes(self, root="CameraAttributes", visibility=VIS_ADVANCED):
+        """Every attribute under `root` the driver shows at `visibility` (owner 2026-11-04: all of the camera's
+        controls, as NI MAX lists them): [(name, type code, readable, writable)]."""
+        n = C.c_uint32(0)
+        self.dx.IMAQdxEnumerateAttributes2(self.sess, None, C.byref(n), root.encode(), C.c_uint32(visibility))
+        arr = (AttributeInformation * max(n.value, 1))()
+        self._ok(self.dx.IMAQdxEnumerateAttributes2(self.sess, arr, C.byref(n), root.encode(), C.c_uint32(visibility)),
+                 "EnumerateAttributes2")
+        return [(arr[i].Name.decode("latin-1"), int(arr[i].Type), bool(arr[i].Readable), bool(arr[i].Writable))
+                for i in range(n.value)]
+
+    def enum_values(self, name):
+        """The names an enumeration attribute accepts."""
+        n = C.c_uint32(0)
+        self.dx.IMAQdxEnumerateAttributeValues(self.sess, name.encode(), None, C.byref(n))
+        arr = (EnumItem * max(n.value, 1))()
+        self._ok(self.dx.IMAQdxEnumerateAttributeValues(self.sess, name.encode(), arr, C.byref(n)), f"values {name}")
+        return [arr[i].Name.decode("latin-1") for i in range(n.value)]
+
+    def text(self, fn, name):
+        """A text property of an attribute: fn in IMAQdxGetAttributeTooltip / Description / DisplayName."""
+        b = C.create_string_buffer(MAXSTR)
+        self._ok(getattr(self.dx, fn)(self.sess, name.encode(), b, C.c_uint32(MAXSTR)), f"{fn} {name}")
+        return b.value.decode("latin-1")
+
+    def visibility(self, name):
+        v = C.c_uint32(0)
+        self._ok(self.dx.IMAQdxGetAttributeVisibility(self.sess, name.encode(), C.byref(v)), f"visibility {name}")
+        return int(v.value)
+
+    def limit(self, fn, name, t):
+        """IMAQdxGetAttributeMinimum / Maximum / Increment of a numeric attribute."""
+        v = C.c_double() if t == F64 else C.c_int64()
+        self._ok(getattr(self.dx, fn)(self.sess, name.encode(), C.c_uint32(t), C.byref(v)), f"{fn} {name}")
         return v.value
 
     def get_max(self, name, t):
@@ -73,8 +118,12 @@ class ImaqdxCamera:
         return v.value
 
     def set(self, name, t, value):
-        arg = {STR: lambda v: v.encode(), F64: C.c_double, I64: C.c_int64}[t](value)
-        self._ok(self.dx.IMAQdxSetAttribute(self.sess, name.encode(), C.c_uint32(t), arg), f"set {name}")
+        if t == CMD:                                # a command attribute runs on the write; the value is ignored
+            self._ok(self.dx.IMAQdxSetAttribute(self.sess, name.encode(), C.c_uint32(CMD), C.c_uint32(0)), f"run {name}")
+            return
+        arg = {STR: lambda v: v.encode(), ENUM: lambda v: v.encode(), F64: C.c_double, I64: C.c_int64, U32: C.c_uint32,
+               BOOL: lambda v: C.c_uint32(1 if v else 0)}[t](value)
+        self._ok(self.dx.IMAQdxSetAttribute(self.sess, name.encode(), C.c_uint32(STR if t == ENUM else t), arg), f"set {name}")
 
     def configure(self, rate_hz=None, exposure_us=None):
         """Write the condition (None = leave the .icd value, e.g. auto exposure) and return the read-back. A write is

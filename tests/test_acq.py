@@ -11,7 +11,7 @@ from test_devices import _config
 from mtpy import api
 from mtpy.acq import Beads, FrameRing, MemorySink
 from mtpy.api import estop, events
-from mtpy.api.errors import NotReady, SafetyRefused
+from mtpy.api.errors import DeviceError, NotReady, SafetyRefused
 from mtpy.track import Tracker
 
 TOL_XY, TOL_Z, TOL_BAD = 1e-6, 1e-4, 1e-4        # as tests/test_track_replay.py
@@ -508,3 +508,33 @@ def test_status_carries_median_std_p99_and_max_of_the_timings(cam):
     for key in ("track_ms", "latency_ms"):
         p50, sd, p99, mx = (st[f"{key}_{k}"] for k in ("p50", "std", "p99", "max"))
         assert 0 <= p50 <= p99 <= mx and sd >= 0
+
+
+def test_camera_catalogue_and_generic_attributes_on_the_simulator(cam):
+    """Owner 2026-11-04: every camera control reachable by name; refusals for what the program never writes."""
+    cat = api.camera.catalogue()
+    assert {e["category"] for e in cat} >= {"ImageFormatControl", "AcquisitionControl", "DigitalIOControl"}
+    assert api.camera.get_attribute("TriggerMode") == "Off"
+    assert api.camera.set_attribute("TriggerMode", "On") == "On"
+    with pytest.raises(SafetyRefused, match="not one of"):
+        api.camera.set_attribute("TriggerMode", "Maybe")
+    assert api.camera.set_attribute("Width", 640) == 640          # the core settings and the attributes are one state
+    assert api.devices.info("camera")["settings"]["roi"][2] == 640
+    with pytest.raises(DeviceError, match="never written"):
+        api.camera.set_attribute("DeviceReset", None)
+    with pytest.raises(DeviceError, match="read-only"):
+        api.camera.set_attribute("SensorWidth", 1)
+    with pytest.raises(SafetyRefused, match="outside"):
+        api.camera.set_attribute("Gain", 99.0)
+    api.acq.start()
+    try:
+        assert api.acq.wait_frames(5, 10)
+        api.camera.set_attribute("ExposureTime", 3000.0)          # AcquisitionControl: paused around the write
+        assert api.devices.info("camera")["settings"]["exposure_ms"] == pytest.approx(3.0)
+        api.acq.set_recording(True)
+        with pytest.raises(SafetyRefused, match="confirm=True"):
+            api.camera.set_attribute("Width", 320)
+        assert api.camera.set_attribute("Width", 320, confirm=True) == 320
+    finally:
+        api.acq.stop()
+    assert [e for e in events.events() if e.kind == "setting" and e.extra.get("name") == "Width"]

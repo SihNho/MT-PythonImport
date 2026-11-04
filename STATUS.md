@@ -175,6 +175,12 @@ Short and current. Details live in the linked documents; the history is in git a
   each a move plus a wait). The second-Start symptom is still unexplained (the simulators run twice; the next
   refusal is in gui_events.log). Requirements kept in design/gui.md: Experiment table editor, calibration panel,
   camera / EMCCD settings panels, bead-pick clicks.
+- **2026-11-04 night (owner: "you did not touch the camera settings"):** the camera's whole attribute tree in the
+  program: `api.camera.catalogue / get_attribute / set_attribute` (IMAQdx enumeration; 156 attributes on the rig,
+  150 reads in 0.14 s, TriggerMode round trip ok), `api.emccd.catalogue()`, the generic panel `gui/attrs.py` (tree,
+  search, level, favourites, read-back) in Setup -> Camera settings for both cameras; refusals for reset / stored
+  defaults / factory / non-Mono8; frame-producing categories pause the acquisition and need confirm while
+  recording. [manuals/camera-jai-attributes.md](docs/manuals/camera-jai-attributes.md).
 - **Next:** protocols on hardware (force ramps, rotation, 3-state clamp, autofocus), the stop / watchdog paths
   exercised on the rig, then the tethered-bead calibration.
 - **Queued (owner 2026-10-30):** lock the camera settings while a z scan runs (the GUI must not change exposure,

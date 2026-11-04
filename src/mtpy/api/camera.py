@@ -18,12 +18,13 @@ from .errors import SafetyRefused
 PRESET_FIELDS = ("roi", "rate_Hz", "exposure_ms", "gain_dB")
 
 
-def _guard(svc, dev, names, value, confirm):
+def _guard(svc, dev, names, value, confirm, guarded=None):
     if svc.scanning:                     # fault list P5 / G5 (owner 2026-10-30): a .cal must come from one setting
         events.log("refused", request={"camera": dict(value) if isinstance(value, dict) else value},
                    reason="a z scan is running; camera settings are locked until it ends")
         raise SafetyRefused("camera settings are locked while a z scan runs; wait for it (or its failure) first")
-    guarded = [n for n in names if dev.settings_kinds[n][1]]
+    if guarded is None:
+        guarded = [n for n in names if dev.settings_kinds[n][1]]
     if guarded and svc.recording:
         if not confirm:
             events.log("refused", request={"camera": dict(value) if isinstance(value, dict) else value},
@@ -40,10 +41,11 @@ def _beads_fit(roi, current_roi):
         raise SafetyRefused(f"camera {why}")
 
 
-def _run(svc, dev, names, act):
+def _run(svc, dev, names, act, needs_pause=None):
     """Run act() inside a pause when a 'needs a short pause' setting changes during acquisition."""
-    if not (any(dev.settings_kinds[n][0] == NEEDS_PAUSE for n in names)
-            and svc.call(dev.acquiring, what="acquiring?")):
+    if needs_pause is None:
+        needs_pause = any(dev.settings_kinds[n][0] == NEEDS_PAUSE for n in names)
+    if not (needs_pause and svc.call(dev.acquiring, what="acquiring?")):
         return act()
     svc.call(dev.stop_acquisition, what="stop acquisition")
     acq._camera_paused()                            # WP3: close the segment (frames still buffered are taken first)
@@ -140,3 +142,48 @@ def apply_preset(preset, confirm=False):
     svc.preset = dict(preset)                       # stored with the next recording (U15 frame-rate triple, WP6)
     events.log("preset", device="camera", name=preset["name"], readback=got)
     return got
+
+
+# --- the attribute catalogue (owner 2026-11-04: "the camera has far more controls than exposure, rate and gain") ---
+NEEDS_PAUSE_CATEGORIES = {"ImageFormatControl", "AcquisitionControl", "TransportLayerControl", "UserSetControl",
+                          "DeviceControl"}
+
+
+def catalogue():
+    """Every control the camera exposes: [{"name", "category", "type", "access", "visibility", "min", "max", "step",
+    "values", "description"}] (the JAI: ~190 GenICam features from the driver, NI MAX's tree; the simulator: a
+    slice of it). Read only. Example: `[e["name"] for e in api.camera.catalogue() if e["category"] == "DigitalIOControl"]`."""
+    svc = service("camera")
+    return svc.call(svc.require().catalogue, what="catalogue")
+
+
+def get_attribute(name):
+    """One attribute's value now, by its GenICam name (e.g. "TriggerMode" -> "Off"; a command reads as None)."""
+    svc = service("camera")
+    return svc.call(svc.require().get_attribute, name, what=f"read {name}")
+
+
+def set_attribute(name, value, confirm=False):
+    """Write one attribute by name and read it back (an enum by its entry name, a command with any value). The
+    device refuses what the program never writes (reset, stored defaults, factory, a pixel format other than Mono8);
+    ImageFormatControl / AcquisitionControl / TransportLayerControl / UserSetControl / DeviceControl change how
+    frames are produced, so they pause the acquisition around the write (like rate and ROI) and need confirm=True
+    while recording; every write is a `setting` event with the read-back (so it is in the run file)."""
+    svc = service("camera")
+    dev = svc.require()
+    entry = next((e for e in svc.call(dev.catalogue, what="catalogue") if e["name"] == name), None)
+    if entry is None:
+        raise SafetyRefused(f"camera has no attribute {name!r}")
+    guarded = entry["category"] in NEEDS_PAUSE_CATEGORIES
+    if entry["type"] == "enum" and value not in (entry.get("values") or [value]):
+        raise SafetyRefused(f"camera {name}: {value!r} is not one of {entry.get('values')}")
+    if entry["type"] in ("int", "float") and (entry.get("min") is not None and entry.get("max") is not None) \
+            and not (entry["min"] <= float(value) <= entry["max"]):
+        raise SafetyRefused(f"camera {name}: {value!r} is outside [{entry['min']}, {entry['max']}]")
+    _guard(svc, dev, [name], {name: value}, confirm, guarded=[name] if guarded else [])
+
+    def do():
+        got = svc.call(dev.set_attribute, name, value, what=f"set {name} {value!r}")
+        events.log("setting", device="camera", name=name, value=value, readback=got, category=entry["category"])
+        return got
+    return _run(svc, dev, [name], do, needs_pause=guarded)
