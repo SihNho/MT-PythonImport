@@ -205,6 +205,14 @@ Short and current. Details live in the linked documents; the history is in git a
   while an engine runs attaches to it (`client.attach`) instead of launching a second one, so a dead window is closed
   cleanly by Disconnect. The Take-over dialog shows what Windows recorded about python.exe since the lock was taken
   (troubleshooting #1, #20).
+- **2026-11-05 ~02:00 (owner ran the program on the rig; "the motor ramps but not as the table, the force differs, the
+  rotor does not turn, Start from table does nothing, trace export does not work"):** the log explains all of it. What
+  ran was the text example (`hold f=1`, `ramp 1->5 t=5`), not the table: "Start from table" was refused first because
+  the text protocol was still running, then by the check (two errors) - the rotor speed limit was never set in profile
+  v9 (`max None`), so every rotation is refused; the owner sets it with the new `tools/rig_set_limit.py` (#21). The
+  "355 errors" and the Cal+ `TypeError` were one client bug (#22, fixed). The .tra export worked: `run_..._015517-000`,
+  10650 rows x 18 beads (#23). The .cal path is browsed now and takes the next free `cal00N`. Not done: the
+  calibration panel (profile / bandpass / forget radius / PSF).
 - **Next:** protocols on hardware (force ramps, rotation, 3-state clamp, autofocus), the stop / watchdog paths
   exercised on the rig, then the tethered-bead calibration.
 - **Queued (owner 2026-10-30):** lock the camera settings while a z scan runs (the GUI must not change exposure,

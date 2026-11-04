@@ -9,7 +9,7 @@ import pytest
 from test_devices import REPO_CONFIG, TEST_LIMITS
 
 from mtpy.api.errors import NotReady, SafetyRefused
-from mtpy.client import EngineError, attach, launch
+from mtpy.client import EngineError, _rebuild, attach, launch
 
 
 def _until(cond, timeout_s, what):
@@ -100,3 +100,15 @@ def test_attach_finds_the_running_engine_and_nothing_after_it_exits(engine, tmp_
     client.exit_engine()
     proc.wait(30)
     assert attach(path) is None
+
+
+def test_engine_errors_are_rebuilt_with_their_text_whatever_the_class():
+    """Rig 2026-11-05: DeviceError(text) raised TypeError at the client ("Cal+") and ScriptError(text) counted the
+    characters ("355 errors"); the class and the text both survive the wire now."""
+    from mtpy.api.errors import DeviceError, ScriptError
+    e = _rebuild("ScriptError", "2 errors:\n<text>:4:28: 't' is 1 turns/s")
+    assert isinstance(e, ScriptError) and str(e) == "2 errors:\n<text>:4:28: 't' is 1 turns/s"
+    e = _rebuild("DeviceError", "pi: MOV - stall")
+    assert isinstance(e, DeviceError) and str(e) == "pi: MOV - stall"
+    assert isinstance(_rebuild("NotReady", "x"), NotReady) and isinstance(_rebuild("KeyError", "k"), KeyError)
+    assert isinstance(_rebuild("SomethingElse", "y"), EngineError)

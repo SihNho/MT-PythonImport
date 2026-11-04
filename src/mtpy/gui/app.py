@@ -7,6 +7,7 @@ camera thread losing frames while the window is dragged.
 """
 import contextlib
 import json
+import re
 import time
 from collections import deque
 from datetime import datetime
@@ -99,6 +100,17 @@ end protocol
 class _Signals(QObject):
     done = Signal(object)
     failed = Signal(str)
+
+
+def next_free(path):
+    """cal001 -> the first of cal001, cal002, ... that does not exist; a name without a number gets 001 appended
+    when taken. shortcut: a name with a suffix (cal001.cal) is numbered after the suffix, upgrade if such names come."""
+    m = re.fullmatch(r"(.*?)(\d+)", path.name)
+    stem, n = (m.group(1), int(m.group(2))) if m else (path.name, 0)
+    while path.exists():
+        n += 1
+        path = path.with_name(f"{stem}{n:03d}")
+    return path
 
 
 class Worker(QRunnable):
@@ -251,8 +263,12 @@ class MainWindow(QMainWindow):
         self.btn_rec = QPushButton("Record", clicked=self._toggle_rec)
         self.btn_rec.setCheckable(True)
         self.btn_stop = QPushButton("STOP", clicked=self._estop)
+        self.btn_stop.setToolTip("Emergency stop: every motor halts, the protocol ends, and every move is refused until "
+                                 "Acknowledge is pressed. Not for ending an acquisition (Stop acquisition) or a protocol (Stop).")
         self.btn_stop.setStyleSheet("background:#B91C1C;color:white;font-weight:bold;padding:6px 18px")
         self.btn_ack = QPushButton("Acknowledge", clicked=self._estop_clear)
+        self.btn_ack.setToolTip("Clears the emergency stop after STOP (owner 2026-11-05: 'what are these'). Needed only "
+                                "after STOP; Connect refuses while the stop is engaged.")
         for b in (self.btn_display, self.btn_live, self.btn_rec, self.btn_stop, self.btn_ack):
             h.addWidget(b)
         return w
@@ -545,8 +561,11 @@ class MainWindow(QMainWindow):
         f.addRow("Cross (px)", self.cal_cross)
         self.cal_settle = _spin(0.0, 5.0, 0.1, zscan.SETTLE_S, 2, " s")
         f.addRow("Settle after each move", self.cal_settle)
-        self.cal_out = QLineEdit(str(self.out / "cal_gui"))
-        f.addRow("Write .cal to", self.cal_out)
+        self.cal_out = QLineEdit(str(self.out / "cal001"))   # owner 2026-11-05: browsed, not typed; the next free name at Run
+        row = QHBoxLayout()
+        row.addWidget(self.cal_out)
+        row.addWidget(QPushButton("Browse...", clicked=self._browse_cal_out))
+        f.addRow("Write .cal to", row)
         f.addRow(QPushButton("Run z scan (beads of the current selection)", clicked=self._run_zscan))
         self.cal_status = QLabel("not run")
         self.cal_status.setWordWrap(True)
@@ -584,7 +603,10 @@ class MainWindow(QMainWindow):
         f.addRow("Run folder", _row(self.ed_out, QPushButton("Browse...", clicked=self._browse_out)))
         self.ed_name = QLineEdit(time.strftime("run_%Y%m%d_%H%M%S"))
         f.addRow("Run name (next acquisition)", self.ed_name)
-        lab = QLabel("Acquisition writes <folder>/<name>.h5; Record (top bar) switches recording on and off inside it.")
+        lab = QLabel("Acquisition writes <folder>/<name>.h5 (frames' records, traces, events, the .cal used); Record (top bar) "
+                     "switches recording on and off inside it. Export .tra writes the LabVIEW files from that run file: the "
+                     "next free tra001-000, tra002-000, ... in the run folder (owner 2026-11-05: as the LabVIEW program "
+                     "names them); the run file box is filled with the current run at every acquisition start.")
         lab.setWordWrap(True)
         f.addRow(lab)
         self.ed_h5 = QLineEdit("")
@@ -1088,6 +1110,12 @@ class MainWindow(QMainWindow):
             self.boxes += [r, t]
 
     # ------------------------------------------------------------------ calibration
+    def _browse_cal_out(self):
+        p, _ = QFileDialog.getSaveFileName(self, "Write .cal to (LabVIEW names them cal001, cal002, ...)",
+                                           self.cal_out.text(), "Calibration (cal*);;All (*)")
+        if p:
+            self.cal_out.setText(p)
+
     def _run_zscan(self):
         beads = api.beads.selected()
         if not self.picks and beads is None:
@@ -1096,7 +1124,8 @@ class MainWindow(QMainWindow):
         if not api.acq.running():
             self._fail("z scan", "start acquisition first (frames come from the display)")
             return
-        path = Path(self.cal_out.text())
+        path = next_free(Path(self.cal_out.text()))      # the z scan never overwrites (#6): cal001 -> cal002 by itself
+        self.cal_out.setText(str(path))
         path.parent.mkdir(parents=True, exist_ok=True)
         slices, step, avg, cross, settle = (self.cal_slices.value(), self.cal_step.value(), self.cal_avg.value(),
                                             self.cal_cross.value(), self.cal_settle.value())
@@ -1224,8 +1253,17 @@ class MainWindow(QMainWindow):
 
     def _export(self, kind):
         h5 = self.ed_h5.text()
-        self._call(lambda: api.data.export(kind, h5), f"export .{kind}",
-                   lambda paths: self.save_info.setPlainText(f"exported .{kind}:\n" + "\n".join(map(str, paths))))
+        folder = Path(h5).parent if h5 else Path(self.ed_out.text())
+        if kind == "tra":
+            n = 1                                  # LabVIEW's series name: traNNN-000, -001, ...; the next free NNN
+            while (folder / f"tra{n:03d}-000").exists():
+                n += 1
+            out = folder / f"tra{n:03d}"
+        else:
+            out = next_free(folder / "cal001")
+        self._call(lambda: api.data.export(kind, h5, str(out)), f"export .{kind}",
+                   lambda paths: self.save_info.setPlainText(f"exported .{kind}:\n" + "\n".join(
+                       map(str, paths if isinstance(paths, list) else [paths]))))
 
     def _open_run(self):
         h5 = self.ed_h5.text()

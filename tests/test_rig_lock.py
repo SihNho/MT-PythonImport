@@ -1,12 +1,13 @@
 """Decision 0026: the program holds the shared rig lock itself (api.rig), taken by devices.connect for any backend
 but `sim`, released by disconnect only after every cleanup succeeded. Against the in-memory FakeRiglock (conftest)."""
 import os
+from pathlib import Path
 
 import pytest
 from test_devices import _config
 
 from mtpy import api
-from mtpy.api import estop, events, rig
+from mtpy.api import estop, events, rig, safety
 from mtpy.api.errors import DeviceError, NotReady
 from mtpy.devices.sim import make_rig
 
@@ -126,3 +127,18 @@ def test_stale_lock_is_taken_over_on_the_users_words_and_connect_works_again(fak
     with events.as_caller("gui"):
         st = api.devices.connect({"backend": "real-test", "mode": "MT"})
     assert st and rig.status()["held"]
+
+
+def test_rig_set_limit_tool_activates_one_quantity(tmp_path, monkeypatch):
+    """tools/rig_set_limit.py (rig 2026-11-05: rotor_speed_turns_s had max None, every rotation refused): the
+    quantity gets its value through the admin flow, the version goes up, the others stay."""
+    import sys
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools"))
+    from test_devices import _config
+    _config(tmp_path, monkeypatch, test_limits=False)
+    import rig_set_limit
+    before = safety.profile()
+    p = rig_set_limit.set_limit("rotor_speed_turns_s", hi=2.0, reason="test")
+    assert p["version"] == before["version"] + 1 and p["limits"]["rotor_speed_turns_s"]["max"] == 2.0
+    assert p["limits"]["rotor_speed_turns_s"]["verified"] and p["limits"]["magnet_position_mm"] == dict(before["limits"]["magnet_position_mm"])
+    assert safety.profile()["limits"]["rotor_speed_turns_s"]["max"] == 2.0

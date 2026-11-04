@@ -121,6 +121,23 @@ class _Api:
         self.errors = errors
 
 
+_BUILTIN = {"ValueError": ValueError, "TypeError": TypeError, "KeyError": KeyError, "AttributeError": AttributeError,
+            "IndexError": IndexError, "RuntimeError": RuntimeError, "TimeoutError": TimeoutError,
+            "FileNotFoundError": FileNotFoundError}
+
+
+def _rebuild(cls_name, text):
+    """The engine's exception as its class with the text it had. An mtpy class is built without its __init__: the
+    wire carries the text only, and DeviceError(text) raised TypeError (rig 2026-11-05, "Cal+") while
+    ScriptError(text) listed every character as an error ("355 errors")."""
+    cls = getattr(errors, cls_name, None)
+    if cls is None:
+        return _BUILTIN.get(cls_name, EngineError)(text)
+    e = cls.__new__(cls)
+    Exception.__init__(e, text)
+    return e
+
+
 class Client:
     def __init__(self, address, authkey, snapshot_name=None):
         self._conn = _Connect(tuple(address), authkey=bytes.fromhex(authkey) if isinstance(authkey, str) else authkey)
@@ -168,12 +185,7 @@ class Client:
             if isinstance(r, tuple) and len(r) == 3 and r[0] == "motion":
                 return _Motion(self, r[1], r[2])
             return r
-        cls_name, text = rest
-        cls = getattr(errors, cls_name, None) or {"ValueError": ValueError, "TypeError": TypeError,
-                                                  "KeyError": KeyError, "AttributeError": AttributeError, "IndexError": IndexError,
-                                                  "RuntimeError": RuntimeError, "TimeoutError": TimeoutError,
-                                                  "FileNotFoundError": FileNotFoundError}.get(cls_name, EngineError)
-        raise cls(text)
+        raise _rebuild(*rest)
 
     def ping(self, timeout_s=2.0):
         """True when the engine answered within timeout_s (the GUI's watchdog)."""

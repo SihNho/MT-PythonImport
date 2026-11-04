@@ -405,3 +405,15 @@ def test_experiment_table_compiles_the_owners_example_and_runs(window):
     assert "ramp from=1 to=2 speed=1" in w.prot_edit.toPlainText() and "rotate from=0 to=0.1 f=2 t=0.1" in w.prot_edit.toPlainText()
     _until(app, lambda: api.protocol.status()["state"] == "completed", 60, "table protocol completed")
     assert api.protocol.status()["steps_done"] == 5                 # hold, ramp, wait, rotate, wait
+
+
+def test_cal_path_moves_to_the_next_free_name(tmp_path):
+    """Owner 2026-11-05 ("cal_gui exists; never overwritten" at every second scan): the z scan takes the next free
+    cal00N by itself."""
+    from mtpy.gui.app import next_free
+    assert next_free(tmp_path / "cal001") == tmp_path / "cal001"
+    (tmp_path / "cal001").write_text("x")
+    (tmp_path / "cal002").write_text("x")
+    assert next_free(tmp_path / "cal001") == tmp_path / "cal003"
+    (tmp_path / "cal_gui").write_text("x")
+    assert next_free(tmp_path / "cal_gui") == tmp_path / "cal_gui001"
