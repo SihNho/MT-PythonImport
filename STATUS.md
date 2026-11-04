@@ -213,6 +213,12 @@ Short and current. Details live in the linked documents; the history is in git a
   "355 errors" and the Cal+ `TypeError` were one client bug (#22, fixed). The .tra export worked: `run_..._015517-000`,
   10650 rows x 18 beads (#23). The .cal path is browsed now and takes the next free `cal00N`. Not done: the
   calibration panel (profile / bandpass / forget radius / PSF).
+- **2026-11-05 ~03:00 (owner, five points):** (1) Start replaces a running protocol; a top-bar badge shows the
+  protocol state. (2) rotor speed limit set to 3 turns/s (owner: "SPD 150", profile v10, `tools/rig_set_limit.py`);
+  the Setup panel shows the profile file, its version and every limit. (3) Names follow the LabVIEW program: the run
+  file (the raw data) is `tra001.h5`, its export `tra001-000`, the calibration `cal001`; a typed .cal name that exists
+  is overwritten after a prompt, the next scan gets the next number. (4) STOP = emergency stop, understood. (5) The
+  owner wants, once the code settles, the means to see where things are set and what state the code is in (not now).
 - **Next:** protocols on hardware (force ramps, rotation, 3-state clamp, autofocus), the stop / watchdog paths
   exercised on the rig, then the tethered-bead calibration.
 - **Queued (owner 2026-10-30):** lock the camera settings while a z scan runs (the GUI must not change exposure,

@@ -113,6 +113,14 @@ def next_free(path):
     return path
 
 
+def next_tra(folder):
+    """LabVIEW's run name: tra001, tra002, ... the first with neither traNNN.h5 nor traNNN-000 in the folder."""
+    n = 1
+    while (Path(folder) / f"tra{n:03d}.h5").exists() or (Path(folder) / f"tra{n:03d}-000").exists():
+        n += 1
+    return f"tra{n:03d}"
+
+
 class Worker(QRunnable):
     """Run fn() on the thread pool as caller "gui"; done(result) or failed(text) back on the GUI thread."""
 
@@ -253,11 +261,30 @@ class MainWindow(QMainWindow):
         self.statusBar().showMessage("not connected")
         self._set_step(0)
 
+    def _profile_label(self):
+        """Owner 2026-11-05 ("where is that set? the user must know, and see the state"): the profile file and its
+        limits, read at the program's start; changed with tools/rig_set_limit.py (the rig-admin), then a restart."""
+        p = safety.profile()
+        cfg = getattr(safety, "CONFIG", None)             # a path in-process; the engine's own when a client
+        where = f"{Path(cfg) / 'safety_profile.json'}" if isinstance(cfg, (str, Path)) else "config/safety_profile.json (the engine's)"
+        lines = [(f"{where}  (v{p.get('version')}; read at start; "
+                  "change: python tools/rig_set_limit.py <quantity> --max ... --reason \"...\", then restart)")]
+        for q, lim in p["limits"].items():
+            lines.append(f"  {q}: {lim.get('min')} .. {lim.get('max')} {lim.get('unit', '')}"
+                         + ("" if lim.get("verified") else "  UNVERIFIED") + (" (max None: every request refused)" if lim.get("max") is None else ""))
+        lab = QLabel(chr(10).join(lines))
+        lab.setWordWrap(True)
+        lab.setTextInteractionFlags(Qt.TextSelectableByMouse)
+        return lab
+
     def _top_bar(self):
         w = QFrame()
         h = QHBoxLayout(w)
         self.dev_summary = QLabel("Devices: not connected")
         h.addWidget(self.dev_summary, 1)
+        self.prot_badge = QLabel("no protocol")           # owner 2026-11-05: is a protocol running? visible everywhere
+        self.prot_badge.setToolTip("The protocol's state (Experiment panel). Start replaces a running protocol.")
+        h.addWidget(self.prot_badge)
         self.btn_display = QPushButton("Pause display", clicked=self._toggle_display)
         self.btn_live = QPushButton("Start acquisition", clicked=self._toggle_acq)
         self.btn_rec = QPushButton("Record", clicked=self._toggle_rec)
@@ -363,6 +390,7 @@ class MainWindow(QMainWindow):
         f = QFormLayout(w)
         self.backend = QComboBox()
         self.backend.addItem("sim: every device simulated", "sim")
+        f.addRow("Safety profile", self._profile_label())
         self.backend.addItem("real: JAI camera + Andor iXon EMCCD (SDK2) under the rig lock; motors simulated", "real")
         self.backend.addItem("rig: JAI + iXon + motors through the motion gate", "real-motors")
         self.backend.setCurrentIndex(self.backend.findData(self.backend_arg))
@@ -601,12 +629,13 @@ class MainWindow(QMainWindow):
         f = QFormLayout(w)
         self.ed_out = QLineEdit(str(self.out))
         f.addRow("Run folder", _row(self.ed_out, QPushButton("Browse...", clicked=self._browse_out)))
-        self.ed_name = QLineEdit(time.strftime("run_%Y%m%d_%H%M%S"))
+        self.ed_name = QLineEdit(next_tra(self.out))     # owner 2026-11-05: LabVIEW's names, tra001 with cal001
         f.addRow("Run name (next acquisition)", self.ed_name)
-        lab = QLabel("Acquisition writes <folder>/<name>.h5 (frames' records, traces, events, the .cal used); Record (top bar) "
-                     "switches recording on and off inside it. Export .tra writes the LabVIEW files from that run file: the "
-                     "next free tra001-000, tra002-000, ... in the run folder (owner 2026-11-05: as the LabVIEW program "
-                     "names them); the run file box is filled with the current run at every acquisition start.")
+        lab = QLabel("The run file <folder>/<name>.h5 is the raw data: every frame's record, the traces, the events and the "
+                     ".cal used. Names follow the LabVIEW program (owner 2026-11-05): calibration cal001, cal002, ...; the "
+                     "run tra001, tra002, ... (the next free one is filled in at every acquisition start). Record (top bar) "
+                     "switches recording on and off inside the run file. Export .tra writes the LabVIEW trace files of the "
+                     "run named in the box, tra001-000, tra001-001, ... (one per 2,000,000 frames), for the existing analysis.")
         lab.setWordWrap(True)
         f.addRow(lab)
         self.ed_h5 = QLineEdit("")
@@ -1124,8 +1153,13 @@ class MainWindow(QMainWindow):
         if not api.acq.running():
             self._fail("z scan", "start acquisition first (frames come from the display)")
             return
-        path = next_free(Path(self.cal_out.text()))      # the z scan never overwrites (#6): cal001 -> cal002 by itself
-        self.cal_out.setText(str(path))
+        path = Path(self.cal_out.text())
+        if path.exists():                 # owner 2026-11-05: a calibration is often redone; the typed name overwrites on a yes
+            if QMessageBox.question(self, "Overwrite the calibration?", f"{path} exists. Overwrite it with this z scan?",
+                                    QMessageBox.Yes | QMessageBox.No, QMessageBox.No) != QMessageBox.Yes:
+                return
+            path.unlink()
+            self._log(f"[gui] z scan: {path} overwritten on the owner's yes")
         path.parent.mkdir(parents=True, exist_ok=True)
         slices, step, avg, cross, settle = (self.cal_slices.value(), self.cal_step.value(), self.cal_avg.value(),
                                             self.cal_cross.value(), self.cal_settle.value())
@@ -1138,6 +1172,7 @@ class MainWindow(QMainWindow):
         def done(cal):
             self.cal_status.setText(f"done: {len(cal['xy'])} beads, {slices} slices x {step:.0f} nm -> {path}")
             self.ed_cal.setText(str(path))
+            self.cal_out.setText(str(next_free(path)))        # the next scan gets the next number unless told otherwise
             self._load_cal_list()
         wk = Worker(job)                 # a failed scan is shown in the Calibrate label, not only in the status bar
         wk.setAutoDelete(False)
@@ -1161,7 +1196,7 @@ class MainWindow(QMainWindow):
         def done(st):
             self.btn_live.setText("Stop acquisition")
             self.ed_h5.setText(str(folder / f"{name}.h5") if name else "")
-            self.ed_name.setText(time.strftime("run_%Y%m%d_%H%M%S"))
+            self.ed_name.setText(next_tra(folder))
         self._call(lambda: api.acq.start(record=False, name=name, folder=folder, roles=roles, z_method=zm, gpu=gpu),
                    "start acquisition", done)
 
@@ -1228,7 +1263,13 @@ class MainWindow(QMainWindow):
             self._call(api.protocol.resume, "resume")
             return
         text = self.prot_edit.toPlainText()
-        self._call(lambda: api.protocol.run(api.protocol.load(text)), "run protocol")
+
+        def go():                 # owner 2026-11-05: a new Start ends the protocol that runs and runs this one
+            if api.protocol.running():
+                api.protocol.stop()
+                api.protocol.wait(30)
+            return api.protocol.run(api.protocol.load(text))
+        self._call(go, "run protocol")
 
     def _pause_protocol(self):
         self._call(api.protocol.pause, "pause")
@@ -1253,15 +1294,8 @@ class MainWindow(QMainWindow):
 
     def _export(self, kind):
         h5 = self.ed_h5.text()
-        folder = Path(h5).parent if h5 else Path(self.ed_out.text())
-        if kind == "tra":
-            n = 1                                  # LabVIEW's series name: traNNN-000, -001, ...; the next free NNN
-            while (folder / f"tra{n:03d}-000").exists():
-                n += 1
-            out = folder / f"tra{n:03d}"
-        else:
-            out = next_free(folder / "cal001")
-        self._call(lambda: api.data.export(kind, h5, str(out)), f"export .{kind}",
+        out = None if kind == "tra" else str(next_free(Path(h5).parent / "cal001"))   # tra: <run>-000 next to the .h5
+        self._call(lambda: api.data.export(kind, h5, out), f"export .{kind}",
                    lambda paths: self.save_info.setPlainText(f"exported .{kind}:\n" + "\n".join(
                        map(str, paths if isinstance(paths, list) else [paths]))))
 
@@ -1392,6 +1426,10 @@ class MainWindow(QMainWindow):
             p, parts = d["protocol"], d["parts"]
             parts.append(f"protocol: {p['state']}" + (f" ({p['reason']})" if p.get("reason") else ""))
             self.btn_run.setText("Resume" if p["state"] == "paused" else "Start")
+            running = p["state"] in ("running", "paused")
+            self.prot_badge.setText(f"PROTOCOL {p['state']}" + (f" ({p.get('name')})" if running and p.get("name") else "")
+                                    if running else "no protocol")
+            self.prot_badge.setStyleSheet("background: #ffd54f; padding: 2px 8px; font-weight: bold" if running else "")
             if p["state"] != "idle":
                 self.prot_status.setText(f"{p['state']}" + (f": {p['reason']}" if p.get("reason") else ""))
             if estop.active():

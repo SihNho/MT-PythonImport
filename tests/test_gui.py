@@ -417,3 +417,31 @@ def test_cal_path_moves_to_the_next_free_name(tmp_path):
     assert next_free(tmp_path / "cal001") == tmp_path / "cal003"
     (tmp_path / "cal_gui").write_text("x")
     assert next_free(tmp_path / "cal_gui") == tmp_path / "cal_gui001"
+    from mtpy.gui.app import next_tra
+    assert next_tra(tmp_path) == "tra001"
+    (tmp_path / "tra001.h5").write_text("x")
+    (tmp_path / "tra002-000").write_text("x")
+    assert next_tra(tmp_path) == "tra003"
+
+
+def test_start_replaces_the_running_protocol_and_the_badge_shows_it(window):
+    """Owner 2026-11-05: a new Start ends the protocol that runs and runs the new one; the top bar says which state
+    the protocol is in."""
+    app, w = window
+    w._connect()
+    _until(app, lambda: "8 / 8" in w.dev_summary.text(), 15, "connect")
+    w._apply_preset()
+    w._call(lambda: api.magnet.set_touch_position(40.0), "touch")
+    _until(app, lambda: api.magnet.force_calibration()["ready"], 10, "touch position")
+    w.prot_edit.setPlainText('grammar 0.1\nprotocol "long"\nhold f=1 t=60\nend protocol\n')
+    w._run_protocol()
+    _until(app, lambda: api.protocol.status()["state"] == "running", 20, "first protocol running")
+    _until(app, lambda: "PROTOCOL running" in w.prot_badge.text(), 5, "badge")
+    n = len(events.events())
+    w.prot_edit.setPlainText('grammar 0.1\nprotocol "short"\nhold f=1 t=0.2\nend protocol\n')
+    w._run_protocol()
+    _until(app, lambda: any(e.kind == "protocol" and e.extra.get("action") == "end" and e.extra.get("name") == "long"
+                            for e in events.events()[n:]), 30, "the long protocol ended")
+    _until(app, lambda: api.protocol.status()["state"] == "completed" and api.protocol.status().get("name") == "short",
+           30, "the short one ran")
+    _until(app, lambda: w.prot_badge.text() == "no protocol", 5, "badge cleared")
