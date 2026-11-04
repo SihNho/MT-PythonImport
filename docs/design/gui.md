@@ -78,7 +78,7 @@ zero / bridge / exclude (U12, U14), troubleshooting guide (U9), MT-TIRF mode (10
    GUI "Export .tra"; byte-identical round trip and the frame column from the first recorded frame,
    `tests/test_data.py`). Not yet checked: a `.tra` / `.cal` from this program opened in the owner's LabVIEW /
    MATLAB analysis end to end on a real recording (the owner's acceptance).
-4. **Explore panel (owner 2026-11-04, from the experiment):** show, live and continuously refreshed, every motor's
+4. **Explore panel (owner 2026-11-04, from the experiment)** - done 2026-11-04 evening (commit below): show, live and continuously refreshed, every motor's
    position (stage x / y, focus z, magnet mm, rotor deg) and the force (pN) from the magnet position; add the motor
    speed to the magnet / stage move controls (it is missing); **two PI presets** (the owner keeps "Cal+" and "Cal-"
    positions as two buttons with stored values, editable); after a relative "move by" the entry returns to 0 so the
@@ -89,7 +89,8 @@ zero / bridge / exclude (U12, U14), troubleshooting guide (U9), MT-TIRF mode (10
    simulator the API runs protocols one after another (`tests/test_protocol.py`), so the cause is on the GUI path
    (the Start handler only resumes when the state is "paused"; a refusal from `api.protocol.run`, such as a check
    error against the rig's present state, shows only as a 15-s status-bar line "run protocol: ...") - to reproduce
-   with the owner: read that line, or the `refused` event in the log, on the second Start. (b) The text script is
+   with the owner: read that line, or the `refused` event in the log, on the second Start - since 2026-11-04 evening
+   the log pane is also written to `gui_events.log` in the run folder, so the line survives the window. (b) The text script is
    not intuitive for the owner: wanted a **table editor**, rows = parameters, columns = iterations, e.g.
 
    | | 1 | 2 | 3 | 4 | 5 |

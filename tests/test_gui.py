@@ -282,3 +282,26 @@ def test_start_runs_the_protocol_a_second_time(window):
         _until(app, lambda: api.protocol.status()["state"] == "completed", 30, f"protocol {n} completed")
         _until(app, lambda: "completed" in w.prot_status.text(), 5, f"protocol {n} label")
     assert not [w.events_list.item(i).text() for i in range(w.events_list.count()) if "refused" in w.events_list.item(i).text()]
+
+
+def test_explore_shows_positions_and_relative_moves_return_to_zero(window, monkeypatch, tmp_path):
+    """Owner 2026-11-04: Explore shows every motor's position and the force live, the magnet speed, two PI presets
+    (Cal+ / Cal-), and a relative move's entry returns to 0 once the move is done."""
+    from mtpy.gui import app as gui_app
+    monkeypatch.setattr(gui_app, "PRESETS_FILE", tmp_path / "presets.json")
+    app, w = window
+    w._connect()
+    _until(app, lambda: "8 / 8" in w.dev_summary.text(), 15, "connect")
+    _until(app, lambda: "magnet" in w.positions.text() and "focus" in w.positions.text() and "stage" in w.positions.text(),
+           10, "live positions")
+    w.mag_by.setValue(1.5)
+    w._move_magnet_by()
+    _until(app, lambda: abs(api.magnet.position() - 1.5) < 0.01 and w.mag_by.value() == 0.0, 30, "magnet moved by 1.5, entry back to 0")
+    w.preset_mm["Cal+"].setValue(3.0)
+    assert gui_app.load_presets()["Cal+"] == 3.0
+    w._go_preset("Cal+")
+    _until(app, lambda: abs(api.magnet.position() - 3.0) < 0.01, 30, "preset Cal+ reached")
+    w.rotor_turns.setValue(1.0)
+    w._rotate()
+    _until(app, lambda: w.rotor_turns.value() == 0.0, 30, "rotor entry back to 0")
+    assert (tmp_path / "runs" / "gui_events.log").exists()

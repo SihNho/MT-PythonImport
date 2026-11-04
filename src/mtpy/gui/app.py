@@ -130,12 +130,25 @@ def _spin(lo, hi, step, value, decimals=2, suffix=""):
 # the value across program restarts (a value that differs at every start invites mistakes).
 TOUCH_DEFAULT_MM = 40.94
 TOUCH_FILE = Path(__file__).resolve().parents[3] / "config" / "touch_position.json"
+PRESETS_FILE = TOUCH_FILE.with_name("explore_presets.json")   # owner 2026-11-04: two PI presets, "Cal+" / "Cal-"
 
 
 def load_touch_mm():
     with contextlib.suppress(OSError, ValueError, KeyError, TypeError):
         return float(json.loads(TOUCH_FILE.read_text(encoding="utf-8"))["touch_mm"])
     return TOUCH_DEFAULT_MM
+
+
+def load_presets():
+    try:
+        return json.loads(PRESETS_FILE.read_text(encoding="utf-8"))
+    except (OSError, ValueError, KeyError):
+        return {}
+
+
+def save_presets(values):
+    PRESETS_FILE.parent.mkdir(parents=True, exist_ok=True)
+    PRESETS_FILE.write_text(json.dumps(values, indent=1), encoding="utf-8")
 
 
 def save_touch_mm(mm):
@@ -437,14 +450,34 @@ class MainWindow(QMainWindow):
         self.mag_slider = QSlider(Qt.Horizontal)
         self.mag_slider.setRange(0, round(hi * 10))
         self.mag_slider.valueChanged.connect(lambda v: self.mag_pos.setValue(v / 10))
+        # owner 2026-11-04 (from the experiment): every motor's position and the force, live; the motor speed; two
+        # PI presets ("Cal+" / "Cal-"); a relative move's entry returns to 0 once the move is done
+        self.positions = QLabel("positions: connect first")
+        self.positions.setStyleSheet("font-family: Consolas, monospace")
+        f.addRow("Now", self.positions)
+        shi = float(safety.profile()["limits"].get("magnet_speed_mm_s", {}).get("max") or 15.0)
+        self.mag_speed = _spin(0.01, shi, 0.1, min(1.0, shi), 2, " mm/s")
+        f.addRow("Magnet speed", self.mag_speed)
         f.addRow("Magnet position", _row(self.mag_pos, QPushButton("Move", clicked=self._move_magnet)))
         f.addRow(self.mag_slider)
+        self.mag_by = _spin(-hi, hi, 0.1, 0.0, 3, " mm")
+        f.addRow("Magnet move by", _row(self.mag_by, QPushButton("Move", clicked=self._move_magnet_by)))
+        presets = load_presets()
+        self.preset_mm = {}
+        for key in ("Cal+", "Cal-"):
+            self.preset_mm[key] = sp = _spin(0.0, hi, 0.1, float(presets.get(key, 0.0)), 3, " mm")
+            sp.valueChanged.connect(lambda _v=None: save_presets({k: v.value() for k, v in self.preset_mm.items()}))
+            f.addRow(f"Preset {key}", _row(sp, QPushButton(f"Go {key}", clicked=lambda _=False, k=key: self._go_preset(k))))
         self.force_pn = _spin(0.0, 100.0, 0.1, 1.0, 2, " pN")
         f.addRow("Force", _row(self.force_pn, QPushButton("Set force", clicked=self._set_force)))
-        self.rotor_turns = _spin(-50.0, 50.0, 1.0, 1.0, 1, " turns")
+        self.rotor_speed = _spin(0.1, 10.0, 0.1, 1.0, 1, " turns/s")
+        f.addRow("Rotor speed", self.rotor_speed)
+        self.rotor_turns = _spin(-50.0, 50.0, 1.0, 0.0, 1, " turns")
         f.addRow("Rotor (relative)", _row(self.rotor_turns, QPushButton("Rotate", clicked=self._rotate)))
         self.focus_um = _spin(-1000.0, 1000.0, 0.1, 0.0, 2, " um")
         f.addRow("Focus z", _row(self.focus_um, QPushButton("Move", clicked=self._move_focus)))
+        self.focus_by = _spin(-100.0, 100.0, 0.1, 0.0, 2, " um")
+        f.addRow("Focus move by", _row(self.focus_by, QPushButton("Move", clicked=self._move_focus_by)))
         self.exp_now = _spin(0.1, 11.0, 0.1, 2.0, 2, " ms")
         self.gain_now = _spin(0.0, 12.0, 0.5, 0.0, 1, " dB")
         f.addRow("Exposure (immediate)", _row(self.exp_now, QPushButton(
@@ -559,8 +592,21 @@ class MainWindow(QMainWindow):
         self.statusBar().showMessage(f"{what}: {msg}", 15000)
         if "protocol" in what or what in ("check", "run protocol", "apply edits"):
             self.prot_status.setText(f"{what}: {msg}")
-        self.events_list.addItem(f"[gui] {what}: {msg}")
+        self._log(f"[gui] {what}: {msg}")
+
+    def _log(self, line):
+        """The log pane and, so a refusal survives the window (owner 2026-11-04), gui_events.log in the output folder."""
+        self.events_list.addItem(line)
+        if self.events_list.count() > 500:
+            self.events_list.takeItem(0)
         self.events_list.scrollToBottom()
+        try:
+            out = Path(self.ed_out.text() or ".")
+            out.mkdir(parents=True, exist_ok=True)
+            with open(out / "gui_events.log", "a", encoding="utf-8") as f:
+                f.write(time.strftime("%Y-%m-%d ") + line + "\n")
+        except OSError:
+            pass
 
     def _info(self, title, text):
         QMessageBox.information(self, title, text)
@@ -827,20 +873,41 @@ class MainWindow(QMainWindow):
 
     # ------------------------------------------------------------------ explore
     def _move_magnet(self):
-        p = self.mag_pos.value()
-        self._call(lambda: api.magnet.move_to(p).wait(60), f"magnet -> {p:.3f} mm")
+        p, v = self.mag_pos.value(), self.mag_speed.value()
+        self._call(lambda: api.magnet.move_to(p, v).wait(120), f"magnet -> {p:.3f} mm at {v:g} mm/s")
+
+    def _move_magnet_by(self):
+        d, v = self.mag_by.value(), self.mag_speed.value()
+        if d == 0:
+            return
+        self._call(lambda: api.magnet.move_to(api.magnet.position() + d, v).wait(120), f"magnet {d:+.3f} mm",
+                   lambda _: self.mag_by.setValue(0.0))          # the entry returns to 0 once the move is done
+
+    def _go_preset(self, key):
+        p, v = self.preset_mm[key].value(), self.mag_speed.value()
+        self._call(lambda: api.magnet.move_to(p, v).wait(120), f"magnet -> {key} {p:.3f} mm")
 
     def _set_force(self):
         f = self.force_pn.value()
         self._call(lambda: api.magnet.set_force(f).wait(60), f"force -> {f:.2f} pN")
 
     def _rotate(self):
-        n = self.rotor_turns.value()
-        self._call(lambda: api.rotor.rotate(n).wait(60), f"rotor {n:+.1f} turns")
+        n, v = self.rotor_turns.value(), self.rotor_speed.value()
+        if n == 0:
+            return
+        self._call(lambda: api.rotor.rotate(n, v).wait(60), f"rotor {n:+.1f} turns at {v:g} turns/s",
+                   lambda _: self.rotor_turns.setValue(0.0))
 
     def _move_focus(self):
         z = self.focus_um.value()
         self._call(lambda: api.focus.move_to(z).wait(30), f"focus -> {z:.2f} um")
+
+    def _move_focus_by(self):
+        d = self.focus_by.value()
+        if d == 0:
+            return
+        self._call(lambda: api.focus.move_to(api.focus.position() + d).wait(30), f"focus {d:+.2f} um",
+                   lambda _: self.focus_by.setValue(0.0))
 
     # ------------------------------------------------------------------ beads
     def _browse_cal(self):
@@ -1124,6 +1191,21 @@ class MainWindow(QMainWindow):
 
     _mag = _force = float("nan")
 
+    def _positions_text(self, st):
+        """One line: every connected motor's position read back and the force (owner 2026-11-04)."""
+        parts = []
+        reads = (("stage", lambda: "stage x {:.4f} y {:.4f} mm".format(*api.stage.position())),
+                 ("focus", lambda: f"focus {api.focus.position():.3f} um"),
+                 ("rotor", lambda: f"rotor {api.rotor.position():.2f} turns"),
+                 ("magnet", lambda: f"magnet {self._mag:.3f} mm" + (f" = {self._force:.2f} pN" if self._force == self._force else "")))
+        for name, read in reads:
+            if st.get(name, {}).get("state") == "connected":
+                try:
+                    parts.append(read())
+                except Exception as e:  # noqa: BLE001
+                    parts.append(f"{name}: {type(e).__name__}")
+        return "  |  ".join(parts) if parts else "positions: no motor connected"
+
     def _slow_tick(self):
         """2 Hz: motor read-backs and the status line (device calls, cheap on the simulator)."""
         try:
@@ -1143,6 +1225,8 @@ class MainWindow(QMainWindow):
             except Exception as e:  # noqa: BLE001
                 self._mag = self._force = float("nan")
                 self.readback.setText(f"magnet read: {type(e).__name__}: {e}")
+        if st and not self._workers:
+            self.positions.setText(self._positions_text(st))
         if st and st.get("emccd", {}).get("state") == "connected" and not self._workers:
             try:
                 e = api.emccd.settings()
@@ -1214,11 +1298,7 @@ class MainWindow(QMainWindow):
         if kind == "motor_reading":
             return
         extra = {k: v for k, v in vars(ev).items() if k not in ("t", "kind", "caller", "event_id") and v not in (None, {})}
-        self.events_list.addItem(f"{time.strftime('%H:%M:%S', time.localtime(ev.t))}  {kind}  "
-                                 f"{str(extra)[:160]}")
-        if self.events_list.count() > 500:
-            self.events_list.takeItem(0)
-        self.events_list.scrollToBottom()
+        self._log(f"{time.strftime('%H:%M:%S', time.localtime(ev.t))}  {kind}  {str(extra)[:160]}")
         if kind == "magnet_stall":
             QMessageBox.critical(self, "Magnet stall (decision 0019)",
                                  "The magnet stalled. The move and the protocol were stopped and the magnet returned "
