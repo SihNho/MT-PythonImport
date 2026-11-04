@@ -12,7 +12,6 @@ The rig state (assembled / disassembled / experiment) is only read here; it chan
 """
 import json
 import os
-import subprocess
 import sys
 import threading
 import time
@@ -36,19 +35,11 @@ def _riglock():
     return riglock
 
 
-def labview_running():
-    """True when LabVIEW.exe runs: the program refuses to open the rig beside it instead of closing it (RULES.md 28)."""
-    try:
-        out = subprocess.run(["tasklist", "/FI", "IMAGENAME eq LabVIEW.exe", "/FO", "CSV", "/NH"],
-                             check=False, capture_output=True, text=True, timeout=10).stdout
-    except (OSError, subprocess.SubprocessError):
-        return False
-    return "LabVIEW.exe" in out
-
-
 def acquire(purpose):
     """Hold the rig lock for this process. Adopts a wrapper's RIGLOCK_TOKEN; otherwise acquires as HOLDER. NotReady
-    when the rules refuse (experiment, another live holder, stale lock - never taken over here) or LabVIEW runs."""
+    when the rules refuse (experiment, another live holder, stale lock - never taken over here). Whether LabVIEW is
+    open is not the program's business (owner 2026-11-04: that rule lives in the chat hooks); a device another
+    program holds fails to open with the driver's own error."""
     with _lock:
         if _held["token"]:
             return
@@ -56,8 +47,6 @@ def acquire(purpose):
         token = os.environ.get("RIGLOCK_TOKEN")
         own = not token
         if own:
-            if labview_running():
-                raise NotReady("LabVIEW is running: close it first; the program never closes it itself")
             try:
                 token = rl.acquire(HOLDER, purpose)
             except rl.Refused as e:

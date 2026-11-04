@@ -123,7 +123,6 @@ def fake_riglock(monkeypatch):
     from mtpy.api import rig
     fake = FakeRiglock()
     monkeypatch.setattr(rig, "_riglock", lambda: fake)
-    monkeypatch.setattr(rig, "labview_running", lambda: False)
     monkeypatch.setattr(rig, "_held", {"token": None, "own": False, "stop": None})
     monkeypatch.delenv("RIGLOCK_TOKEN", raising=False)
     return fake
