@@ -160,6 +160,13 @@ Short and current. Details live in the linked documents; the history is in git a
   248 Hz, 3 of 16 runs done; GUI 555 Hz make-up not started): the rig lock is stale (pid 2808) and the focus / stage /
   magnet may stand where the run left them (up to 1 um / 5 um / 30 mm from their start). Nothing touched since; the
   owner's word is needed for the lock.**
+- **2026-11-04 13:53 (owner: "clean up the stale lock, finish before the experiment"):** the stale lock (pid 2808)
+  taken over and released on the owner's words; `tools/rig_restore.py` found the stage 0.2 um from the last run's
+  start and the magnet at 0 mm (nothing moved), camera at its .icd defaults; the beads were not found within
+  90 px: the field is several um out of the ring focus and looks different (a large blurred object at the bottom),
+  so the focus was left for the owner, who refocuses for the experiment anyway. Rig state stays `assembled`
+  until the owner says the experiment starts. Open: the bench make-up (GUI 248 Hz 13 runs, 555 Hz 4 runs) and
+  the results page for the 11-03 blocks (1 um/s focus speed, GUI 248 / 555 Hz).
 - **Next:** protocols on hardware (force ramps, rotation, 3-state clamp, autofocus), the stop / watchdog paths
   exercised on the rig, then the tethered-bead calibration.
 - **Queued (owner 2026-10-30):** lock the camera settings while a z scan runs (the GUI must not change exposure,
