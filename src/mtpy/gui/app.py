@@ -53,6 +53,7 @@ from mtpy.track import Z_METHODS
 from . import shutdown as _shutdown
 from . import zscan
 from .attrs import AttrPanel
+from .exptable import ExpTable
 from .shutdown import run_shutdown
 
 
@@ -553,6 +554,10 @@ class MainWindow(QMainWindow):
     def _panel_exp(self):
         w = QWidget()
         v = QVBoxLayout(w)
+        # owner 2026-11-04: the experiment as a table (rows = parameters, columns = iterations) that compiles to the
+        # script below; the text stays the advanced view
+        self.exp_table = ExpTable(self._table_to_script, self._start_from_table)
+        v.addWidget(self.exp_table)
         self.prot_edit = QPlainTextEdit(EXAMPLE_PROTOCOL)
         self.prot_edit.setStyleSheet("font-family:Consolas,monospace")
         v.addWidget(self.prot_edit, 1)
@@ -1155,6 +1160,19 @@ class MainWindow(QMainWindow):
         self._call(job, "check", lambda rep: self.prot_status.setText(
             ("OK" if rep["ok"] else "ERRORS") + (f"; coerced {len(rep['coerced'])}" if rep.get("coerced") else "")
             + ("\n" + "\n".join(str(e) for e in rep["errors"]) if rep.get("errors") else "")))
+
+    def _table_to_script(self):
+        try:
+            self.prot_edit.setPlainText(self.exp_table.to_script())
+            self.prot_status.setText("script from the table; Check or Start")
+            return True
+        except ValueError as e:
+            self._fail("table", str(e))
+            return False
+
+    def _start_from_table(self):
+        if self._table_to_script():
+            self._run_protocol()
 
     def _run_protocol(self):
         st = api.protocol.status()

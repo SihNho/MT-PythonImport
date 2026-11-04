@@ -191,6 +191,11 @@ Short and current. Details live in the linked documents; the history is in git a
   STALE (8228 gone): that process ended without releasing - no event between 22:28:02 and 22:28:46, so most likely
   the window was closed by the X with "Close anyway" or the process crashed; to ask the owner. The lock is stale
   now; the owner clears it with the new Take-over dialog (GUI restart) or `tools/rig_recover.py`.
+- **2026-11-05 00:xx (owner: "carry on"):** the Experiment table (rows Force / Wait / Motor mm/s / Rotor degrees /
+  Rotor SPD, columns = steps; + / - column, Table -> script, Start from table) compiles to the protocol script;
+  `ramp` takes `speed=` mm/s as the alternative to `t=` (checked against the profile, the engine moves at it).
+  The owner's five-column example compiles as shown in design/gui.md. Open: the calibration panel (bandpass /
+  forget radius, PSF, dr-dz), the 22:28 stale lock's origin (how the window was closed), the second-Start symptom.
 - **Next:** protocols on hardware (force ramps, rotation, 3-state clamp, autofocus), the stop / watchdog paths
   exercised on the rig, then the tethered-bead calibration.
 - **Queued (owner 2026-10-30):** lock the camera settings while a z scan runs (the GUI must not change exposure,

@@ -338,11 +338,11 @@ class Engine:
         self._sleep(self._a(st, "t"))
 
     def _do_ramp(self, st):
-        f0, f1, t = self._a(st, "from"), self._a(st, "to"), self._a(st, "t")
+        f0, f1, t, given = self._a(st, "from"), self._a(st, "to"), self._a(st, "t"), self._a(st, "speed")
         p0, p1 = api.magnet.force_position(f0), api.magnet.force_position(f1)
         self._motion(lambda: api.magnet.set_force(f0))
         self._check()
-        speed = abs(p1 - p0) / t if t > 0 else None
+        speed = given if given is not None else (abs(p1 - p0) / t if t else None)   # t= or speed= (grammar)
         vmax = (api.safety.profile()["limits"].get("magnet_speed_mm_s") or {}).get("max")
         coerced = speed is not None and vmax is not None and speed > vmax
         if coerced:
@@ -351,7 +351,7 @@ class Engine:
             speed = vmax
         if abs(p1 - p0) > 1e-6:
             self._motion(lambda: api.magnet.move_to(p1, speed_mm_s=speed))
-        else:
+        elif t:
             self._sleep(t)
         return {"from_mm": p0, "to_mm": p1, "speed_mm_s": speed, "coerced": coerced}
 

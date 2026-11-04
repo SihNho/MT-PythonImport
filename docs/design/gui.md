@@ -112,4 +112,19 @@ zero / bridge / exclude (U12, U14), troubleshooting guide (U9), MT-TIRF mode (10
 
    The table compiles to the existing protocol script (one step per column: hold / ramp at the force with the motor
    speed, rotate by the degrees at the pulse speed, wait), so the engine, the check and the recording stay as they
-   are; the text view remains for the rest.
+   are; the text view remains for the rest. **Done 2026-11-05** (`gui/exptable.py`; `ramp` gained `speed=` mm/s as
+   the alternative to `t=`; the rotor speed column is the Autonics SPD value, SPD x 10 / 500 turns/s as the driver
+   assumes). The example above compiles to:
+
+       grammar 0.1
+       protocol "table"
+       # column 1
+       rotate from=0 to=-10 f=1 t=10
+       # column 2
+       rotate from=-10 to=0 f=1 t=10
+       # column 3: nothing to do
+       # column 4
+       ramp from=1 to=50 speed=0.03
+       # column 5
+       ramp from=50 to=1 speed=0.1
+       end protocol

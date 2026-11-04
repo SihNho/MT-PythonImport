@@ -861,3 +861,22 @@ def test_status_frames_not_written_none_for_a_plain_sink(cam):
     api.acq.wait_frames(5, 5)
     assert api.acq.status()["frames_not_written"] is None
     api.acq.stop()
+
+
+def test_ramp_with_a_magnet_speed_is_one_move_at_that_speed(rig):
+    """Owner 2026-11-04 (the table's "Motor (mm/s)"): `ramp from= to= speed=` moves once at that speed; t= and speed=
+    are exclusive; a speed above the profile is a check error."""
+    api.magnet.use_force_table(WIDE_TABLE)
+    s = parse(HEAD + "hold f=1 t=0.1\nramp from=1 to=5 speed=2\n", "speed.mtprot")
+    n = len(events.events())
+    api.protocol.run(s)
+    st = api.protocol.wait(60)
+    assert st["state"] == "completed" and st["steps_done"] == 2, st
+    end = [e for e in events.events()[n:] if e.kind == "protocol_step" and e.extra["line"] == 4][1]
+    assert end.extra["speed_mm_s"] == 2 and not end.extra["coerced"]
+    with pytest.raises(ScriptError, match="exactly one of t="):
+        parse(HEAD + "ramp from=1 to=5 t=2 speed=2\n", "both.mtprot")
+    with pytest.raises(ScriptError, match="exactly one of t="):
+        parse(HEAD + "ramp from=1 to=5\n", "none.mtprot")
+    rep = api.protocol.check(parse(HEAD + "ramp from=1 to=5 speed=99\n", "fast.mtprot"), devices=False)
+    assert not rep["ok"] and any("magnet_speed_mm_s" in str(e) or "speed" in str(e) for e in rep["errors"])

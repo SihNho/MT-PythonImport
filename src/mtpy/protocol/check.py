@@ -226,6 +226,8 @@ def _profile_layer(rep, st, devices=False):
         _profile(rep, st, "magnet target", "magnet_position_mm", 0.0, why=" (zero moves the magnet to 0 mm)")
     elif st.kind == "move":
         _move_position(rep, st, a["mm"])
+    elif st.kind == "ramp" and "speed" in a:
+        _profile(rep, st, "speed", "magnet_speed_mm_s", a["speed"], why=" (the ramp's magnet speed)")
     elif st.kind == "rotate":
         for k in ("from", "to"):           # turns relative to the session-start position, as the profile window
             _profile(rep, st, k, "rotor_turns", a[k], origin=0.0, why=" from the session-start position")
