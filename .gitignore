@@ -28,6 +28,9 @@ dist/
 
 # the owner's kept touch position (gui)
 /config/touch_position.json
+/config/explore_presets.json
+/config/camera_favourites.json
+/config/emccd_favourites.json
 
 # graphify output (local only)
 graphify-out/

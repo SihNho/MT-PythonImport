@@ -343,6 +343,7 @@ def test_camera_attribute_panel_lists_sets_and_keeps_favourites(window, monkeypa
     goes through api.camera.set_attribute and is read back."""
     app, w = window
     monkeypatch.setattr(w.cam_attrs, "favourites_file", tmp_path / "fav.json")
+    w.cam_attrs.favourites = []                                    # not the rig's own config/camera_favourites.json
     w._connect()
     _until(app, lambda: "8 / 8" in w.dev_summary.text(), 15, "connect")
     w.cam_attrs.load()
