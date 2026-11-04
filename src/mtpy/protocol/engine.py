@@ -14,8 +14,13 @@ thread, ONLY through the public function layer `mtpy.api` - it never calls a dev
   stop is released, and `resume()` cannot restart it.
 - **Stop:** the running move is cancelled (stopped in place, 0007 "graceful abort"); nothing else is changed: the
   magnet, rotor, recording and lasers stay as they are.
-- **Pause:** time stops counting in holds, waits and between ramp increments within ~20 ms; a move already sent
-  finishes; the next step does not start until resume. The magnet stays where it is.
+- **Pause:** time stops counting in holds and waits within ~20 ms; a move already sent finishes - a `ramp` is one
+  continuous move, so a pause takes effect after it; the next step does not start until resume. The magnet stays
+  where it is.
+- **Ramp (owner 2026-11-04):** one magnet move from the position of `from` to the position of `to` at the constant
+  speed distance / t, as LabVIEW ramps (a motor speed), never force increments: the owner saw the increments as
+  stairs in the trace, and each increment's move time stretched the ramp (10 s asked, 52 s run). A speed above the
+  profile's `magnet_speed_mm_s` max is coerced to the max (a `coerced` event; the ramp then takes longer).
 - **Waits:** every move is waited for with `Motion.wait` in short slices (so stop and the emergency stop are seen)
   up to `motion_timeout_s`; past it the move is cancelled and the run fails with Timeout.
 - **Mid-run edits (U18, minimal; review l2s-wp5-r1):** only in-place VALUE edits: the new version must keep the
@@ -28,7 +33,6 @@ thread, ONLY through the public function layer `mtpy.api` - it never calls a dev
   request of the run is void - nothing is sent - once an emergency stop was engaged after the run started, even when
   the request itself was made after the release (e.g. during a step-start event or a device pre-read).
 """
-import math
 import threading
 import time
 
@@ -49,14 +53,14 @@ _READ = object()
 
 
 class Engine:
-    def __init__(self, script, motion_timeout_s=120.0, ramp_step_s=0.5, gen=None, focus_z0=_READ):
+    def __init__(self, script, motion_timeout_s=120.0, gen=None, focus_z0=_READ):
         """gen: the emergency-stop generation of the run (api.protocol.run passes the one in force when it was
         called, WP6; None = read in start()). focus_z0: the focus reference read once by api.protocol.run (WP6;
         None = the run has no reference); left out, start() reads it when the script has a focus step."""
-        if not (motion_timeout_s > 0 and ramp_step_s > 0):
-            raise ValueError("motion_timeout_s and ramp_step_s must be > 0")
+        if not motion_timeout_s > 0:
+            raise ValueError("motion_timeout_s must be > 0")
         self.script, self.version, self.caller = script, 0, script.caller
-        self.motion_timeout_s, self.ramp_step_s = float(motion_timeout_s), float(ramp_step_s)
+        self.motion_timeout_s = float(motion_timeout_s)
         self._lock = threading.Lock()
         self._stop, self._pause, self._done = threading.Event(), threading.Event(), threading.Event()
         self._abort = None        # decision 0019: the reason a magnet stall aborted the run (set from any thread)
@@ -335,14 +339,21 @@ class Engine:
 
     def _do_ramp(self, st):
         f0, f1, t = self._a(st, "from"), self._a(st, "to"), self._a(st, "t")
-        n = max(1, math.ceil(t / self.ramp_step_s - 1e-9))
+        p0, p1 = api.magnet.force_position(f0), api.magnet.force_position(f1)
         self._motion(lambda: api.magnet.set_force(f0))
-        for k in range(1, n + 1):
-            self._sleep(t / n)
-            self._check()
-            f = f0 + (f1 - f0) * k / n
-            self._motion(lambda f=f: api.magnet.set_force(f))
-        return {"increments": n, "increment_s": t / n}
+        self._check()
+        speed = abs(p1 - p0) / t if t > 0 else None
+        vmax = (api.safety.profile()["limits"].get("magnet_speed_mm_s") or {}).get("max")
+        coerced = speed is not None and vmax is not None and speed > vmax
+        if coerced:
+            api.events.log("coerced", request={"quantity": "magnet_speed_mm_s", "value": speed}, applied=vmax,
+                       reason=f"ramp {f0} -> {f1} pN in {t} s needs {speed:.3f} mm/s; the profile allows {vmax}")
+            speed = vmax
+        if abs(p1 - p0) > 1e-6:
+            self._motion(lambda: api.magnet.move_to(p1, speed_mm_s=speed))
+        else:
+            self._sleep(t)
+        return {"from_mm": p0, "to_mm": p1, "speed_mm_s": speed, "coerced": coerced}
 
     def _do_move(self, st):
         self._motion(lambda: api.magnet.move_to(self._a(st, "mm")))

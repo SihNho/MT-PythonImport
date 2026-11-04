@@ -167,6 +167,14 @@ Short and current. Details live in the linked documents; the history is in git a
   so the focus was left for the owner, who refocuses for the experiment anyway. Rig state stays `assembled`
   until the owner says the experiment starts. Open: the bench make-up (GUI 248 Hz 13 runs, 555 Hz 4 runs) and
   the results page for the 11-03 blocks (1 um/s focus speed, GUI 248 / 555 Hz).
+- **2026-11-04 evening (owner ran a real force-step experiment with the program, then: "no bench today, fix the
+  problems first"):** z scan refuses an edge-near pick and a folder / existing .cal path before any move (70d974a);
+  Explore shows every motor's position and the force live, magnet / rotor speed, Cal+ / Cal- presets, move-by
+  entries back to 0, the GUI log also in `gui_events.log` (657b686); **`ramp` is one magnet move at distance / t**
+  instead of 0.5-s force increments (the owner's trace showed stairs, and a 10-s ramp ran 52 s: 1 pN increments
+  each a move plus a wait). The second-Start symptom is still unexplained (the simulators run twice; the next
+  refusal is in gui_events.log). Requirements kept in design/gui.md: Experiment table editor, calibration panel,
+  camera / EMCCD settings panels, bead-pick clicks.
 - **Next:** protocols on hardware (force ramps, rotation, 3-state clamp, autofocus), the stop / watchdog paths
   exercised on the rig, then the tethered-bead calibration.
 - **Queued (owner 2026-10-30):** lock the camera settings while a z scan runs (the GUI must not change exposure,

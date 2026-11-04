@@ -62,12 +62,12 @@ def running():
     return _engine is not None and not _engine.done
 
 
-def run(script, motion_timeout_s=120.0, ramp_step_s=0.5):
+def run(script, motion_timeout_s=120.0):
     """Check the protocol with the rig state and start it on the engine thread; returns status().
 
     Refused before anything runs: ScriptError (check errors, with a `refused` event), NotReady (a protocol is already
     running, or the emergency stop is engaged - or was engaged, even if released again, since run() was called).
-    motion_timeout_s: the longest wait for one move; ramp_step_s: the time between the force increments of a `ramp`
+    motion_timeout_s: the longest wait for one move (a `ramp` is one move at distance / t, owner 2026-11-04)
     (WP5 decision).
 
     WP6 carries: the run's emergency-stop generation is the one in force when run() is called (an engage -> release
@@ -110,7 +110,7 @@ def run(script, motion_timeout_s=120.0, ramp_step_s=0.5):
             reason = "the emergency stop was engaged (and released) while the protocol was checked; start it again"
             events.log("refused", request=request, reason=reason)
             raise NotReady(reason)
-        eng = Engine(script, motion_timeout_s, ramp_step_s, gen=gen, focus_z0=focus.get("run_focus_z0"))
+        eng = Engine(script, motion_timeout_s, gen=gen, focus_z0=focus.get("run_focus_z0"))
         try:
             eng.start()
         except Exception as e:

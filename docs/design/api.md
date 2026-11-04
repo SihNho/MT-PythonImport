@@ -498,7 +498,8 @@ gain_dB]`; a late off with written rows beyond it: `test_late_off_reports_writte
   thread. The WP5 decisions on open grammar points are in grammar.md section 12.
 - `api.protocol`: `load(script_or_path, file=None)` (parse only; nothing runs, no event), `check(script,
   devices=None)` -> `{"ok", "errors", "warnings", "min_duration_s"}` (errors as `file:line:col: message`),
-  `run(script, motion_timeout_s=120, ramp_step_s=0.5)` (checks again with the rig state; a failed check logs one
+  `run(script, motion_timeout_s=120)` (checks again with the rig state; a `ramp` is one magnet move at distance / t,
+  owner 2026-11-04 - not force increments; a failed check logs one
   `refused` event and raises `ScriptError`; refused while the emergency stop is engaged or another protocol runs),
   `pause()`, `resume()` (refused once the run ended, in particular after an emergency stop), `stop()`,
   `wait(timeout_s)`, `status()`, `running()`, `edit(draft)` (full check, kept as the draft) and `apply_edits()`

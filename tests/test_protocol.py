@@ -248,8 +248,10 @@ def test_shipped_profile_v5_runs_position_moves_and_force_steps_in_range(shipped
     st = api.protocol.wait(60)
     assert st["state"] == "completed" and st["steps_done"] == 2, st
     assert api.magnet.position() == pytest.approx(39.0, abs=0.01)
-    co = [e for e in events.events()[n:] if e.kind == "coerced"]
-    assert len(co) == 1 and co[0].extra["stage"] == "protocol run check" and co[0].request["line"] == 4
+    co = [e for e in events.events()[n:] if e.kind == "coerced" and e.extra.get("stage") == "protocol run check"]
+    assert len(co) == 1 and co[0].request["line"] == 4
+    speed = [e for e in events.events()[n:] if e.kind == "coerced" and e.request["quantity"] == "magnet_speed_mm_s"]
+    assert len(speed) == 1 and speed[0].extra["applied"] == 15.0      # 1 -> 23 pN in 0.4 s asks 47.5 mm/s: the max
     assert co[0].request["value"] == 25 and co[0].extra["applied"] == 23.04 and co[0].extra["sha256"] == ramp.sha256
     start = next(e for e in events.events()[n:] if e.kind == "protocol" and e.extra["action"] == "start")
     assert "ramp from=1 to=23.04 t=0.4" in start.extra["text"]           # the run ran the corrected plan
@@ -299,7 +301,7 @@ def test_full_run_event_sequence(rig):
                    "wait t=0.05\n")              # 10
     s = parse(text, "seq.mtprot")
     n = len(events.events())
-    api.protocol.run(s, ramp_step_s=0.1)
+    api.protocol.run(s)
     st = api.protocol.wait(30)
     assert st["state"] == "completed" and st["reason"] is None and st["steps_done"] == 7, st
     assert _steps(n) == [(4, "start", -1), (4, "end", -1), (6, "start", 1), (6, "end", 1), (7, "start", 1),
@@ -311,9 +313,9 @@ def test_full_run_event_sequence(rig):
     assert caller.startswith("script:t@") and all(e.caller == caller for e in events.events()[n:]
                                                    if e.kind in ("protocol_step", "act", "force_request", "mark"))
     ramp_end = [e for e in events.events()[n:] if e.kind == "protocol_step" and e.extra["line"] == 6][1]
-    assert ramp_end.extra["increments"] == 2
+    assert ramp_end.extra["speed_mm_s"] > 0 and not ramp_end.extra["coerced"]   # owner 2026-11-04: one move, no stairs
     acts = [e for e in events.events()[n:] if e.kind == "act" and e.request["quantity"] == "magnet_position_mm"]
-    assert len(acts) == 1 + 2 * 3 + 1                          # hold, 2 x ramp (start + 2 increments), move
+    assert len(acts) == 1 + 2 * 2 + 1                          # hold, 2 x ramp (to `from`, then the one move), move
     assert abs(api.magnet.position() - 5.0) <= 0.01 and _marks(n) == ["pass", "pass"]
 
 
