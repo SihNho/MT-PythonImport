@@ -656,10 +656,16 @@ class MainWindow(QMainWindow):
         it over here, on their own click (the words riglock logs), and Connect runs again."""
         st = api.rig.status()
         h = st.get("holder") or {}
+        why = ""
+        try:                                     # the last "Close anyway" of this program, if that is what left it
+            note = json.loads(_shutdown.CLOSE_ANYWAY_FILE.read_text(encoding="utf-8"))
+            why = f"This program was closed with 'Close anyway' at {note.get('time')} (failed step: {note.get('failed_step')}).\n\n"
+        except (OSError, ValueError):
+            pass
         ans = QMessageBox.question(
             self, "Rig lock left by a dead program",
             f"The rig lock is held by {h.get('name')} (pid {h.get('pid')}, since {h.get('since')}), a process that no "
-            "longer runs - a program ended without its cleanup (a crash, a power loss).\n\n"
+            "longer runs - a program ended without its cleanup (a crash, a power loss, Close anyway).\n\n" + why +
             "Take the lock over and connect? The program then opens every device fresh and reads it back (the PI "
             "limits are rewritten at open). If you are not sure what state the rig is in, look at it first.\n\n"
             f"({msg[:300]})",
@@ -667,7 +673,11 @@ class MainWindow(QMainWindow):
         if ans != QMessageBox.Yes:
             return
         reason = f"owner via GUI 'Take over' at {time.strftime('%Y-%m-%d %H:%M:%S')}: {h.get('name')} pid {h.get('pid')} is gone"
-        self._call(lambda: api.rig.recover_stale(reason), "rig lock take-over", lambda _: self._connect())
+        def taken(_):
+            with contextlib.suppress(OSError):
+                _shutdown.CLOSE_ANYWAY_FILE.unlink()
+            self._connect()
+        self._call(lambda: api.rig.recover_stale(reason), "rig lock take-over", taken)
 
     def _connected(self, st):
         self._show_devices(st)

@@ -12,6 +12,9 @@ is reopened by the next close so the cleanup is really done (api.devices.close).
     d.exec()            # True when every step succeeded (the window may close), False on "Close anyway"
 """
 import contextlib
+import json
+import time
+from pathlib import Path
 
 from PySide6.QtCore import QObject, QRunnable, QThreadPool, Signal
 from PySide6.QtWidgets import QDialog, QDialogButtonBox, QLabel, QListWidget, QPushButton, QVBoxLayout
@@ -60,9 +63,17 @@ class _Runner(QRunnable):
         self.signals.finished.emit(True)
 
 
+CLOSE_ANYWAY_FILE = Path(__file__).resolve().parents[3] / "config" / "close_anyway.json"
+
+
 class ShutdownDialog(QDialog):
-    def __init__(self, parent=None):
+    """log: a callable taking one line (the main window's log pane + gui_events.log), so a failed step and a
+    "Close anyway" are on record (owner 2026-11-04: the 22:28 window was closed that way and nothing said why)."""
+
+    def __init__(self, parent=None, log=None):
         super().__init__(parent)
+        self.log = log or getattr(parent, "_log", None) or (lambda line: None)
+        self.last_error = None
         self.setWindowTitle("Shutting down the rig")
         self.setModal(True)
         self.items = steps()
@@ -78,7 +89,7 @@ class ShutdownDialog(QDialog):
         self.buttons.addButton(self.btn_force, QDialogButtonBox.DestructiveRole)
         self.buttons.setEnabled(False)
         self.btn_retry.clicked.connect(lambda: self._run(self.failed_at))
-        self.btn_force.clicked.connect(self.reject)
+        self.btn_force.clicked.connect(self._close_anyway)
         lay = QVBoxLayout(self)
         lay.addWidget(self.list)
         lay.addWidget(self.msg)
@@ -104,6 +115,8 @@ class ShutdownDialog(QDialog):
         self.list.item(i).setText((FAIL + label + "  -  " + err) if err else (OK + label))
         if err:
             self.failed_at = i
+            self.last_error = f"{label}: {err}"
+            self.log(f"[gui] shutdown step failed - {label}: {err}")
             self.msg.setText(f"Step failed: {err}\nThe rig lock is kept. Fix the cause and Retry, or close anyway "
                              "and report the state to the owner.")
         elif i + 1 < len(self.items):
@@ -115,6 +128,19 @@ class ShutdownDialog(QDialog):
             self.accept()
         else:
             self.buttons.setEnabled(True)
+
+    def _close_anyway(self):
+        """The window ends, the rig lock stays with this (ending) process: the next Connect sees a STALE lock and
+        offers the take-over, and this note tells it why."""
+        note = {"time": time.strftime("%Y-%m-%d %H:%M:%S"), "failed_step": self.last_error}
+        self.log(f"[gui] Close anyway: the rig lock is kept by this ending process (failed step: {self.last_error}); "
+                 "the next Connect offers to take it over")
+        try:
+            CLOSE_ANYWAY_FILE.parent.mkdir(parents=True, exist_ok=True)
+            CLOSE_ANYWAY_FILE.write_text(json.dumps(note, indent=1), encoding="utf-8")
+        except OSError:
+            pass
+        self.reject()
 
     def closeEvent(self, e):
         if self._runner is not None and not self.buttons.isEnabled() and not self.ok:

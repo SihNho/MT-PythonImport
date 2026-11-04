@@ -37,3 +37,4 @@ graphify-out/
 
 # built on first use from MtpyEbus.cs (mtpy.devices.ebus)
 /src/mtpy/devices/ebus_helper/MtpyEbus.dll
+/config/close_anyway.json

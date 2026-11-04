@@ -1,5 +1,6 @@
 """The visible shutdown sequence (gui/shutdown.py): every step ticked and the dialog accepted when the rig is clean;
 a failed step keeps the dialog open with Retry, and Retry finishes the rest. Offscreen Qt on the simulators."""
+import json
 import os
 import time
 
@@ -113,3 +114,22 @@ def test_close_anyway_from_disconnect_ends_the_window(tmp_path, monkeypatch):
         with events.as_caller("gui"):
             api.devices.disconnect()
             estop.clear()
+
+
+def test_close_anyway_is_logged_and_noted_for_the_next_connect(app, monkeypatch, tmp_path):
+    """Owner 2026-11-04 ("Close anyway"): a failed step and the forced close go to the GUI log, and a note tells the
+    next Connect's take-over dialog why the lock was left."""
+    from mtpy.gui import shutdown as sd
+    monkeypatch.setattr(sd, "CLOSE_ANYWAY_FILE", tmp_path / "close_anyway.json")
+    monkeypatch.setattr(sd, "steps", lambda: [("stop acquisition", lambda: (_ for _ in ()).throw(RuntimeError("camera thread stuck")))])
+    lines = []
+    d = sd.ShutdownDialog(None, log=lines.append)
+    t = time.monotonic() + 5
+    while time.monotonic() < t and not d.buttons.isEnabled():
+        app.processEvents()
+        time.sleep(0.02)
+    assert d.buttons.isEnabled() and "camera thread stuck" in d.last_error
+    d.btn_force.click()
+    assert d.result() == 0 and any("shutdown step failed" in ln for ln in lines) and any("Close anyway" in ln for ln in lines)
+    note = json.loads((tmp_path / "close_anyway.json").read_text(encoding="utf-8"))
+    assert "camera thread stuck" in note["failed_step"]
