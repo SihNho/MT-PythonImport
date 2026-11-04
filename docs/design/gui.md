@@ -78,3 +78,28 @@ zero / bridge / exclude (U12, U14), troubleshooting guide (U9), MT-TIRF mode (10
    GUI "Export .tra"; byte-identical round trip and the frame column from the first recorded frame,
    `tests/test_data.py`). Not yet checked: a `.tra` / `.cal` from this program opened in the owner's LabVIEW /
    MATLAB analysis end to end on a real recording (the owner's acceptance).
+4. **Explore panel (owner 2026-11-04, from the experiment):** show, live and continuously refreshed, every motor's
+   position (stage x / y, focus z, magnet mm, rotor deg) and the force (pN) from the magnet position; add the motor
+   speed to the magnet / stage move controls (it is missing); **two PI presets** (the owner keeps "Cal+" and "Cal-"
+   positions as two buttons with stored values, editable); after a relative "move by" the entry returns to 0 so the
+   next move is typed fresh.
+5. **Calibrate panel**: the bandpass and forget-radius values are not visible, nor the PSF and the result - see the
+   calibration-panel task (card of 2026-11-03).
+6. **Experiment panel**: (a) the owner pressed Start, it ran once, and the next Start did nothing visible. In the
+   simulator the API runs protocols one after another (`tests/test_protocol.py`), so the cause is on the GUI path
+   (the Start handler only resumes when the state is "paused"; a refusal from `api.protocol.run`, such as a check
+   error against the rig's present state, shows only as a 15-s status-bar line "run protocol: ...") - to reproduce
+   with the owner: read that line, or the `refused` event in the log, on the second Start. (b) The text script is
+   not intuitive for the owner: wanted a **table editor**, rows = parameters, columns = iterations, e.g.
+
+   | | 1 | 2 | 3 | 4 | 5 |
+   |---|---|---|---|---|---|
+   | Force (pN) | 1 | 1 | 1 | 50 | 1 |
+   | Wait (s) | 0 | 0 | 0 | 0 | 0 |
+   | Motor (mm/s) | 0.1 | 0.1 | 0.1 | 0.03 | 0.1 |
+   | Rotor (degree) | -3600 | 3600 | 0 | 0 | 0 |
+   | Rotor speed (pulse) | 50 | 50 | 0 | 0 | 0 |
+
+   The table compiles to the existing protocol script (one step per column: hold / ramp at the force with the motor
+   speed, rotate by the degrees at the pulse speed, wait), so the engine, the check and the recording stay as they
+   are; the text view remains for the rest.
