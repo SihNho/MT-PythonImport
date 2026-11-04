@@ -186,6 +186,11 @@ Short and current. Details live in the linked documents; the history is in git a
   take-over + recovery record in G:/Codes/rig/recovery/ + release; a live holder is never taken, not during an
   experiment); the GUI offers it in a dialog when Connect meets a STALE lock, `tools/rig_recover.py` does it from a
   prompt. [troubleshooting.md](docs/troubleshooting.md) started with 19 entries.
+- **2026-11-04 23:22: the PC died again** (idle, instant; fifth). Before that, 22:27:50 the owner's GUI session took the
+  lock (pid 8228, backend real), opened the devices, started acquisition, and 44 s later a Connect was refused as
+  STALE (8228 gone): that process ended without releasing - no event between 22:28:02 and 22:28:46, so most likely
+  the window was closed by the X with "Close anyway" or the process crashed; to ask the owner. The lock is stale
+  now; the owner clears it with the new Take-over dialog (GUI restart) or `tools/rig_recover.py`.
 - **Next:** protocols on hardware (force ramps, rotation, 3-state clamp, autofocus), the stop / watchdog paths
   exercised on the rig, then the tethered-bead calibration.
 - **Queued (owner 2026-10-30):** lock the camera settings while a z scan runs (the GUI must not change exposure,

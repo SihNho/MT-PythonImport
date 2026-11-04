@@ -70,6 +70,11 @@ the heartbeat.)
 Four deaths in three days, all instant: the board / CPU power-delivery family. The owner decided to replace the
 board (11-04: "메인보드 아무래도 교체해야겠는데").
 
+## Fifth death: 2026-11-04 23:22
+Idle again (CPU 0.4 %, 10-s lines to 23:22:38, no WHEA), rebooted 23:32. Five in four days: 11-01 23:58, 11-03
+07:34, 11-03 20:14 (under load), 11-04 23:22, plus 11-03 ~20:28 is not a death (see STATUS). Same instant-stop
+shape every time.
+
 ## The PC and what a replacement board must have (inventory 2026-11-04)
 | part | now |
 |---|---|
