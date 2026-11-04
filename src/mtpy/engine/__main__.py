@@ -1,7 +1,9 @@
 """`python -m mtpy.engine [--host H --port P] [--config DIR]`: run the engine until a client calls `engine.exit`
 (or Ctrl+C). --config: the rig config folder (safety profile) to use instead of the repository's."""
 import argparse
+import faulthandler
 import os
+import sys
 from pathlib import Path
 
 
@@ -19,6 +21,8 @@ def main():
         safety.CONFIG = Path(a.config)
         safety.load_active()
     from mtpy.engine import serve
+    if sys.stderr is not None:
+        faulthandler.enable()          # a hard crash (a driver DLL) leaves its traceback in the engine log
     try:
         serve((a.host, a.port))
     except KeyboardInterrupt:

@@ -13,6 +13,7 @@
             is --engine for the real backends and --no-engine for sim
 """
 import argparse
+import contextlib
 import json
 import os
 import shutil
@@ -58,13 +59,21 @@ def main(argv=None):
     cfg = sim_dev_config() if a.sim_dev else None
     client = proc = None
     if a.engine if a.engine is not None else a.backend != "sim":
-        from mtpy.client import launch
+        from mtpy.client import attach, launch
 
         from . import app as gui_app
-        client, proc = launch(config=cfg)
+        client = attach()               # the engine of a window that died kept the rig: this window takes it
+        if client is None:
+            Path(a.out).mkdir(parents=True, exist_ok=True)
+            client, proc = launch(config=cfg, log=str(Path(a.out) / "engine.log"))
         gui_app.use_client(client)
     app = QApplication(sys.argv[:1])
     w = MainWindow(fixture=a.fixture, out=a.out, sim_dev=cfg, backend=a.backend)
+    if client is not None and proc is None:
+        w._log(f"[gui] attached to the engine that was already running (pid {client.call('engine.ping')['pid']}): "
+               "its devices are as the previous window left them; Disconnect closes them")
+        with contextlib.suppress(Exception):
+            w._show_devices(gui_app.api.devices.status())
     w.show()
     if a.screenshot:
         def shot():
@@ -77,7 +86,8 @@ def main(argv=None):
         try:
             client.exit_engine()           # after the shutdown sequence; the engine's own cleanup covers "close anyway"
         finally:
-            proc.wait(120)
+            if proc is not None:
+                proc.wait(120)
     if cfg is not None:
         shutil.rmtree(cfg.parent, ignore_errors=True)
     return rc

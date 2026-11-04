@@ -9,6 +9,7 @@ import contextlib
 import json
 import time
 from collections import deque
+from datetime import datetime
 from pathlib import Path
 
 import numpy as np
@@ -194,6 +195,7 @@ class MainWindow(QMainWindow):
         self.backend_arg = backend
         self.pool = QThreadPool.globalInstance()
         self._workers = set()                          # alive until done / failed: the pool would delete them first
+        self._slow_busy, self._acq_running = False, False
         self.history = deque(maxlen=20000)            # (t, mag, force, xyz (nb, 3))
         self.t0 = time.time()
         self.bead_ids, self.roles, self.cal_path = [], {}, None
@@ -662,6 +664,13 @@ class MainWindow(QMainWindow):
             why = f"This program was closed with 'Close anyway' at {note.get('time')} (failed step: {note.get('failed_step')}).\n\n"
         except (OSError, ValueError):
             pass
+        try:
+            faults = _shutdown.windows_faults(datetime.fromisoformat(str(h.get("since"))))
+        except (TypeError, ValueError):
+            faults = []
+        why += ("Windows recorded after the lock was taken:\n  " + "\n  ".join(faults) + "\n\n" if faults else
+                "Windows recorded no crash or hang of python.exe after the lock was taken: the program was killed, its "
+                "console window closed, or the PC lost power.\n\n")
         ans = QMessageBox.question(
             self, "Rig lock left by a dead program",
             f"The rig lock is held by {h.get('name')} (pid {h.get('pid')}, since {h.get('since')}), a process that no "
@@ -1233,7 +1242,7 @@ class MainWindow(QMainWindow):
     def _tick(self):
         """30 Hz: the display tap (image, bead boxes) and the live graphs."""
         try:
-            snap = api.acq.display() if api.acq.running() else None
+            snap = api.acq.display() if self._acq_running else None      # the flag: no engine call at 30 Hz
         except api.NotReady:
             snap = None
         self._em_tick()
@@ -1273,16 +1282,32 @@ class MainWindow(QMainWindow):
         return chr(10).join(parts) if parts else "positions: no motor connected"
 
     def _slow_tick(self):
-        """2 Hz: motor read-backs and the status line (device calls, cheap on the simulator)."""
+        """2 Hz: motor read-backs and the status line. The device calls run on a worker and the labels are set when
+        they return, so a slow read never freezes the window (2026-11-04 22:28: the window hung, Windows closed it as
+        not responding, and the engine was killed with it - the rig lock went stale)."""
+        if self._slow_busy:
+            return
+        self._slow_busy = True
+        want_zscan, quiet = self.cal_status.text().startswith(("running", "slice")), not self._workers
+        wk = Worker(lambda: self._slow_read(want_zscan, quiet))
+        wk.setAutoDelete(False)
+        self._slow_worker = wk
+        wk.signals.done.connect(self._slow_apply)
+        wk.signals.failed.connect(lambda msg: setattr(self, "_slow_busy", False))
+        self.pool.start(wk)
+
+    def _slow_read(self, want_zscan, quiet):
+        """The reads of one slow tick (worker thread) -> the texts _slow_apply puts on the labels."""
+        d = {}
         try:
-            st = api.devices.status()
+            d["st"] = st = api.devices.status()
         except Exception:  # noqa: BLE001
-            st = {}
-        if self.cal_status.text().startswith(("running", "slice")):
+            d["st"] = st = {}
+        if want_zscan:
             with contextlib.suppress(Exception):
                 i, n = api.zscan.progress()
                 if n:
-                    self.cal_status.setText(f"slice {i} / {n}")
+                    d["zscan"] = f"slice {i} / {n}"
         if st and st.get("magnet", {}).get("state") == "connected":
             try:
                 self._mag = api.magnet.position()
@@ -1290,19 +1315,20 @@ class MainWindow(QMainWindow):
                 self._force = lf["force_pN"] if lf else float("nan")
             except Exception as e:  # noqa: BLE001
                 self._mag = self._force = float("nan")
-                self.readback.setText(f"magnet read: {type(e).__name__}: {e}")
-        if st and not self._workers:
-            self.positions.setText(self._positions_text(st))
-        if st and st.get("emccd", {}).get("state") == "connected" and not self._workers:
+                d["readback"] = f"magnet read: {type(e).__name__}: {e}"
+        if st and quiet:
+            d["positions"] = self._positions_text(st)
+        if st and st.get("emccd", {}).get("state") == "connected" and quiet:
             try:
                 e = api.emccd.settings()
-                self.em_readback.setText(f"emccd: {e['exposure_ms']:.3f} ms, {e['rate_Hz']:.3f} Hz, gain mode "
-                                         f"{e['em_gain_mode']}, gain {e['em_gain']}, set {e['temperature_C']} C, "
-                                         f"sensor {e['sensor_temperature_C']} C ({e['cooler']})")
+                d["em"] = (f"emccd: {e['exposure_ms']:.3f} ms, {e['rate_Hz']:.3f} Hz, gain mode "
+                           f"{e['em_gain_mode']}, gain {e['em_gain']}, set {e['temperature_C']} C, "
+                           f"sensor {e['sensor_temperature_C']} C ({e['cooler']})")
             except Exception as ex:  # noqa: BLE001
-                self.em_readback.setText(f"emccd read: {type(ex).__name__}: {ex}")
+                d["em"] = f"emccd read: {type(ex).__name__}: {ex}"
         parts = []
-        if api.acq.running():
+        d["acq_running"] = api.acq.running()
+        if d["acq_running"]:
             a = api.acq.status()
             parts.append(f"acq: {a.get('frames_received', 0)} frames, {a.get('fps_measured', a.get('fps', 0)) or 0:.1f} fps"
                          f"{', REC' if a.get('recording') else ''}")
@@ -1314,14 +1340,27 @@ class MainWindow(QMainWindow):
                          f"magnet {self._mag:.3f} mm (force: set the touch position in Setup)")
         except Exception:  # noqa: BLE001
             parts.append("magnet: not connected")
-        p = api.protocol.status()
-        parts.append(f"protocol: {p['state']}" + (f" ({p['reason']})" if p.get("reason") else ""))
-        self.btn_run.setText("Resume" if p["state"] == "paused" else "Start")
-        if p["state"] != "idle":
-            self.prot_status.setText(f"{p['state']}" + (f": {p['reason']}" if p.get("reason") else ""))
-        if estop.active():
-            parts.append(f"E-STOP ENGAGED ({estop.reason()})")
-        self.statusBar().showMessage("   |   ".join(parts))
+        d["protocol"], d["parts"] = api.protocol.status(), parts
+        return d
+
+    def _slow_apply(self, d):
+        self._slow_busy = False
+        try:
+            for key, label in (("zscan", self.cal_status), ("readback", self.readback), ("positions", self.positions),
+                               ("em", self.em_readback)):
+                if d.get(key):
+                    label.setText(d[key])
+            self._acq_running = d["acq_running"]
+            p, parts = d["protocol"], d["parts"]
+            parts.append(f"protocol: {p['state']}" + (f" ({p['reason']})" if p.get("reason") else ""))
+            self.btn_run.setText("Resume" if p["state"] == "paused" else "Start")
+            if p["state"] != "idle":
+                self.prot_status.setText(f"{p['state']}" + (f": {p['reason']}" if p.get("reason") else ""))
+            if estop.active():
+                parts.append(f"E-STOP ENGAGED ({estop.reason()})")
+            self.statusBar().showMessage("   |   ".join(parts))
+        except RuntimeError:                  # the window is closing (widgets deleted) while a read was in flight
+            pass
 
     def _update_plot(self):
         if not self.history or not self.bead_ids:

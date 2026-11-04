@@ -13,7 +13,11 @@ is reopened by the next close so the cleanup is really done (api.devices.close).
 """
 import contextlib
 import json
+import locale
+import subprocess
+import sys
 import time
+from datetime import timezone
 from pathlib import Path
 
 from PySide6.QtCore import QObject, QRunnable, QThreadPool, Signal
@@ -64,6 +68,44 @@ class _Runner(QRunnable):
 
 
 CLOSE_ANYWAY_FILE = Path(__file__).resolve().parents[3] / "config" / "close_anyway.json"
+
+
+def windows_faults(since, timeout_s=10.0):
+    """What Windows recorded about python.exe since `since` (an aware datetime): a crash (Application Error, event
+    1000) or a window that stopped responding and was closed (Application Hang, 1002), each as "<time> <source>:
+    <first line>". [] off Windows, when wevtutil fails, and when nothing was recorded - then the program was killed,
+    its console window closed, or the PC lost power. The take-over dialog shows it so a sudden end has a named cause
+    (owner 2026-11-05: the program sometimes ends suddenly, a system error or a slip, nobody knows which)."""
+    if sys.platform != "win32":
+        return []
+    t = since.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.000Z")
+    q = f"*[System[(EventID=1000 or EventID=1002) and TimeCreated[@SystemTime>='{t}']]]"
+    try:
+        out = subprocess.run(["wevtutil", "qe", "Application", f"/q:{q}", "/f:text", "/c:8"], capture_output=True,
+                             timeout=timeout_s, check=False).stdout
+    except (OSError, subprocess.SubprocessError):
+        return []
+    return parse_wevtutil(out.decode(locale.getpreferredencoding(False), errors="replace"))
+
+
+def parse_wevtutil(text):
+    """wevtutil /f:text -> ["<date> <source>: <first description line>"] for the events that name python."""
+    found, cur = [], {}
+    for raw in [*text.splitlines(), "Event["]:
+        line = raw.strip()
+        if line.startswith("Event["):
+            if "python" in cur.get("desc", "").lower():
+                found.append(f"{cur.get('date', '')[:19].replace('T', ' ')} {cur.get('source', '?')}: {cur['desc'][:110]}")
+            cur = {}
+        elif line.startswith("Source:"):
+            cur["source"] = line[7:].strip()
+        elif line.startswith("Date:"):
+            cur["date"] = line[5:].strip()
+        elif line.startswith("Description:"):
+            cur["desc"] = ""
+        elif cur.get("desc") == "" and line:
+            cur["desc"] = line
+    return found
 
 
 class ShutdownDialog(QDialog):

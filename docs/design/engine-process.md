@@ -52,7 +52,7 @@ client can ask `events.events()` for the history).
 | case | behaviour |
 |---|---|
 | GUI closes normally | the shutdown dialog runs the sequence through the client (`api.devices.disconnect` step by step, as now), then tells the engine to exit; the lock is released by the engine's cleanup |
-| GUI dies | the engine keeps running with its devices and the lock; the heartbeat goes on; a restarted GUI attaches to it and shows the state as it is. The rig is never left without its holder |
+| GUI dies | the engine keeps running with its devices and the lock; the heartbeat goes on; a restarted GUI attaches to it (`client.attach`, 2026-11-05) and shows the state as it is. The rig is never left without its holder. The engine has no console window (`CREATE_NO_WINDOW`) so closing the GUI's terminal does not kill it; its stderr and faulthandler go to `<out>/engine.log` |
 | engine dies | the lock is STALE (a person recovers, RULES.md); the GUI shows "engine gone" on the next failed call / missed ping, disables every device button, keeps the last snapshot |
 | engine unresponsive (a device call hangs) | other calls still run (thread pool); the watchdog ping is answered; the GUI shows the slow call in the status bar as today |
 | emergency stop | a call like any other; the engine's `estop.engage` runs the stoppers in-process as now. A GUI that cannot reach the engine cannot stop the rig: the hardware limits (TMN/TMX, SL/SU) and the heartbeat are the protection, as they are today for a hung GUI |

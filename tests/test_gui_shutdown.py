@@ -133,3 +133,16 @@ def test_close_anyway_is_logged_and_noted_for_the_next_connect(app, monkeypatch,
     assert d.result() == 0 and any("shutdown step failed" in ln for ln in lines) and any("Close anyway" in ln for ln in lines)
     note = json.loads((tmp_path / "close_anyway.json").read_text(encoding="utf-8"))
     assert "camera thread stuck" in note["failed_step"]
+
+
+def test_windows_record_of_a_hang_is_parsed_for_the_takeover_dialog():
+    """wevtutil's text for an Application Hang / Error names python.exe in the description's first line; other
+    programs' events are left out."""
+    from mtpy.gui.shutdown import parse_wevtutil
+    text = ("Event[0]:\n  Log Name: Application\n  Source: Application Hang\n  Date: 2026-11-04T22:28:37.6930000Z\n"
+            "  Event ID: 1002\n  Description: \nThe program python.exe version 3.10.9150.1013 stopped interacting with "
+            "Windows and was closed.\n Process ID: 31a4\n\nEvent[1]:\n  Source: Application Error\n  Date: "
+            "2026-11-04T23:00:00.0000000Z\n  Description: \nFaulting application name: notepad.exe\n")
+    want = "2026-11-04 22:28:37 Application Hang: The program python.exe version 3.10.9150.1013 stopped interacting with Windows and was closed."
+    assert parse_wevtutil(text) == [want]
+    assert parse_wevtutil("") == []

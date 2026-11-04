@@ -9,7 +9,7 @@ import pytest
 from test_devices import REPO_CONFIG, TEST_LIMITS
 
 from mtpy.api.errors import NotReady, SafetyRefused
-from mtpy.client import EngineError, launch
+from mtpy.client import EngineError, attach, launch
 
 
 def _until(cond, timeout_s, what):
@@ -87,3 +87,16 @@ def test_calls_motions_errors_events_and_snapshot_cross_the_process_boundary(eng
     assert proc.returncode == 0 and not os.path.exists(tmp_path / "engine.json")
     with pytest.raises(EngineError):
         api.devices.status()
+
+
+def test_attach_finds_the_running_engine_and_nothing_after_it_exits(engine, tmp_path):
+    """A window that starts while an engine runs (its previous window died) attaches to it instead of launching a
+    second one (2026-11-04 22:28); with no engine, attach() is None."""
+    client, proc = engine
+    path = str(tmp_path / "engine.json")
+    c2 = attach(path)
+    assert c2 is not None and c2.call("engine.ping")["pid"] == client.call("engine.ping")["pid"]
+    c2.close()
+    client.exit_engine()
+    proc.wait(30)
+    assert attach(path) is None

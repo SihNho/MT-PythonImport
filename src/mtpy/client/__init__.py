@@ -245,14 +245,33 @@ def connect(path=INFO_FILE):
     return Client(i["address"], i["authkey"], i.get("snapshot"))
 
 
-def launch(config=None, timeout_s=60.0, path=INFO_FILE, extra_env=None):
-    """Start `python -m mtpy.engine` (same interpreter) and connect to it. Returns (Client, Popen)."""
+def attach(path=INFO_FILE, timeout_s=2.0):
+    """The Client of an engine that is already running and answers - the window that launched it died and the engine
+    kept the rig (docs/design/engine-process.md 5; the 2026-11-04 22:28 case) - or None."""
+    i = info(path)
+    if i is None:
+        return None
+    try:
+        c = Client(i["address"], i["authkey"], i.get("snapshot"))
+    except Exception:  # noqa: BLE001 - nobody listens, a stale info file, the snapshot gone: no engine
+        return None
+    if c.ping(timeout_s):
+        return c
+    c.close()
+    return None
+
+
+def launch(config=None, timeout_s=60.0, path=INFO_FILE, extra_env=None, log=None):
+    """Start `python -m mtpy.engine` (same interpreter) and connect to it. Returns (Client, Popen).
+    log: a file the engine's stderr goes to (tracebacks, faulthandler). On Windows the engine gets no console window,
+    so closing the terminal the GUI was started from does not take the engine, and the rig, with it."""
     if os.path.exists(path):
         os.remove(path)
     env = dict(os.environ, MTPY_ENGINE_INFO=path, **(extra_env or {}))
     cmd = [sys.executable, "-m", "mtpy.engine"] + (["--config", str(config)] if config else [])
     t_launch = time.time()
-    proc = subprocess.Popen(cmd, env=env)
+    err = open(log, "a", encoding="utf-8") if log else None  # noqa: SIM115 - the child owns it from here
+    proc = subprocess.Popen(cmd, env=env, stdout=err, stderr=err, creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
     t0 = time.monotonic()
     while time.monotonic() - t0 < timeout_s:
         i = info(path)

@@ -196,6 +196,15 @@ Short and current. Details live in the linked documents; the history is in git a
   `ramp` takes `speed=` mm/s as the alternative to `t=` (checked against the profile, the engine moves at it).
   The owner's five-column example compiles as shown in design/gui.md. Open: the calibration panel (bandpass /
   forget radius, PSF, dr-dz), the 22:28 stale lock's origin (how the window was closed), the second-Start symptom.
+- **2026-11-05 (owner: "the program ends suddenly for reasons nobody knows - a system error or a slip"):** the 22:28
+  case is resolved from the Windows event log: 22:28:37 Application Hang, python.exe "stopped interacting with Windows
+  and was closed" (pid 0x31a4, the window), 35 s after the acquisition start; no crash of the engine recorded, so the
+  engine (8228) was killed from outside with the frozen window (console closed / process tree ended). Three changes:
+  the 2 Hz read-backs run on a worker (a slow device call can no longer freeze the window); the engine has no console
+  window and logs to `<out>/engine.log` with faulthandler (closing the terminal does not kill it); a GUI that starts
+  while an engine runs attaches to it (`client.attach`) instead of launching a second one, so a dead window is closed
+  cleanly by Disconnect. The Take-over dialog shows what Windows recorded about python.exe since the lock was taken
+  (troubleshooting #1, #20).
 - **Next:** protocols on hardware (force ramps, rotation, 3-state clamp, autofocus), the stop / watchdog paths
   exercised on the rig, then the tethered-bead calibration.
 - **Queued (owner 2026-10-30):** lock the camera settings while a z scan runs (the GUI must not change exposure,
