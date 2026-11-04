@@ -70,6 +70,7 @@ def run(path, xy, slices=60, step_nm=100.0, n_avg=20, cross=120, nm_per_px=84.0,
         raise ValueError("z scan: " + "; ".join(why))
     z0 = focus.position()
     step_um = step_nm / 1000.0
+    h = track.lv_round(cross * 0.6)
     stack = np.zeros((len(xy), slices, cross - 1))
     global _progress
     cam = devices.service("camera")
@@ -81,7 +82,11 @@ def run(path, xy, slices=60, step_nm=100.0, n_avg=20, cross=120, nm_per_px=84.0,
             time.sleep(settle_s)
             img = acq.average(n_avg)
             for b, (x, y) in enumerate(xy):
-                stack[b, s] = bead_profile(img, x, y, cross)[2]
+                xo, yo, stack[b, s] = bead_profile(img, x, y, cross)
+                if max(abs(xo - x), abs(yo - y)) > h - cross // 2:      # the profile window ran off the sub-image
+                    events.log("calibration", action="warning", bead=b + 1, slice=s + 1, pick=(float(x), float(y)),
+                               fit=(float(xo), float(yo)),
+                               reason="the xy fit moved more than the window allows: the pick is not on a bead, or the bead is lost at this focus; its LUT is not to be trusted")
             _progress = (s + 1, slices)
             if progress:
                 progress(s + 1, slices)

@@ -141,7 +141,12 @@ def radial_profile(sub, xc, yc, half, sgl=False):
     y0 = int(np.ceil(yc)) - half
     cx = half + (xc - np.ceil(xc))
     cy = half + (yc - np.ceil(yc))
-    win = sub[y0:y0 + cross, x0:x0 + cross].astype(np.float64)
+    # a window that runs off the sub-image reads 0 outside, as LabVIEW's out-of-range Index Array does (rig
+    # 2026-11-05: a pick whose xy fit moved > 12 px ended the z scan with an IndexError at slice 12)
+    win = np.zeros((cross, cross))
+    part = sub[max(y0, 0):max(y0 + cross, 0), max(x0, 0):max(x0 + cross, 0)].astype(np.float64)
+    oy, ox = max(y0, 0) - y0, max(x0, 0) - x0
+    win[oy:oy + part.shape[0], ox:ox + part.shape[1]] = part
     if not sgl:
         i = np.arange(cross)[:, None]
         dy = cy - i

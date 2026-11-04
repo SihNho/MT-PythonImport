@@ -122,6 +122,19 @@ def test_zscan_refuses_a_folder_or_an_existing_file_as_the_cal_path(sim, tmp_pat
     assert moves == []
 
 
+def test_radial_profile_reads_zero_outside_the_sub_image():
+    """Rig 2026-11-05: a pick whose xy fit moved 20 px off ended the z scan with IndexError (index 118 of 118); the
+    window now reads 0 outside, as LabVIEW does, and an in-range window is unchanged."""
+    from mtpy import track
+    sub = np.random.default_rng(1).uniform(50, 200, (144, 144))
+    for sgl in (False, True):
+        prof = track.radial_profile(sub, 92.3, 72.0, 60, sgl)
+        assert prof.shape == (60,) and np.all(np.isfinite(prof))
+        assert np.array_equal(track.radial_profile(sub, 72.3, 71.6, 60, sgl), track.radial_profile(sub, 72.3, 71.6, 60, sgl))
+    before = track.radial_profile(sub, 72.3, 71.6, 60)
+    assert np.allclose(before, track.radial_profile(np.pad(sub, 10), 82.3, 81.6, 60))
+
+
 def test_zscan_starts_at_the_current_focus_and_stacks_upwards(sim, tmp_path, monkeypatch):
     """Owner 2026-11-05: no jump down first (drift); from the start position up, step by step, back at the end.
     centred=True keeps the bench tools' LUT centred on the start."""
