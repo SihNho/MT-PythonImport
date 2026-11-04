@@ -466,6 +466,7 @@ class MainWindow(QMainWindow):
         # PI presets ("Cal+" / "Cal-"); a relative move's entry returns to 0 once the move is done
         self.positions = QLabel("positions: connect first")
         self.positions.setStyleSheet("font-family: Consolas, monospace")
+        self.positions.setWordWrap(True)                 # owner 2026-11-04: one line was cut off
         f.addRow("Now", self.positions)
         shi = float(safety.profile()["limits"].get("magnet_speed_mm_s", {}).get("max") or 15.0)
         self.mag_speed = _spin(0.01, shi, 0.1, min(1.0, shi), 2, " mm/s")
@@ -1221,7 +1222,7 @@ class MainWindow(QMainWindow):
                     parts.append(read())
                 except Exception as e:  # noqa: BLE001
                     parts.append(f"{name}: {type(e).__name__}")
-        return "  |  ".join(parts) if parts else "positions: no motor connected"
+        return chr(10).join(parts) if parts else "positions: no motor connected"
 
     def _slow_tick(self):
         """2 Hz: motor read-backs and the status line (device calls, cheap on the simulator)."""

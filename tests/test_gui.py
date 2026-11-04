@@ -284,6 +284,37 @@ def test_start_runs_the_protocol_a_second_time(window):
     assert not [w.events_list.item(i).text() for i in range(w.events_list.count()) if "refused" in w.events_list.item(i).text()]
 
 
+def test_left_click_on_the_image_adds_a_pick_inside_the_margin_only(window):
+    """Owner 2026-11-04 evening: "beads cannot be picked" - the edge-margin check of the morning called a name the
+    GUI's zscan module did not re-export, so every left click failed silently."""
+    from PySide6.QtCore import QPointF, Qt
+
+    app, w = window
+    w._connect()
+    _until(app, lambda: "8 / 8" in w.dev_summary.text(), 15, "connect")
+    w._toggle_acq()
+    _until(app, lambda: api.acq.running() and w.img_item.image is not None, 30, "an image on screen")
+    _pump(app, 0.5)                                               # the view auto-ranges to the image
+
+    class _Ev:
+        def __init__(self, x, y, button=Qt.LeftButton):
+            self._p, self._b = w.vb.mapViewToScene(QPointF(x, y)), button
+
+        def scenePos(self):
+            return self._p
+
+        def button(self):
+            return self._b
+    w._on_view_click(_Ev(640.0, 512.0))
+    assert len(w.picks) == 1 and abs(w.picks[0][0] - 640.0) < 1 and abs(w.picks[0][1] - 512.0) < 1
+    w._on_view_click(_Ev(1230.0, 500.0))                         # 50 px from the right edge: refused, not added
+    assert len(w.picks) == 1 and any("from the right edge" in w.events_list.item(i).text() for i in range(w.events_list.count()))
+    w._on_view_click(_Ev(641.0, 513.0, Qt.RightButton))          # right click removes the nearest pick
+    assert w.picks == []
+    w._toggle_acq()
+    _until(app, lambda: not api.acq.running(), 15, "acquisition stopped")
+
+
 def test_explore_shows_positions_and_relative_moves_return_to_zero(window, monkeypatch, tmp_path):
     """Owner 2026-11-04: Explore shows every motor's position and the force live, the magnet speed, two PI presets
     (Cal+ / Cal-), and a relative move's entry returns to 0 once the move is done."""
