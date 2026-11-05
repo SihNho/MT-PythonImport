@@ -596,3 +596,29 @@ def test_read_run_keeps_a_json_list_column_one_dimensional(tmp_path):
     r = read_run(tmp_path / "j.h5")
     assert r["events"]["mark"]["data"].shape == (2,) and r["events"]["mark"]["data"][1] == {"a": [3, 4]}
 
+
+
+
+def test_retarget_tracks_new_beads_without_a_camera_stop(fixture_cam, tmp_path):
+    """Owner 2026-11-05: the beads change while the camera runs. Watching (no beads, no file) -> retarget with
+    beads into a run file -> recording -> retarget to none: the file closes; the camera never stopped (one segment)."""
+    api.camera.set_rate(90.0)
+    api.acq.start(folder=None)
+    api.acq.wait_frames(10, 10)
+    seg0 = api.acq.status()["segment"]
+    api.beads.select([1, 2], cal_path=str(FIXTURE / "cal002"))
+    st = api.acq.retarget(folder=tmp_path, name="tra001", roles={1: "reference", 2: "tethered"})
+    assert st["segment"] == seg0 and api.acq.running()
+    api.acq.set_recording(True)
+    api.acq.wait_frames(30, 10)
+    api.acq.set_recording(False)
+    api.beads.clear()
+    api.acq.retarget()
+    api.acq.wait_frames(10, 10)
+    assert api.acq.status()["segment"] == seg0
+    st = api.acq.stop()
+    assert st["sink_failures"] == 0, st["sink_error"]
+    run = read_run(tmp_path / "tra001.h5")
+    assert run["beads"]["bead_id"].tolist() == [1, 2] and run["attrs"]["closed_cleanly"] == 1
+    assert len(run["mt"]["buffer_number"]) >= 30 and run["mt"]["x_px"].shape[1] == 2
+    assert np.isfinite(run["mt"]["x_px"]).all()

@@ -223,6 +223,35 @@ def _start(record, name, sink, ring_capacity, folder, roles, motor_poll_s, z_met
     return status()
 
 
+def retarget(folder=None, name=None, roles=None, z_method="current", gpu=False):
+    """Track the beads selected now (api.beads.select / clear) from the next frame on, without stopping the camera
+    (owner 2026-11-05: the JAI has no shutter, so a stop protects nothing; the user never restarts it). The results
+    go to a new run file `<folder>/<name>.h5` (folder None: in memory); the file of the acquisition so far is closed.
+    The same checks as start (ROI origin, fit); refused while recording is on. Returns status()."""
+    pipe = _require()
+    if pipe.recording:
+        raise NotReady("recording is on; switch it off before the beads change")
+    svc = _svc
+    beads = _beads.selected()
+    s = svc.call(svc.device.settings, what="read settings")
+    kernel = None
+    if beads is not None:
+        if beads.roi is not None and tuple(s["roi"][:2]) != tuple(beads.roi[:2]):
+            raise NotReady(f"camera ROI origin {tuple(s['roi'][:2])} is not the origin {tuple(beads.roi[:2])} in force "
+                           f"when beads {list(beads.ids)} were selected; restore the ROI or select beads again")
+        _, _, w, h = s["roi"]
+        if not beads.fit((h, w)):
+            raise NotReady(f"the selected beads do not fit the camera ROI {tuple(s['roi'])}; select beads again")
+        kernel = _make_kernel(beads, z_method, gpu)
+        kernel.track(np.zeros((h, w), dtype=np.uint8), np.rint(beads.xy0[:, 0]).astype(np.int64),
+                     np.rint(beads.xy0[:, 1]).astype(np.int64), np.ones(len(beads.ids), dtype=bool))
+    sink = _hdf5_sink(folder, name, beads, roles, svc, svc.device, s) if folder is not None else None
+    pipe.retarget(beads, kernel, sink)
+    events.log("acquisition", action="retarget", name=name, z_method=z_method, gpu=bool(gpu),
+               beads=list(pipe.bead_ids), cal=beads.source if beads is not None else None)
+    return status()
+
+
 def _fault(kind, e):
     """Fault list P1 / D13 (2026-10-31): the pipeline's camera thread died, or the sink failed for the first time.
     An `acquisition fault` event always; a sink I/O failure (disk full, file gone) while recording also switches

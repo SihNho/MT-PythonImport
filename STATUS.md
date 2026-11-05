@@ -244,6 +244,11 @@ Short and current. Details live in the linked documents; the history is in git a
   by hand (no shutter; acquisition control is the EMCCD's) - the restart is inside step 3 now, a selection
   without a restart is open. Owner: the agent must not control the rig lock; the program takes and releases it
   itself (the event list shows `rig_lock acquired / released` at Connect / Disconnect).
+- **2026-11-05 ~22:00 (owner: the user should never stop the JAI by hand):** `api.acq.retarget` - the pipeline
+  swaps the tracker and the sink between two frames (the old run file closes on the sink thread, in order),
+  `api.beads.select / clear` work while acquisition runs; the GUI's Select beads, the Run page's step 3 and Reset
+  calibration use it, so the camera runs in one segment through watch -> calibrate -> track -> reset. Tests:
+  test_data (watch -> retarget with a file -> record -> retarget to none), test_gui (one segment).
 - **Next:** protocols on hardware (force ramps, rotation, 3-state clamp, autofocus), the stop / watchdog paths
   exercised on the rig, then the tethered-bead calibration.
 - **Queued (owner 2026-10-30):** lock the camera settings while a z scan runs (the GUI must not change exposure,

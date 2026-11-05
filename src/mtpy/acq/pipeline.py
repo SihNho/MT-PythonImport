@@ -137,9 +137,9 @@ class Pipeline:
 
     def __init__(self, source, beads=None, kernel=None, sink=None, ring_capacity=64, display_hz=30.0,
                  t_source="unknown", stats_len=2000):
-        self.source, self.beads = source, beads
-        self.tracker = BeadTracker(beads, kernel) if beads is not None else None
-        self.bead_ids = tuple(beads.ids) if beads is not None else ()
+        self.source = source
+        self._live = (beads, BeadTracker(beads, kernel) if beads is not None else None,
+                      tuple(beads.ids) if beads is not None else ())   # one tuple: the worker reads it once per frame
         self.sink = sink if sink is not None else MemorySink()
         self.ring, self.display, self.t_source = FrameRing(ring_capacity), DisplayTap(display_hz), t_source
         self.recording = False                       # latest-value flag: set by the API, read per frame
@@ -162,6 +162,18 @@ class Pipeline:
         self._threads, self._unsubscribe = [], None
         self.stop_state, self._out_closed = None, False   # None while running; "complete" / "incomplete: ..."
         self.camera_stop = self.motor_poll = None         # set by api.acq (WP6): stop check, motor poller
+
+    beads = property(lambda self: self._live[0])
+    tracker = property(lambda self: self._live[1])
+    bead_ids = property(lambda self: self._live[2])
+
+    def retarget(self, beads, kernel, sink):
+        """Owner 2026-11-05 (the JAI has no shutter; stopping it for a bead change protects nothing): the next frame
+        is tracked with these beads (None: no tracking) and from the next queued item on the results go to `sink`
+        (the old one is closed on the sink thread, after everything queued before). Recording must be off."""
+        self._live = (beads, BeadTracker(beads, kernel) if beads is not None else None,
+                      tuple(beads.ids) if beads is not None else ())
+        self._out.put(("sink", sink if sink is not None else MemorySink()))
 
     # --- lifecycle ------------------------------------------------------------------------------------------------
     def start(self, subscribe=None):
@@ -286,9 +298,10 @@ class Pipeline:
         empty = np.empty((0, 3)), np.empty(0, dtype=bool)
         while True:
             item, dropped = self.ring.pop(0.05)
+            _, tracker, ids = self._live
             for rec in dropped:
                 if rec.recording:
-                    self._out.put(("frame", FrameResult(rec, self.bead_ids, None, None, dropped=True)))
+                    self._out.put(("frame", FrameResult(rec, ids, None, None, dropped=True)))
             if item is None:
                 if not self._worker_on.is_set() and not len(self.ring):
                     return
@@ -297,13 +310,13 @@ class Pipeline:
             t0 = time.perf_counter()
             extra = {}
             try:
-                xyz, good = self.tracker.step(image) if self.tracker is not None else empty
+                xyz, good = tracker.step(image) if tracker is not None else empty
             except Exception as e:  # noqa: BLE001 - recorded per frame and in status(); the pipeline keeps running
                 xyz = good = None
                 extra = {"error": f"{type(e).__name__}: {e}"}
                 self.tracking_errors, self.last_tracking_error = self.tracking_errors + 1, extra["error"]
             t1 = time.perf_counter()
-            res = FrameResult(rec, self.bead_ids, xyz, good, (t1 - t0) * 1e3, extra=extra)
+            res = FrameResult(rec, ids, xyz, good, (t1 - t0) * 1e3, extra=extra)
             self._latest = res
             self.frames_tracked += 1
             with self._stats_lock:
@@ -346,6 +359,10 @@ class Pipeline:
         while (item := self._out.get()) is not None:
             kind, x = item
             try:
+                if kind == "sink":                   # retarget: the old sink closed here, in order, then replaced
+                    self.sink.close()
+                    self.sink = x
+                    continue
                 self.sink.write_frame(x) if kind == "frame" else self.sink.write_event(x)
             except Exception as e:  # noqa: BLE001 - shown in status(); never an event (it would come back here)
                 self.sink_failures, self.sink_error = self.sink_failures + 1, f"{type(e).__name__}: {e}"

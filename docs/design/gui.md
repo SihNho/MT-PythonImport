@@ -28,7 +28,9 @@ The other pages keep the settings (Calibrate: slices, step, band-pass viewer; Be
 
 Owner 2026-11-05, same evening: the JAI has no shutter, so stopping its acquisition protects nothing; the restart
 at bead selection is the program's (the tracker is built at acquisition start) and now happens inside step 3.
-Open: select beads without a restart; the EMCCD is the camera whose acquisition and shutter the user controls.
+Done the same night: `api.acq.retarget` swaps the tracker and the run file between two frames, so Select beads,
+the Run page's step 3 and Reset calibration never stop the camera (one segment through the whole flow). The
+EMCCD is the camera whose acquisition and shutter the user controls.
 
 ## What the first build has (src/mtpy/gui)
 One window after the mock-up ([mockups/2026-10-23-main-window](../mockups/2026-10-23-main-window/README.md)):

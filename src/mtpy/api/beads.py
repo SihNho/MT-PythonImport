@@ -44,13 +44,10 @@ def select(ids, cal_path=None):
     calibration clusters). cal_path None: the first `cal*` file in the simulated camera's fixture folder.
     The camera ROI read back now is kept with the selection (WP6 / U23): api.acq.start refuses a camera whose ROI
     origin differs from it (None when no camera is connected: then only the size is checked at start).
-    Refused (NotReady) while acquisition runs. Returns {id: {"x_px", "y_px"}} (calibration-time positions)."""
+    While acquisition runs the selection takes effect at api.acq.retarget (owner 2026-11-05: no camera restart).
+    Returns {id: {"x_px", "y_px"}} (calibration-time positions)."""
     global _selected
     from mtpy.lvfiles import read_cal
-
-    from . import acq
-    if acq.running():
-        raise NotReady("beads cannot change while acquisition runs; api.acq.stop() first")
     path = Path(cal_path) if cal_path is not None else _fixture_cal()
     _check_band(read_cal(path), path)
     cal = read_cal(path)
@@ -71,11 +68,8 @@ def select(ids, cal_path=None):
 
 def clear():
     """Drop the selection (owner 2026-11-05: to calibrate again, the beads of the last .cal must go first, then the
-    image takes picks). Refused (NotReady) while acquisition runs."""
+    image takes picks). While acquisition runs it takes effect at api.acq.retarget."""
     global _selected
-    from . import acq
-    if acq.running():
-        raise NotReady("beads cannot change while acquisition runs; api.acq.stop() first")
     _selected = None
     events.log("beads", request={"select": []})
 

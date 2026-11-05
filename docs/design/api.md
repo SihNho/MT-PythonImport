@@ -59,6 +59,7 @@ proposals; phase 5 may refine them, and every change after the first release fol
 | Function | Purpose |
 |---|---|
 | `api.acq.start(record=True, name=None)` / `stop()` | start / stop acquisition (and recording) |
+| `api.acq.retarget(folder, name, roles)` | track the beads selected now from the next frame on, into a new run file, without stopping the camera (owner 2026-11-05: the JAI has no shutter); refused while recording is on |
 | `api.acq.wait_frames(n, timeout_s)` | wait for n camera frames |
 | `api.acq.mark(text)` | free-text event in the data |
 | `api.data.save_run(folder, name)` / `open_run(path)` | save (U21) / open for review |

@@ -521,7 +521,8 @@ class MainWindow(QMainWindow):
         self.run_beads = QLabel("2. Left click the beads on the image (right click removes a pick): 0 picked")
         self.run_cal = QLabel("3. asks where to write the .cal (cal001, cal002, ... in the data folder), scans the "
                               "picked beads, then asks for the run file and tracks every bead of the .cal (bead 1 = "
-                              "reference). Reset calibration drops the beads so the image takes picks again.")
+                              "reference) from the next frame on, the camera never stops. Reset calibration drops "
+                              "the beads so the image takes picks again.")
         self.run_track = QLabel("4. not tracking")
         self.run_save = QLabel("5. the traces go next to the run file as tra001-000, tra001-001, ... (LabVIEW's files)")
         for lab in (self.run_cam, self.run_beads, self.run_cal, self.run_track, self.run_save):
@@ -567,7 +568,7 @@ class MainWindow(QMainWindow):
         self.ed_cal.setText(str(path))
         self.role_ref.setText("1")
         self._load_cal_list()
-        self._select_beads(restart=True)
+        self._select_beads()
 
     def _panel_explore(self):
         w = QWidget()
@@ -1127,9 +1128,9 @@ class MainWindow(QMainWindow):
             self.calview.load(path)
 
     def _new_calibration(self):
-        """Owner 2026-11-05: to calibrate again while tracking, the beads must go: the acquisition stops, the selection
-        is dropped, the acquisition starts again without beads, and left clicks pick on the image."""
-        was_running = api.acq.running()
+        """Owner 2026-11-05: to calibrate again while tracking, the beads must go: the selection is dropped, the
+        acquisition goes on without beads (the run file closes; no camera restart), and left clicks pick on the
+        image."""
         self.bead_ids, self.roles, self.cal_path = [], {}, None
         self._clear_picks()
         self._rebuild_chips()
@@ -1137,13 +1138,19 @@ class MainWindow(QMainWindow):
 
         def dropped(_):
             self.beads_info.setText("no beads selected: left click beads on the image, then Calibrate")
-            self.btn_live.setText("Start acquisition")
-            if was_running:
-                self._toggle_acq()
-        self._call(lambda: (api.acq.running() and api.acq.stop(), api.beads.clear())[1], "new calibration", dropped)
+            self.ed_h5.setText("")
+            self.run_track.setText("4. camera running, no beads: nothing is written")
+            self._draw_boxes(np.empty((0, 2)), np.empty(0, bool))
 
-    def _select_beads(self, restart=False):
-        """restart: the acquisition is stopped first and started again with the beads (the Run page's step 3)."""
+        def job():
+            api.beads.clear()
+            if api.acq.running():
+                api.acq.retarget()
+        self._call(job, "new calibration", dropped)
+
+    def _select_beads(self):
+        """With acquisition running the beads are tracked from the next frame on, into the run file named in Save
+        (owner 2026-11-05: no camera restart); otherwise they wait for Start acquisition."""
         self._clear_picks()
         ids = [self.bead_list.item(i).data(Qt.UserRole) for i in range(self.bead_list.count())
                if self.bead_list.item(i).checkState() == Qt.Checked]
@@ -1157,14 +1164,24 @@ class MainWindow(QMainWindow):
             self.beads_info.setText(f"selected {ids}; reference {sorted(refs & set(ids))}")
             self._rebuild_chips()
             self._draw_boxes(np.array([[pos[i]["x_px"], pos[i]["y_px"]] for i in ids]), np.ones(len(ids), bool))
-            if restart:
-                self.btn_live.setText("Start acquisition")
-                self._toggle_acq()
+            if running:
+                self.history.clear()
+                self.t0 = time.time()
+                self.ed_h5.setText(str(folder / f"{name}.h5"))
+                self.ed_name.setText(next_tra(folder))
+                self.run_track.setText(f"4. tracking {len(ids)} beads -> {self.ed_h5.text()}; Record writes into it")
+
+        running = api.acq.running()
+        folder, name = Path(self.ed_out.text()), self.ed_name.text().strip() or next_tra(Path(self.ed_out.text()))
+        roles = {i: ("reference" if i in refs else "tethered") for i in ids}
+        zm, gpu = self.z_method.currentText(), self.gpu.isChecked()
 
         def job():
-            if restart and api.acq.running():
-                api.acq.stop()
-            return api.beads.select(ids, cal_path=path)
+            pos = api.beads.select(ids, cal_path=path)
+            if running:
+                folder.mkdir(parents=True, exist_ok=True)
+                api.acq.retarget(folder=folder, name=name, roles=roles, z_method=zm, gpu=gpu)
+            return pos
         self._call(job, "select beads", done)
 
     def _rebuild_chips(self):

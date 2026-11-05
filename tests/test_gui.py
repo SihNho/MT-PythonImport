@@ -461,9 +461,10 @@ def test_new_calibration_drops_the_beads_and_the_rotor_turns_once(window):
     _until(app, lambda: w.bead_ids, 10, "beads selected")
     w._toggle_acq()
     _until(app, lambda: api.acq.running() and "JAI frame" in w.cam_label.text, 20, "acquisition")
+    seg = api.acq.status()["segment"]
     w._new_calibration()
     _until(app, lambda: api.beads.selected() is None and w.bead_ids == [] and api.acq.running()
-           and w.btn_live.text() == "Stop acquisition", 30, "beads dropped, acquisition back without them")
+           and api.acq.status()["segment"] == seg, 30, "beads dropped, the camera never stopped")
     w.rotor_turns.setValue(3.0)
     p0 = api.rotor.position()
     w._rotate(1.0)
@@ -530,8 +531,13 @@ def test_run_page_calibrates_then_tracks_into_the_chosen_run_file(window, monkey
     answers = iter([str(tmp_path / "cal001"), str(tmp_path / "tra001.h5")])
     monkeypatch.setattr(QFileDialog, "getSaveFileName", staticmethod(lambda *a, **k: (asked.append(a[1]), (next(answers), ""))[1]))
     w._flow_calibrate()
+    seg = api.acq.status()["segment"]
     _until(app, lambda: w.bead_ids == [1, 2] and api.acq.running() and w.ed_h5.text() == str(tmp_path / "tra001.h5"), 60,
            "scan, beads selected, tracking into the chosen run file")
     assert len(asked) == 2 and (tmp_path / "cal001").exists() and w.roles[1] == "reference"
+    assert api.acq.status()["segment"] == seg          # the camera never stopped
+    w._new_calibration()
+    _until(app, lambda: api.beads.selected() is None and w.bead_ids == [] and api.acq.running()
+           and api.acq.status()["segment"] == seg and w.ed_h5.text() == "", 30, "beads dropped, camera still running")
     w._toggle_acq()
     _until(app, lambda: not api.acq.running(), 15, "stopped")
