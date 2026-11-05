@@ -41,6 +41,46 @@ engaged; #5 "1. Start the camera" on the Run page; #9 the safety profile as a ta
 tooltip); #10 plain group titles; #12 event lines as sentences (the fields only in `gui_events.log`). Open: the
 rest (#6-#8, #11, #13-#18 and the minor ones).
 
+## Owner's list after the first full run on the rig (2026-11-05 evening, applied the same night)
+The owner ran watch -> picks -> calibrate -> track -> protocol -> Save the traces on the rig
+(`G:\Data\Sihyeong-Developing61105 Test`: cal001, tra001.h5, tra001-000) and asked for:
+- **Duplicates hidden** ("the Run page is really good; hide the duplicated panels as sub-panels, shown only when
+  looked for"): the step bar is `1. Setup | 2. Run | 3. Experiment | More...`; Explore, Beads, Calibrate and
+  Save appear only after More (`DETAILS`). The top bar keeps Pause display and EMERGENCY STOP only: the one camera
+  button ("1. Start the camera" / "Stop the camera") and the one Record button ("4. Record on" / "* Recording")
+  are on the Run page. Beads lost its second Clear picks and New calibration (Run's Reset calibration is the one).
+- **Right click** removes a pick without pyqtgraph's View / Export menu (`enableMenu=False`).
+- **Data folder** `G:\Data` is where every data dialog starts (`DATA_ROOT`; the last chosen folder when it still
+  exists); the owner's protocols live in `G:\Data\protocols` (`*.mtprot`) and the Experiment page lists them in a
+  combo (one click loads; Save as... puts a new one there) - "a protocol used again and again is tedious to type".
+- **Explore** magnet speed starts at the profile limit (15 mm/s).
+- **Calibration viewer**: z found (um) and the residual (nm) were on one axis and both unreadable; the residual
+  has its own plot now (x linked).
+- **Experiment**: a `repeat N x` spin on the table (cycle repeat -> `loop n=N`); "estimated M min S s" after
+  Table -> script, Check and a protocol pick (the t= times with loops expanded plus each `speed=` ramp's magnet
+  travel at its speed); the **Script guide** opens inside the program (a panel rendering the Markdown; the .md
+  had opened in whatever application owns the extension).
+- **The protocol stopped at 50 pN** (troubleshooting #28): the ramp 1 -> 50 pN at 0.1 mm/s is ~30 mm = 300 s and
+  the arrival wait was the device's 60 s; a move now carries its own duration (`Motion.expected_s`, distance /
+  speed read before the move) and both the device wait and the engine's timeout stretch by 1.5 x it.
+- **1-2 s between steps with no wait**: measured in the log, step 1 (rotate t=10) took 14 s, step 2 took 11 s.
+  Each column first sets the force (a magnet move with a VEL? read, an ONT? poll and a read-back) and a rotation
+  pre-reads the rotor position; those device round trips are the overhead. Not changed yet: to measure per call
+  on the rig before cutting (candidates: skip `set_force` when the magnet is already there within tolerance).
+- **The trace plot drew a ramp as stairs**: the window took the magnet position from its 2 Hz read-back; it now
+  takes every `motor_reading` event (the poller's 10 Hz, the same values the run file holds: a change every 9
+  frames at 90 Hz in tra001.h5). The Y label said Force while the legend still said Magnet: the curves are
+  rebuilt when the axis changes.
+- **tra001-000 format**: header (weekday, date, the three lines, the .cal path, "file 0 of a series", points /
+  nominal) and columns (frame, magnet mm, rotor deg, x y z per bead: 3 + 3 x 4 = 15) as the LabVIEW file. One
+  difference to decide with the owner: the rotor column holds the controller's absolute count (72000 deg here)
+  where the LabVIEW file holds the position told relative to its origin (0 at the start).
+- **Autofocus - not built** (owner: "I do not know whether auto-focusing is on"). Two functions the LabVIEW
+  program has and this one does not yet: (1) a bead reported bad returns to its calibration position and tracking
+  is retried (spec F4.05 lost-bead reseed); (2) the piezo keeps a chosen coverslip position (spec F4.06, the
+  +-0.2 clamp rule) - the owner must be able to choose which position to hold. Queued for the hardware phase
+  (STATUS Next); until then the focus stays where the z scan or Explore left it.
+
 ## What the first build has (src/mtpy/gui)
 One window after the mock-up ([mockups/2026-10-23-main-window](../mockups/2026-10-23-main-window/README.md)):
 top bar (device summary, display pause, acquisition start / stop, Record, STOP, Acknowledge), six steps, two camera

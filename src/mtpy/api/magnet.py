@@ -69,8 +69,19 @@ def move_to(position_mm, speed_mm_s=None, _stall_return=False):
         raise
     applied = _coerce_position(position_mm)
     n_stall = getattr(svc, "stall_count", 0)
+    # rig 2026-11-05: a 30 mm ramp at 0.1 mm/s is 300 s; the arrival wait must know the move's own duration. The
+    # position is read on the motion thread right before the send (the caller's thread never waits on the queue)
+    pre = {}
+
+    def send(v):
+        pre["from_mm"] = svc.call(dev.position, what="POS?")
+        return _send(svc, dev, v, speed)
+
+    def expected():
+        return abs(applied - pre["from_mm"]) / speed if speed and "from_mm" in pre else None
     m = _move("magnet", "magnet_position_mm", applied, lambda: _read_checked(svc, dev, n_stall, _stall_return),
-              gen=gen, send=lambda v: _send(svc, dev, v, speed), read_on_caller=True)
+              gen=gen, send=send, read_on_caller=True, expected_s=expected)
+    m.expected_s = expected
     m.requested_mm, m.applied_mm = position_mm, applied
     m.coerced = applied is not position_mm and abs(applied - position_mm) > COERCE_TOL
     return m

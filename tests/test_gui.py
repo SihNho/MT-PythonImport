@@ -399,9 +399,20 @@ def test_experiment_table_compiles_the_owners_example_and_runs(window):
     assert text.splitlines()[2:] == ["# column 1", "rotate from=0 to=-10 f=1 t=10", "# column 2", "rotate from=-10 to=0 f=1 t=10",
                                      "# column 3: nothing to do", "# column 4", "ramp from=1 to=50 speed=0.03",
                                      "# column 5", "ramp from=50 to=1 speed=0.1", "end protocol"]
+    rep = compile_table(EXAMPLE, repeat=3).splitlines()       # owner 2026-11-05: cycle repeat -> loop n=
+    assert rep[2] == "loop n=3" and rep[-2:] == ["end", "end protocol"]
     app, w = window
     w._connect()
     _until(app, lambda: "8 / 8" in w.dev_summary.text(), 15, "connect")
+    # rig 2026-11-05: a 30 mm ramp at 0.1 mm/s (300 s) was cut off by the 60 s arrival wait; the move now says how
+    # long it takes and the waits stretch by 1.5 x that
+    api.magnet.move_to(0.0).wait(10)
+    m = api.magnet.move_to(5.0, speed_mm_s=1.0)
+    m.wait(20)
+    assert m.expected_s() == pytest.approx(5.0, abs=0.01)
+    w.exp_table.repeat.setValue(2)
+    assert "loop n=2" in w.exp_table.to_script()
+    w.exp_table.repeat.setValue(1)
     w._apply_preset()
     w._call(lambda: api.magnet.set_touch_position(40.0), "touch")
     _until(app, lambda: api.magnet.force_calibration()["ready"], 10, "touch position")

@@ -255,6 +255,14 @@ Short and current. Details live in the linked documents; the history is in git a
   a camera button on the Run page, the tests kept out of the user's QSettings, the emergency stop apart with a
   shortcut and Acknowledge inside the red banner only while engaged, the safety profile as a table, plain group
   titles, event lines as sentences. The rest of the critique is open (design/gui.md lists it).
+- **2026-11-05 ~22:30 (owner, after the first full run on the rig; "the basic functions work, good"):** the
+  owner's list applied (design/gui.md "Owner's list after the first full run"): duplicate pages behind More...,
+  one camera and one Record button (Run page), right click without the menu, `G:\Data` as the data root and
+  `G:\Data\protocols` listed on the Experiment page, magnet speed 15 mm/s in Explore, the residual plot on its
+  own axis, `repeat N x` and the estimated time, the Script guide inside the program, the protocol that stopped at
+  50 pN (the 60 s arrival wait on a 300 s ramp: #28), the magnet curve at the poller's rate. Recorded, not built:
+  autofocus (lost-bead reseed, the piezo clamp at a user-chosen position), the 1-2 s step overhead (to measure),
+  the rotor column of the .tra (absolute count vs LabVIEW's told position).
 - **Next:** protocols on hardware (force ramps, rotation, 3-state clamp, autofocus), the stop / watchdog paths
   exercised on the rig, then the tethered-bead calibration.
 - **Queued (owner 2026-10-30):** lock the camera settings while a z scan runs (the GUI must not change exposure,

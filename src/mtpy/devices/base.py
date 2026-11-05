@@ -339,14 +339,21 @@ class Motion:
         self._cancel.set()
         self._svc.device.stop()
 
-    def wait_arrival(self, moving, gen=None):
+    def wait_arrival(self, moving, gen=None, expected_s=None):
         """Poll moving() through the service until the move ends; NotReady if cancelled or e-stopped.
+
+        expected_s: the move's own duration (distance / speed; a number or a callable resolved here, after the
+        send) when the caller knows it; the arrival wait is then 1.5 x that plus the device's move_timeout_s, so a
+        slow long ramp (rig 2026-11-05: 30 mm at 0.1 mm/s = 300 s) is not cut off at the 60 s meant for a fast move.
 
         gen (WP6 carry): the emergency-stop generation recorded when the move was requested. A stop engaged AND
         released while the move runs halts the axis but leaves the flag clear; without this check the halt would
         look like an arrival (and end in a read-back mismatch). Inside a protocol run the run's generation counts
         too (`estop.run_scope_void`)."""
-        t_end = time.monotonic() + self._svc.device.move_timeout_s
+        if callable(expected_s):
+            expected_s = expected_s()
+        limit = self._svc.device.move_timeout_s + 1.5 * float(expected_s or 0.0)
+        t_end = time.monotonic() + limit
         while True:
             still = self._svc.call(moving, what="moving?")
             # checked AFTER the poll: the stop flags are set before the stop is sent, so a halt caused by them is
@@ -358,5 +365,5 @@ class Motion:
             if not still:
                 return
             if time.monotonic() > t_end:
-                raise TimeoutError(f"did not arrive within {self._svc.device.move_timeout_s:g} s")
+                raise TimeoutError(f"did not arrive within {limit:g} s")
             time.sleep(0.01)

@@ -15,8 +15,7 @@ from pathlib import Path
 
 import numpy as np
 import pyqtgraph as pg
-from PySide6.QtCore import QObject, QRunnable, QSettings, Qt, QThreadPool, QTimer, QUrl, Signal
-from PySide6.QtGui import QDesktopServices
+from PySide6.QtCore import QObject, QRunnable, QSettings, Qt, QThreadPool, QTimer, Signal
 from PySide6.QtWidgets import (
     QButtonGroup,
     QCheckBox,
@@ -44,6 +43,7 @@ from PySide6.QtWidgets import (
     QStackedWidget,
     QTableWidget,
     QTableWidgetItem,
+    QTextBrowser,
     QVBoxLayout,
     QWidget,
 )
@@ -78,8 +78,11 @@ def use_inprocess():
 
 pg.setConfigOptions(imageAxisOrder="row-major", background="k", foreground="w")
 
-STEPS = [("setup", "Setup"), ("run", "Run"), ("explore", "Explore"), ("beads", "Beads"), ("cal", "Calibrate"),
-         ("exp", "Experiment"), ("save", "Save")]
+STEPS = [("setup", "Setup"), ("run", "Run"), ("exp", "Experiment"), ("explore", "Explore"), ("beads", "Beads"),
+         ("cal", "Calibrate"), ("save", "Save")]
+DETAILS = ("explore", "beads", "cal", "save")   # owner 2026-11-05: the pages the Run page duplicates stay behind "More"
+DATA_ROOT = Path(r"G:\Data")                     # owner 2026-11-05: every data dialog starts here
+PROTOCOLS_DIR = DATA_ROOT / "protocols"          # the owner's own protocols (.mtprot), listed on the Experiment page
 TITLES = {"setup": "Setup: devices, camera, analysis", "explore": "Explore (no recording)",
           "run": "Run: camera -> beads -> calibrate -> track -> save, in that order",
           "beads": "Beads: select from a .cal", "cal": "Calibrate: z scan -> .cal", "exp": "Experiment: protocol",
@@ -89,16 +92,6 @@ COLORS = ["#60A5FA", "#F472B6", "#34D399", "#FBBF24", "#A78BFA", "#F87171", "#2D
 CHIPS_PER_ROW = 16                     # bead check boxes wrap after this many (G16)
 PLOT_HZ = 10.0                         # default plot refresh; the user sets it in the plot bar (owner 2026-11-01)
 GUIDE = Path(__file__).resolve().parents[3] / "docs" / "guide" / "protocol-scripts.ko.md"   # the script guide
-EXAMPLE_PROTOCOL = """grammar 0.1
-protocol "example"
-# edit freely; Check validates against the API and the rig safety profile
-hold f=1 t=2
-ramp from=1 to=5 t=5
-mark "high force"
-hold f=5 t=2
-zero t=1
-end protocol
-"""
 
 
 class _Signals(QObject):
@@ -308,9 +301,6 @@ class MainWindow(QMainWindow):
         self.prot_badge.setToolTip("The protocol's state (Experiment panel). Start replaces a running protocol.")
         h.addWidget(self.prot_badge)
         self.btn_display = QPushButton("Pause display", clicked=self._toggle_display)
-        self.btn_live = QPushButton("Start acquisition", clicked=self._toggle_acq)
-        self.btn_rec = QPushButton("Record", clicked=self._toggle_rec)
-        self.btn_rec.setCheckable(True)
         self.btn_stop = QPushButton("EMERGENCY STOP  (Shift+Esc)", clicked=self._estop)
         self.btn_stop.setShortcut("Shift+Esc")
         self.btn_stop.setToolTip("Emergency stop: every motor halts, the protocol ends, and every move is refused until "
@@ -319,8 +309,7 @@ class MainWindow(QMainWindow):
         self.btn_ack = QPushButton("Acknowledge", clicked=self._estop_clear)
         self.btn_ack.setToolTip("Clears the emergency stop after STOP (owner 2026-11-05: 'what are these'). Needed only "
                                 "after STOP; Connect refuses while the stop is engaged.")
-        for b in (self.btn_display, self.btn_live, self.btn_rec):
-            h.addWidget(b)
+        h.addWidget(self.btn_display)   # owner 2026-11-05: the camera and Record buttons live on the Run page only
         h.addSpacing(60)                 # design critique 2026-11-05 #4: apart from the other stops, far right
         h.addWidget(self.btn_stop)
         return w
@@ -342,17 +331,35 @@ class MainWindow(QMainWindow):
         h = QHBoxLayout(w)
         self.step_group = QButtonGroup(self)
         self.step_group.setExclusive(True)
-        for i, (_, label) in enumerate(STEPS):
-            b = QPushButton(f"{i + 1}. {label}")
+        self.detail_buttons = []
+        for i, (key, label) in enumerate(STEPS):
+            b = QPushButton(label if key in DETAILS else f"{i + 1}. {label}")
             b.setCheckable(True)
             b.clicked.connect(lambda _=False, i=i: self._set_step(i))
             self.step_group.addButton(b, i)
+            if key in DETAILS:
+                b.setVisible(False)
+                self.detail_buttons.append(b)
+            else:
+                h.addWidget(b)
+        self.btn_more = QPushButton("More...", checkable=True, toggled=self._show_details)
+        self.btn_more.setToolTip("The detail pages the Run page covers: Explore (move by hand), Beads (the list behind "
+                                 "Run), Calibrate (scan settings, the LUT viewer), Save (run files, exports)")
+        h.addWidget(self.btn_more)
+        for b in self.detail_buttons:
             h.addWidget(b)
         self.step_title = QLabel("")
         h.addWidget(self.step_title, 1)
         return w
 
+    def _show_details(self, on):
+        for b in self.detail_buttons:
+            b.setVisible(on)
+        self.btn_more.setText("Less" if on else "More...")
+
     def _set_step(self, i):
+        if STEPS[i][0] in DETAILS and not self.btn_more.isChecked():
+            self.btn_more.setChecked(True)
         self.panel.setCurrentIndex(i)
         self.step_group.button(i).setChecked(True)
         self.step_title.setText(TITLES[STEPS[i][0]])
@@ -361,7 +368,7 @@ class MainWindow(QMainWindow):
         """Two screens side by side (owner 2026-10-30: the JAI and the EMCCD each on their own): left the tracking
         camera with the bead boxes, right the iXon (snap, or live while its Live button is down)."""
         self.view = pg.GraphicsLayoutWidget()
-        vb = self.view.addViewBox(lockAspect=True, invertY=True)
+        vb = self.view.addViewBox(lockAspect=True, invertY=True, enableMenu=False)   # owner 2026-11-05: right click removes a pick, no menu
         self.img_item = pg.ImageItem()
         vb.addItem(self.img_item)
         self.boxes = []
@@ -551,7 +558,9 @@ class MainWindow(QMainWindow):
         f = QFormLayout(w)
         self.run_cam = QLabel("1. Start the camera and watch the JAI image; no file is written while no beads are "
                               "selected")
-        self.btn_run_cam = QPushButton("1. Start the camera", clicked=self._toggle_acq)
+        self.btn_run_cam = self.btn_live = QPushButton("1. Start the camera", clicked=self._toggle_acq)
+        self.btn_rec = QPushButton("4. Record on", clicked=self._toggle_rec)      # the one Record button (owner 2026-11-05)
+        self.btn_rec.setCheckable(True)
         self.run_beads = QLabel("2. Left click the beads on the image (right click removes a pick): 0 picked")
         self.run_cal = QLabel("3. asks for the data folder once (the calibration cal001, cal002, ... and the run file "
                               "tra001.h5, tra002.h5, ... go there), scans the picked beads, then tracks every bead of "
@@ -566,9 +575,8 @@ class MainWindow(QMainWindow):
         f.addRow(_row(QPushButton("3. Calibrate the picked beads...", clicked=self._flow_calibrate),
                       QPushButton("Reset calibration", clicked=self._new_calibration)))
         f.addRow(self.run_cal)
-        f.addRow(_row(self.run_track, QPushButton("Record on / off", clicked=self.btn_rec.click)))
-        f.addRow(_row(QPushButton("5. Save the traces (.tra)", clicked=lambda: self._export("tra")),
-                      QPushButton("Script guide", clicked=lambda: QDesktopServices.openUrl(QUrl.fromLocalFile(str(GUIDE))))))
+        f.addRow(_row(self.run_track, self.btn_rec))
+        f.addRow(QPushButton("5. Save the traces (.tra)", clicked=lambda: self._export("tra")))
         f.addRow(self.run_save)
         return w
 
@@ -615,7 +623,7 @@ class MainWindow(QMainWindow):
         self.positions.setWordWrap(True)                 # owner 2026-11-04: one line was cut off
         f.addRow("Now", self.positions)
         shi = float(safety.profile()["limits"].get("magnet_speed_mm_s", {}).get("max") or 15.0)
-        self.mag_speed = _spin(0.01, shi, 0.1, min(1.0, shi), 2, " mm/s")
+        self.mag_speed = _spin(0.01, shi, 0.1, shi, 2, " mm/s")      # owner 2026-11-05: starts at the limit (15 mm/s)
         f.addRow("Magnet speed", self.mag_speed)
         f.addRow("Magnet position", _row(self.mag_pos, QPushButton("Move", clicked=self._move_magnet)))
         f.addRow(self.mag_slider)
@@ -655,7 +663,7 @@ class MainWindow(QMainWindow):
         f = QFormLayout(w)
         self.picks_info = QLabel("no picks: left click beads on the JAI image (acquisition running, no beads selected)")
         self.picks_info.setWordWrap(True)
-        f.addRow("Pick on image", _row(self.picks_info, QPushButton("Clear picks", clicked=self._clear_picks)))
+        f.addRow("Picks", self.picks_info)
         self.ed_cal = QLineEdit("")
         f.addRow(".cal file", _row(self.ed_cal, QPushButton("Browse...", clicked=self._browse_cal),
                                    QPushButton("Load list", clicked=self._load_cal_list)))
@@ -664,8 +672,7 @@ class MainWindow(QMainWindow):
         f.addRow(self.bead_list)
         self.role_ref = QLineEdit("1")
         f.addRow("Reference bead ids (comma)", self.role_ref)
-        f.addRow(_row(QPushButton("Select checked beads", clicked=self._select_beads),
-                      QPushButton("New calibration (drop the beads, pick again)", clicked=self._new_calibration)))
+        f.addRow(QPushButton("Select checked beads", clicked=self._select_beads))
         self.beads_info = QLabel("no beads selected")
         self.beads_info.setWordWrap(True)
         f.addRow(self.beads_info)
@@ -691,8 +698,8 @@ class MainWindow(QMainWindow):
         f.addRow("Cross (px)", self.cal_cross)
         self.cal_settle = _spin(0.0, 5.0, 0.1, zscan.SETTLE_S, 2, " s")
         f.addRow("Settle after each move", self.cal_settle)
-        data_dir = self.settings.value("data_dir", str(self.out))   # the folder last chosen, if it still exists
-        data_dir = data_dir if Path(data_dir).is_dir() else str(self.out)
+        data_dir = self.settings.value("data_dir", str(self._data_root()))   # the folder last chosen, if it still exists
+        data_dir = data_dir if Path(data_dir).is_dir() else str(self._data_root())
         self.cal_out = QLineEdit(str(Path(data_dir) / "cal001"))   # owner 2026-11-05: browsed, not typed; the next free name at Run
         row = QHBoxLayout()
         row.addWidget(self.cal_out)
@@ -714,14 +721,17 @@ class MainWindow(QMainWindow):
         self.exp_table = ExpTable(self._table_to_script, self._start_from_table)
         v.addWidget(self.exp_table)
         self.prot_edit = QPlainTextEdit()        # design critique 2026-11-05 #1: opens empty, never a runnable example
-        self.prot_edit.setPlaceholderText("The protocol script (the table above compiles to it; Load example shows one; "
-                                          "Script guide on the Run page explains the lines)")
+        self.prot_edit.setPlaceholderText("The protocol script (the table above compiles to it; pick one of your saved "
+                                          "protocols below; Script guide explains the lines)")
         self.prot_edit.setStyleSheet("font-family:Consolas,monospace")
         v.addWidget(self.prot_edit, 1)
-        v.addWidget(_row(QPushButton("Load example", clicked=lambda: self.prot_edit.setPlainText(EXAMPLE_PROTOCOL)),
-                         QPushButton("Load...", clicked=self._load_protocol),
+        self.prot_files = QComboBox()            # owner 2026-11-05: the protocols used again and again, one click
+        self.prot_files.currentIndexChanged.connect(self._pick_protocol)
+        self._list_protocols()
+        v.addWidget(_row(self.prot_files, QPushButton("Load...", clicked=self._load_protocol),
                          QPushButton("Save as...", clicked=self._save_protocol),
-                         QPushButton("Check", clicked=self._check_protocol)))
+                         QPushButton("Check", clicked=self._check_protocol),
+                         QPushButton("Script guide", clicked=self._show_guide)))
         self.btn_run = QPushButton("Start", clicked=self._run_protocol)
         self.btn_pause = QPushButton("Pause", clicked=self._pause_protocol)
         v.addWidget(_row(self.btn_run, self.btn_pause, QPushButton("Stop", clicked=self._stop_protocol),
@@ -1138,7 +1148,7 @@ class MainWindow(QMainWindow):
 
     # ------------------------------------------------------------------ beads
     def _browse_cal(self):
-        p, _ = QFileDialog.getOpenFileName(self, "Calibration (.cal) file", self.ed_fixture.text())
+        p, _ = QFileDialog.getOpenFileName(self, "Calibration (.cal) file", str(Path(self.cal_out.text()).parent))
         if p:
             self.ed_cal.setText(p)
             self._load_cal_list()
@@ -1241,7 +1251,7 @@ class MainWindow(QMainWindow):
         if not self.vb.sceneBoundingRect().contains(ev.scenePos()):
             return
         if self.bead_ids:                 # owner 2026-11-05: "clicking did nothing" - say why
-            self.statusBar().showMessage("beads are selected from a .cal: press 'New calibration' (Beads) to pick again", 8000)
+            self.statusBar().showMessage("beads are selected from a .cal: press 'Reset calibration' (Run) to pick again", 8000)
             return
         pt = self.vb.mapSceneToView(ev.scenePos())
         x, y = float(pt.x()), float(pt.y())
@@ -1374,13 +1384,12 @@ class MainWindow(QMainWindow):
                    "start acquisition", done)
 
     def _live_text(self, on):
-        self.btn_live.setText("Stop acquisition" if on else "Start acquisition")
         self.btn_run_cam.setText("Stop the camera" if on else "1. Start the camera")
 
     def _toggle_rec(self):
         on = self.btn_rec.isChecked()
         self._call(lambda: api.acq.set_recording(on), "recording on" if on else "recording off",
-                   lambda _: self.btn_rec.setText("* Recording" if on else "Record"))
+                   lambda _: self.btn_rec.setText("* Recording (press to stop)" if on else "4. Record on"))
 
     def _toggle_display(self):
         self.display_on = not self.display_on
@@ -1403,15 +1412,78 @@ class MainWindow(QMainWindow):
         self._call(lambda: api.acq.mark(text), f"mark '{text}'")
 
     # ------------------------------------------------------------------ protocol
+    def _data_root(self):
+        """Where data dialogs start: the owner's G:\\Data when it exists, else the run folder."""
+        return DATA_ROOT if DATA_ROOT.is_dir() else Path(self.out)
+
+    def _protocols_dir(self):
+        return self._data_root() / "protocols"
+
+    def _list_protocols(self):
+        """The combo on the Experiment page: every .mtprot in the protocols folder (owner 2026-11-05: the protocols
+        used again and again, one click instead of typing)."""
+        self.prot_files.blockSignals(True)
+        self.prot_files.clear()
+        files = sorted(self._protocols_dir().glob("*.mtprot")) if self._protocols_dir().is_dir() else []
+        self.prot_files.addItem(f"my protocols ({self._protocols_dir()})" if files else
+                                f"no saved protocols yet: Save as... puts them in {self._protocols_dir()}", None)
+        for f in files:
+            self.prot_files.addItem(f.stem, str(f))
+        self.prot_files.blockSignals(False)
+
+    def _pick_protocol(self, _i):
+        p = self.prot_files.currentData()
+        if p:
+            self.prot_edit.setPlainText(Path(p).read_text(encoding="utf-8"))
+            self.prot_status.setText(f"{Path(p).name} loaded; {self._estimate_text(self.prot_edit.toPlainText())}")
+
     def _load_protocol(self):
-        p, _ = QFileDialog.getOpenFileName(self, "Protocol", self.ed_out.text(), "Protocol (*.mtprot);;All (*)")
+        p, _ = QFileDialog.getOpenFileName(self, "Protocol", str(self._protocols_dir()), "Protocol (*.mtprot);;All (*)")
         if p:
             self.prot_edit.setPlainText(Path(p).read_text(encoding="utf-8"))
 
     def _save_protocol(self):
-        p, _ = QFileDialog.getSaveFileName(self, "Save protocol as", self.ed_out.text(), "Protocol (*.mtprot)")
+        self._protocols_dir().mkdir(parents=True, exist_ok=True)
+        p, _ = QFileDialog.getSaveFileName(self, "Save protocol as", str(self._protocols_dir()), "Protocol (*.mtprot)")
         if p:
             Path(p).write_text(self.prot_edit.toPlainText(), encoding="utf-8")
+            self._list_protocols()
+            self.prot_files.setCurrentIndex(max(0, self.prot_files.findData(p)))
+
+    def _estimate_text(self, text):
+        """'estimated 4 min 10 s' for the script text: the hold / wait / ramp t= times with the loops expanded, plus
+        each ramp's magnet travel at its speed (needs the force calibration: connected). Unparseable: ''."""
+        try:
+            script = api.protocol.load(text)
+        except Exception:    # noqa: BLE001 - Check names the error; here only the estimate is wanted
+            return ""
+        from mtpy.protocol.check import duration
+
+        def travel(body):
+            total = 0.0
+            for st in body:
+                if st.kind == "loop":
+                    total += st.args["n"].value * travel(st.body)
+                elif st.kind == "ramp" and "t" not in st.args and "speed" in st.args:
+                    try:
+                        p0 = api.magnet.force_position(st.args["from"].value)
+                        p1 = api.magnet.force_position(st.args["to"].value)
+                        total += abs(p1 - p0) / st.args["speed"].value
+                    except Exception:    # noqa: BLE001, S110 - no calibration yet: the ramp is not counted
+                        pass
+            return total
+        total = duration(script.body) + travel(script.body)
+        return f"estimated {int(total // 60)} min {total % 60:.0f} s (t= and speed= moves; the rest not counted)"
+
+    def _show_guide(self):
+        """The script guide inside the program (owner 2026-11-05: the .md opened in another application)."""
+        if not hasattr(self, "guide_panel"):
+            tb = QTextBrowser()
+            tb.setOpenExternalLinks(True)
+            tb.setMarkdown(GUIDE.read_text(encoding="utf-8"))
+            self.guide_panel = _Panel(self, "Script guide", tb)
+            self.guide_panel.resize(760, 820)
+        self.guide_panel.open_()
 
     def _check_protocol(self):
         text = self.prot_edit.toPlainText()
@@ -1421,12 +1493,13 @@ class MainWindow(QMainWindow):
             return rep
         self._call(job, "check", lambda rep: self.prot_status.setText(
             ("OK" if rep["ok"] else "ERRORS") + (f"; coerced {len(rep['coerced'])}" if rep.get("coerced") else "")
+            + ("; " + self._estimate_text(text) if rep["ok"] else "")
             + ("\n" + "\n".join(str(e) for e in rep["errors"]) if rep.get("errors") else "")))
 
     def _table_to_script(self):
         try:
             self.prot_edit.setPlainText(self.exp_table.to_script())
-            self.prot_status.setText("script from the table; Check or Start")
+            self.prot_status.setText(f"script from the table; Check or Start. {self._estimate_text(self.prot_edit.toPlainText())}")
             return True
         except ValueError as e:
             self._fail("table", str(e))
@@ -1659,6 +1732,11 @@ class MainWindow(QMainWindow):
         xs = base[kx]
         self.plot.setLabel("bottom", AXES[kx])
         self.plot.setLabel("left", AXES[ky])
+        if getattr(self, "_plot_ky", None) != ky:        # rig 2026-11-05: the legend kept the old axis's name
+            for c in self.curves.values():
+                self.plot.removeItem(c)
+            self.curves.clear()
+            self._plot_ky = ky
         if ky in base:
             ys = {None: base[ky]}
         else:
@@ -1682,6 +1760,12 @@ class MainWindow(QMainWindow):
     def _on_event(self, ev):
         kind = getattr(ev, "kind", "?")
         if kind == "motor_reading":
+            if getattr(ev, "device", None) == "magnet" and isinstance(getattr(ev, "readback", None), (int, float)):
+                self._mag = float(ev.readback)          # the poller's rate (10 Hz), as the run file has it
+                try:
+                    self._force = api.magnet.force_at(self._mag)
+                except Exception:    # noqa: BLE001, S110 - no calibration: the 2 Hz tick keeps its value
+                    pass
             return
         extra = {k: v for k, v in vars(ev).items() if k not in ("t", "kind", "caller", "event_id") and v not in (None, {})}
         self._log(f"{time.strftime('%H:%M:%S', time.localtime(ev.t))}  {kind}  {_sentence(extra)}", detail=str(extra)[:400])

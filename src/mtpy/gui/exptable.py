@@ -10,7 +10,16 @@ Owner's example (five columns):
     Rotor (degree)   -3600   3600      0      0      0
     Rotor speed (SPD)   50     50      0      0      0
 """
-from PySide6.QtWidgets import QHBoxLayout, QLabel, QPushButton, QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget
+from PySide6.QtWidgets import (
+    QHBoxLayout,
+    QLabel,
+    QPushButton,
+    QSpinBox,
+    QTableWidget,
+    QTableWidgetItem,
+    QVBoxLayout,
+    QWidget,
+)
 
 from mtpy.devices.autonics import PULSES_PER_TURN
 
@@ -19,12 +28,18 @@ SPD_TO_TURNS_S = 10.0 / PULSES_PER_TURN     # shortcut: the Autonics multiplier 
 EXAMPLE = [[1, 0, 0.1, -3600, 50], [1, 0, 0.1, 3600, 50], [1, 0, 0.1, 0, 0], [50, 0, 0.03, 0, 0], [1, 0, 0.1, 0, 0]]
 
 
-def compile_table(columns, name="table"):
-    """columns: [[force_pN, wait_s, motor_mm_s, rotor_deg, rotor_spd], ...] -> the protocol script text.
+def compile_table(columns, name="table", repeat=1):
+    """columns: [[force_pN, wait_s, motor_mm_s, rotor_deg, rotor_spd], ...] -> the protocol script text; repeat > 1
+    wraps the columns in `loop n=repeat` (owner 2026-11-05: cycle repeat).
     A rotation column turns by the degrees at the SPD speed (the force set first, as `rotate` does); a column whose
     force differs from the previous one ramps to it at the motor speed (`hold` when no speed is given); a wait
     follows when given; an empty column is a comment. ValueError names the column of a bad value."""
     lines = ["grammar 0.1", f'protocol "{name}"']
+    repeat = int(repeat)
+    if repeat < 1:
+        raise ValueError("repeat must be >= 1")
+    if repeat > 1:
+        lines.append(f"loop n={repeat}")
     prev_f, turns = None, 0.0
     for k, col in enumerate(columns, 1):
         try:
@@ -51,6 +66,8 @@ def compile_table(columns, name="table"):
             done.append(f"wait t={w:g}")
         lines.append(f"# column {k}" + ("" if done else ": nothing to do"))
         lines += done
+    if repeat > 1:
+        lines.append("end")
     lines.append("end protocol")
     return "\n".join(lines) + "\n"
 
@@ -72,11 +89,19 @@ class ExpTable(QWidget):
         self.btn_script = QPushButton("Table -> script", clicked=on_script)
         self.btn_start = QPushButton("Start from table", clicked=on_start)
         self.btn_example = QPushButton("Load example", clicked=lambda: self.set_columns(EXAMPLE))
+        self.repeat = QSpinBox()              # owner 2026-11-05: cycle repeat -> loop n=
+        self.repeat.setRange(1, 100000)
+        self.repeat.setPrefix("repeat ")
+        self.repeat.setSuffix(" x")
         self.info = QLabel("columns = steps: a force change at the motor speed, or a rotation at the rotor speed, then the wait")
         self.info.setWordWrap(True)
-        for w in (self.btn_add, self.btn_del, self.btn_script, self.btn_start, self.btn_example):
+        for w in (self.btn_add, self.btn_del, self.btn_example, self.repeat):
             row.addWidget(w)
         lay.addLayout(row)
+        row2 = QHBoxLayout()               # design critique review 2026-11-05: one row cut the button texts off
+        for w in (self.btn_script, self.btn_start):
+            row2.addWidget(w)
+        lay.addLayout(row2)
         lay.addWidget(self.info)
         self.add_column()     # design critique 2026-11-05 #1: the table opens empty (one zero column), never pre-filled
 
@@ -104,4 +129,4 @@ class ExpTable(QWidget):
             self.add_column(col)
 
     def to_script(self, name="table"):
-        return compile_table(self.columns(), name)
+        return compile_table(self.columns(), name, self.repeat.value())

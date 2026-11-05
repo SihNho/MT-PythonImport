@@ -281,10 +281,15 @@ class Engine:
             self.steps_done += 1
 
     def _motion(self, start):
-        """Start a move (an API call returning a Motion) and wait for it in short slices; stop -> cancel."""
+        """Start a move (an API call returning a Motion) and wait for it in short slices; stop -> cancel. A Motion
+        that knows its own duration (`expected_s`, the magnet's distance / speed) extends the timeout by 1.5 x it."""
         m = start()
-        t_end = time.monotonic() + self.motion_timeout_s
+        t0 = time.monotonic()
         while True:
+            exp = getattr(m, "expected_s", None)
+            exp = exp() if callable(exp) else exp        # known once the move's send has read the position
+            limit = self.motion_timeout_s + 1.5 * float(exp or 0.0)
+            t_end = t0 + limit
             if self._stop.is_set() and not m.done:
                 m.cancel()
                 try:
@@ -301,8 +306,7 @@ class Engine:
                         m.wait(5.0)
                     except api.MtpyError:
                         pass
-                    raise api.Timeout(f"{m.what} not finished within {self.motion_timeout_s:g} s; stopped in "
-                                      "place") from None
+                    raise api.Timeout(f"{m.what} not finished within {limit:g} s; stopped in place") from None
 
     def _sleep(self, t):
         """Wait t seconds of protocol time: paused time does not count; stop / emergency stop end it."""

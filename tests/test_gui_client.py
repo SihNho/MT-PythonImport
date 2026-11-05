@@ -45,7 +45,7 @@ def test_window_runs_the_flow_as_a_client_of_the_engine(engine, tmp_path, monkey
         assert "8 / 8" in w.dev_summary.text() and client.events.history() != []      # MT-TIRF: eight simulators
         # acquisition: the display comes from the shared-memory snapshot, the plot history grows
         w._toggle_acq()
-        _until(app, lambda: w.btn_live.text() == "Stop acquisition", 20, "acquisition started")
+        _until(app, lambda: w.btn_live.text() == "Stop the camera", 20, "acquisition started")
         _until(app, lambda: str(w.cam_label.text).startswith("JAI frame"), 20, "a frame shown from the snapshot")   # pg.LabelItem
         # picks on the image, then the z scan in the engine (progress polled), beads from the written .cal
         w.picks = [(708.0, 301.0)]                       # bead 1 of the fixture's cal002
@@ -57,13 +57,13 @@ def test_window_runs_the_flow_as_a_client_of_the_engine(engine, tmp_path, monkey
         _until(app, lambda: w.cal_status.text().startswith(("done", "FAILED")), 60, "z scan")
         assert w.cal_status.text().startswith("done: 1 beads"), w.cal_status.text()
         w._toggle_acq()
-        _until(app, lambda: w.btn_live.text() == "Start acquisition", 20, "acquisition stopped")
+        _until(app, lambda: w.btn_live.text() == "1. Start the camera", 20, "acquisition stopped")
         w._load_cal_list()
         w.role_ref.setText("1")
         w._select_beads()
         _until(app, lambda: w.bead_ids == [1], 20, "bead selected")
         w._toggle_acq()
-        _until(app, lambda: w.btn_live.text() == "Stop acquisition" or fails, 90, "acquisition with the bead")
+        _until(app, lambda: w.btn_live.text() == "Stop the camera" or fails, 90, "acquisition with the bead")
         assert not fails, fails
         w.btn_rec.setChecked(True)
         w._toggle_rec()
@@ -72,7 +72,7 @@ def test_window_runs_the_flow_as_a_client_of_the_engine(engine, tmp_path, monkey
         w.btn_rec.setChecked(False)
         w._toggle_rec()
         w._toggle_acq()
-        _until(app, lambda: w.btn_live.text() == "Start acquisition", 20, "stopped")
+        _until(app, lambda: w.btn_live.text() == "1. Start the camera", 20, "stopped")
         # Disconnect = the shutdown sequence through the client; the engine releases everything
         w._disconnect()
         _until(app, lambda: not client.api.devices.status(), 60, "shutdown through the client")

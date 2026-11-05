@@ -127,6 +127,27 @@ trip to another page or a guess; **minor** = wording and polish.
 5. **Speak the user's language (#9, #10, #12)** - the safety profile as a table, no decision numbers in labels,
    event lines as sentences.
 
+## Review after the owner's first full run (same evening, 2026-11-05 ~22:30)
+
+Re-checked on simulator screenshots of every page after the owner's list (gui.md "Owner's list after the first
+full run") was applied. What changed, against the findings above:
+
+| # | Status | Seen |
+|---|---|---|
+| 1, 2, 3, 4, 5, 9, 10, 12 | fixed earlier tonight (gui.md) | empty table and script; one folder dialog; QSettings at a temp ini in the tests; EMERGENCY STOP (Shift+Esc) with the banner; "1. Start the camera" on the page; profile table; plain titles; event sentences |
+| 7 | fixed | "4. Record on" / "* Recording (press to stop)" is the one Record button, on the Run page, with its state |
+| 8 | fixed | the bar reads `1. Setup | 2. Run | 3. Experiment | More...`; Explore, Beads, Calibrate, Save appear only after More (unnumbered) |
+| 14 | partly | the residual has its own plot (owner: both curves were unreadable on one axis); the empty axes before a .cal is loaded remain |
+| 19 | fixed | the Script guide moved to the Experiment page and opens inside the program |
+| 11, 13, 15, 16, 17, 18, 20-25 | open | as above |
+| new | fixed | the Y label said Force while the legend said Magnet (the curves of the old axis stayed): the curves are rebuilt when the axis changes |
+| new | fixed | the magnet / force curve drew a ramp as stairs: the plot took the 2 Hz read-back; it takes the poller's 10 Hz readings now, the run file's own values |
+| new | fixed | right click opened pyqtgraph's View / Export menu over the pick removal: the menu is off |
+| new | fixed | the Experiment table's button row cut the texts off at 440 px ("tart from tabl"): two rows |
+| new | open | the Experiment page's protocol combo sits under the tall editor and is seen only after a scroll: move it above the editor |
+| new | open | "4. Record on" is a checkable button whose pressed look is Qt's faint grey: a colour while recording (as the banner) |
+| new | noted | autofocus (lost-bead reseed, the piezo clamp at a user-chosen position) is not built; the owner expects it - a Run page step once it exists |
+
 ## Not checked
 
 The rig backend (never pressed Connect on the rig), the window at 1920 x 1080 and at the rig's own screen
