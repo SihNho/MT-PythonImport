@@ -25,6 +25,6 @@
    the experiment software is outside the lock) is the owner's call then; during development it holds it.
 
 ## Consequences
-- `MT Tracker (rig).cmd` runs the GUI directly; the lock log is the program's event list and the rig lock file.
+- `MT Tracker.cmd` (until 2026-11-05 `MT Tracker (rig).cmd`) runs the GUI directly; the lock log is the program's event list and the rig lock file.
 - Tests never touch the real lock: `tests/conftest.py` `fake_riglock` (autouse) stands in for `riglock.py`.
 - Crash recovery (the program dies with devices open) is still the stale-lock path of RULES.md, done by a person.

@@ -232,6 +232,10 @@ Short and current. Details live in the linked documents; the history is in git a
   (now LabVIEW's Korean long date + 12-hour time, `lvfiles.cal_date`) and the z step (now the single-precision
   value LabVIEW stores, 0.10000000149). The .tra export (tra001-000) was identical: header, weekday, columns
   (frame, magnet mm, rotor deg, x y z per bead).
+- **2026-11-05 ~05:30 (owner: "sim and real are not needed in the backend, only the real motors; what is the
+  simulation fixture"):** the GUI's default backend is the rig (real-motors); `MT Tracker.cmd` launches it (the
+  `(rig)` launcher merged into it); the Backend and Simulator-fixture rows show only under `--backend sim` (the
+  developer's `MT Tracker (simulators).cmd`, the tests).
 - **Next:** protocols on hardware (force ramps, rotation, 3-state clamp, autofocus), the stop / watchdog paths
   exercised on the rig, then the tethered-bead calibration.
 - **Queued (owner 2026-10-30):** lock the camera settings while a z scan runs (the GUI must not change exposure,

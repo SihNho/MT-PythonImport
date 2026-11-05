@@ -389,13 +389,17 @@ class MainWindow(QMainWindow):
     def _panel_setup(self):
         w = QWidget()
         f = QFormLayout(w)
+        f.addRow("Safety profile", self._profile_label())
+        # owner 2026-11-05: the user sees the rig only; the backend and the simulator fixture are the developer's
+        # (--backend sim on the command line, the tests) and stay off the panel otherwise
         self.backend = QComboBox()
         self.backend.addItem("sim: every device simulated", "sim")
-        f.addRow("Safety profile", self._profile_label())
         self.backend.addItem("real: JAI camera + Andor iXon EMCCD (SDK2) under the rig lock; motors simulated", "real")
         self.backend.addItem("rig: JAI + iXon + motors through the motion gate", "real-motors")
         self.backend.setCurrentIndex(self.backend.findData(self.backend_arg))
-        f.addRow("Backend", self.backend)
+        dev = self.backend_arg == "sim"
+        if dev:
+            f.addRow("Backend (developer)", self.backend)
         self.mode = QComboBox()          # owner 2026-10-30: MT and MT-TIRF are distinct modes of the program
         self.mode.addItem("MT: tracking (JAI, motors)", "MT")
         self.mode.addItem("MT-TIRF: tracking + EMCCD, Arduino sync, lasers, light gating (phase 10a)", "MT-TIRF")
@@ -407,7 +411,8 @@ class MainWindow(QMainWindow):
         self.cam_sdk.addItem("eBUS (JAI / Pleora driver - LabVIEW cannot open the camera)", "ebus")
         f.addRow("Camera SDK", self.cam_sdk)
         self.ed_fixture = QLineEdit(str(self.fixture))
-        f.addRow("Simulator fixture", _row(self.ed_fixture, QPushButton("Browse...", clicked=self._browse_fixture)))
+        if dev:
+            f.addRow("Simulator fixture", _row(self.ed_fixture, QPushButton("Browse...", clicked=self._browse_fixture)))
         f.addRow(_row(QPushButton("Connect", clicked=self._connect),
                       QPushButton("Disconnect", clicked=self._disconnect),
                       QPushButton("Run self-check", clicked=self._self_check)))

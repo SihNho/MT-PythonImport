@@ -4,8 +4,9 @@ Owner 2026-10-29: build the program first and fix design, protocol and detail by
 ("디자인 부분이나 아니면 프로토콜, 디테일한 부분 등은 실행해보면서 수정하는게 빠를 것 같음"); phases 6 and 7 (real devices) follow.
 
 ## Run
-Double-click `MT Tracker (simulators).cmd` (TEST-ONLY limits), `MT Tracker.cmd` (shipped profile) or
-`MT Tracker (rig).cmd` (JAI + iXon + motors; the program takes the rig lock itself, decision 0026) in the repository
+Double-click `MT Tracker.cmd` (the rig: JAI + iXon + motors; the program takes the rig lock itself, decision 0026)
+in the repository folder. `MT Tracker (simulators).cmd` is the developer's: every device simulated with TEST-ONLY
+limits, and the Setup panel then shows the backend and the fixture (owner 2026-11-05: the user sees the rig only)
 root; the owner never types scripts into a terminal (2026-10-30). The same from a terminal:
 ```
 .venv\Scripts\python.exe -m mtpy.gui --sim-dev          # simulators; TEST-ONLY focus / rotor limits on a config copy

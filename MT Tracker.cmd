@@ -1,4 +1,7 @@
 @echo off
-rem Double-click launcher: the GUI on the shipped safety profile (phases 6 / 7 add the real devices).
+rem Double-click launcher: the GUI on the rig - JAI + iXon + PI / ASI / Autonics through the motion gate (the default
+rem backend, decision 0025). The program takes the shared rig lock itself when you press Connect and releases it
+rem after the shutdown sequence (decision 0026); no wrapper. Refused while LabVIEW runs or the rig is in experiment.
 cd /d "%~dp0"
-start "" "%~dp0.venv\Scripts\pythonw.exe" -m mtpy.gui
+"%~dp0.venv\Scripts\python.exe" -m mtpy.gui --out "%~dp0runs"
+if errorlevel 1 pause

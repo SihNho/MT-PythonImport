@@ -1,8 +1,9 @@
-"""`python -m mtpy.gui [--backend sim|real] [--fixture DIR] [--out DIR] [--sim-dev] [--screenshot PNG]`
+"""`python -m mtpy.gui [--backend real-motors|real|sim] [--fixture DIR] [--out DIR] [--sim-dev] [--screenshot PNG]`
 
---backend   sim (default): every device simulated; real: the JAI camera (IMAQdx) and the Andor iXon EMCCD (SDK2), motors simulated
-            (phase 6); real-motors: camera + PI / ASI / Autonics through the motion gate (phase 7). Both real
-            backends take the shared rig lock themselves at Connect (decision 0026).
+--backend   real-motors (default; owner 2026-11-05: the program is the rig's): JAI + iXon + PI / ASI / Autonics
+            through the motion gate (phase 7); real: the cameras under the rig lock, motors simulated (phase 6);
+            sim: every device simulated (development and the tests; the Setup panel then shows the backend and the
+            fixture). Both real backends take the shared rig lock themselves at Connect (decision 0026).
 
 --fixture   folder of recorded frames (img*.tif) and a `cal*` file for the simulated camera (default: $MTPY_DATA/test)
 --out       folder for run files (default: <cwd>/runs)
@@ -48,10 +49,12 @@ def main(argv=None):
         "MTPY_DATA", r"G:\Data\SiHyeong\20260906 Kimlab - 50bp 16X WT 90Hz 1p2 Ramp_Newbatch")) / "test"))
     ap.add_argument("--out", default=str(Path.cwd() / "runs"))
     ap.add_argument("--sim-dev", action="store_true")
-    ap.add_argument("--backend", choices=("sim", "real", "real-motors"), default="sim")
+    ap.add_argument("--backend", choices=("sim", "real", "real-motors"), default="real-motors")
     ap.add_argument("--screenshot", default=None)
     ap.add_argument("--engine", action=argparse.BooleanOptionalAction, default=None)
     a = ap.parse_args(argv)
+    if a.sim_dev and a.backend != "sim":
+        ap.error("--sim-dev (TEST limits) is for --backend sim only")
     from PySide6.QtCore import QTimer
     from PySide6.QtWidgets import QApplication
 
