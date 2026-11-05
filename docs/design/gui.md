@@ -19,8 +19,8 @@ root; the owner never types scripts into a terminal (2026-10-30). The same from 
 Owner: "the usual experiment is: watch the camera, pick beads, bead calibration, choose where to save, tracking,
 save - here everything is scattered". Step 2 **Run** is that order on one page: (1) Start acquisition and watch
 (no file is written while no beads are selected); (2) left click the beads; (3) **Calibrate the picked beads...**
-asks where to write the .cal (a save dialog; the folder is remembered as the data folder), scans, then asks for
-the run file (`tra001.h5` next to the .cal) and restarts the acquisition tracking every bead of the .cal with
+asks for the data folder once (remembered; the names are LabVIEW's next free `cal001` and `tra001.h5` in it:
+design critique 2026-11-05 #2), scans, then tracks every bead of the .cal from the next frame on with
 bead 1 the reference - the user never stops the camera by hand; **Reset calibration** drops the beads and the
 image takes picks again; (4) Record on / off writes into the run file; (5) **Save the traces** writes the LabVIEW
 `tra001-000` next to it. **Script guide** opens [guide/protocol-scripts.ko.md](../guide/protocol-scripts.ko.md).
@@ -31,6 +31,15 @@ at bead selection is the program's (the tracker is built at acquisition start) a
 Done the same night: `api.acq.retarget` swaps the tracker and the run file between two frames, so Select beads,
 the Run page's step 3 and Reset calibration never stop the camera (one segment through the whole flow). The
 EMCCD is the camera whose acquisition and shutter the user controls.
+
+## Design critique 2026-11-05 - what was applied the same night
+[design-critique-2026-11-05.md](design-critique-2026-11-05.md) (the owner: "design lint"); applied: #1 the
+Experiment table and script open empty, "Load example" fills them; #2 one data-folder dialog before the scan;
+#3 the tests point QSettings at a temp ini, a remembered folder that is gone falls back to the run folder; #4
+"EMERGENCY STOP (Shift+Esc)" apart at the far right, Acknowledge only inside the red banner while the stop is
+engaged; #5 "1. Start the camera" on the Run page; #9 the safety profile as a table (path and command in the
+tooltip); #10 plain group titles; #12 event lines as sentences (the fields only in `gui_events.log`). Open: the
+rest (#6-#8, #11, #13-#18 and the minor ones).
 
 ## What the first build has (src/mtpy/gui)
 One window after the mock-up ([mockups/2026-10-23-main-window](../mockups/2026-10-23-main-window/README.md)):

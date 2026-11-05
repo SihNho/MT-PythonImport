@@ -39,10 +39,13 @@ def _until(app, cond, timeout_s, what):
 @pytest.fixture
 def window(tmp_path, monkeypatch):
     need(FIXTURE / "cal002")
+    from PySide6.QtCore import QSettings
     from PySide6.QtWidgets import QApplication
 
     from mtpy.gui.__main__ import sim_dev_config
     from mtpy.gui.app import MainWindow
+    QSettings.setDefaultFormat(QSettings.IniFormat)          # design critique #3: never the user's own settings
+    QSettings.setPath(QSettings.IniFormat, QSettings.UserScope, str(tmp_path / "settings"))
     saved = (safety.CONFIG, safety._active, api.beads._selected)
     monkeypatch.setattr(api.protocol, "_engine", None)
     cfg = sim_dev_config()
@@ -528,16 +531,31 @@ def test_run_page_calibrates_then_tracks_into_the_chosen_run_file(window, monkey
     w.cal_avg.setValue(1)
     w.cal_settle.setValue(0.0)
     asked = []
-    answers = iter([str(tmp_path / "cal001"), str(tmp_path / "tra001.h5")])
-    monkeypatch.setattr(QFileDialog, "getSaveFileName", staticmethod(lambda *a, **k: (asked.append(a[1]), (next(answers), ""))[1]))
+    monkeypatch.setattr(QFileDialog, "getExistingDirectory", staticmethod(lambda *a, **k: (asked.append(a[1]), str(tmp_path))[1]))
     w._flow_calibrate()
     seg = api.acq.status()["segment"]
     _until(app, lambda: w.bead_ids == [1, 2] and api.acq.running() and w.ed_h5.text() == str(tmp_path / "tra001.h5"), 60,
            "scan, beads selected, tracking into the chosen run file")
-    assert len(asked) == 2 and (tmp_path / "cal001").exists() and w.roles[1] == "reference"
+    assert len(asked) == 1 and (tmp_path / "cal001").exists() and w.roles[1] == "reference"
+    assert w.btn_run_cam.text() == "Stop the camera"
     assert api.acq.status()["segment"] == seg          # the camera never stopped
     w._new_calibration()
     _until(app, lambda: api.beads.selected() is None and w.bead_ids == [] and api.acq.running()
            and api.acq.status()["segment"] == seg and w.ed_h5.text() == "", 30, "beads dropped, camera still running")
     w._toggle_acq()
     _until(app, lambda: not api.acq.running(), 15, "stopped")
+
+
+
+def test_experiment_opens_empty_and_the_estop_banner_shows_only_while_engaged(window):
+    """Design critique 2026-11-05 #1 and #4: no runnable example on the Experiment page at start; the red banner
+    with Acknowledge appears with the emergency stop and goes with it."""
+    app, w = window
+    assert w.prot_edit.toPlainText() == "" and w.exp_table.columns() == [["0"] * 5]
+    w.exp_table.btn_example.click()
+    assert len(w.exp_table.columns()) == 5
+    assert not w.estop_banner.isVisible()
+    w._estop()
+    _until(app, lambda: w.estop_banner.isVisible() and w.btn_ack.isVisible(), 5, "banner")
+    w._estop_clear()
+    _until(app, lambda: not w.estop_banner.isVisible(), 5, "banner gone")

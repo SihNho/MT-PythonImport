@@ -125,6 +125,20 @@ def next_tra(folder):
     return f"tra{n:03d}"
 
 
+def _sentence(extra):
+    """One readable line from an event's fields: the action first, then the named things, then the rest flattened
+    ('open emccd', 'start name tra001, beads [1, 2], cal ...')."""
+    x = dict(extra)
+    x.update(x.pop("extra", {}) if isinstance(x.get("extra"), dict) else {})
+    parts = [str(x.pop("action"))] if "action" in x else []
+    for k in ("device", "name", "quantity", "request", "readback", "reason", "error"):
+        if k in x:
+            v = x.pop(k)
+            parts.append(f"{v}" if k == "device" else f"{k} {v}")
+    parts += [f"{k} {v}" for k, v in x.items()]
+    return ", ".join(parts)[:160]
+
+
 class Worker(QRunnable):
     """Run fn() on the thread pool as caller "gui"; done(result) or failed(text) back on the GUI thread."""
 
@@ -217,6 +231,7 @@ class MainWindow(QMainWindow):
         super().__init__()
         self.fixture, self.out, self.sim_dev = Path(fixture), Path(out), sim_dev
         self.backend_arg = backend
+        self.settings = QSettings("KimLab", "MT Tracker")       # the data folder last chosen (tests: a temp ini)
         self.pool = QThreadPool.globalInstance()
         self._workers = set()                          # alive until done / failed: the pool would delete them first
         self._slow_busy, self._acq_running = False, False
@@ -242,6 +257,8 @@ class MainWindow(QMainWindow):
         self.setCentralWidget(root)
         v = QVBoxLayout(root)
         v.addWidget(self._top_bar())
+        self.estop_banner = self._estop_banner()
+        v.addWidget(self.estop_banner)
         v.addWidget(self._step_bar())
         body = QHBoxLayout()
         v.addLayout(body, 1)
@@ -271,13 +288,14 @@ class MainWindow(QMainWindow):
         p = safety.profile()
         cfg = getattr(safety, "CONFIG", None)             # a path in-process; the engine's own when a client
         where = f"{Path(cfg) / 'safety_profile.json'}" if isinstance(cfg, (str, Path)) else "config/safety_profile.json (the engine's)"
-        lines = [(f"{where}  (v{p.get('version')}; read at start; "
-                  "change: python tools/rig_set_limit.py <quantity> --max ... --reason \"...\", then restart)")]
-        for q, lim in p["limits"].items():
-            lines.append(f"  {q}: {lim.get('min')} .. {lim.get('max')} {lim.get('unit', '')}"
-                         + ("" if lim.get("verified") else "  UNVERIFIED") + (" (max None: every request refused)" if lim.get("max") is None else ""))
-        lab = QLabel(chr(10).join(lines))
-        lab.setWordWrap(True)
+        rows = "".join(f"<tr><td>{q}</td><td align=right>{lim.get('min')}</td><td align=right>{lim.get('max')}</td>"
+                       f"<td>{lim.get('unit', '')}</td><td>{'' if lim.get('verified') else 'UNVERIFIED'}"
+                       f"{' (max None: every request refused)' if lim.get('max') is None else ''}</td></tr>"
+                       for q, lim in p["limits"].items())
+        lab = QLabel(f"<b>Rig safety profile v{p.get('version')}</b> (read at start)<table cellspacing=0 cellpadding=2>"
+                     f"<tr><th>quantity</th><th>min</th><th>max</th><th>unit</th><th></th></tr>{rows}</table>")
+        lab.setToolTip(f"{where}\nTo change a limit: python tools/rig_set_limit.py <quantity> --max ... --reason \"...\", "
+                       "then restart the program (design critique 2026-11-05 #9: the path and the command live here)")
         lab.setTextInteractionFlags(Qt.TextSelectableByMouse)
         return lab
 
@@ -293,15 +311,30 @@ class MainWindow(QMainWindow):
         self.btn_live = QPushButton("Start acquisition", clicked=self._toggle_acq)
         self.btn_rec = QPushButton("Record", clicked=self._toggle_rec)
         self.btn_rec.setCheckable(True)
-        self.btn_stop = QPushButton("STOP", clicked=self._estop)
+        self.btn_stop = QPushButton("EMERGENCY STOP  (Shift+Esc)", clicked=self._estop)
+        self.btn_stop.setShortcut("Shift+Esc")
         self.btn_stop.setToolTip("Emergency stop: every motor halts, the protocol ends, and every move is refused until "
                                  "Acknowledge is pressed. Not for ending an acquisition (Stop acquisition) or a protocol (Stop).")
         self.btn_stop.setStyleSheet("background:#B91C1C;color:white;font-weight:bold;padding:6px 18px")
         self.btn_ack = QPushButton("Acknowledge", clicked=self._estop_clear)
         self.btn_ack.setToolTip("Clears the emergency stop after STOP (owner 2026-11-05: 'what are these'). Needed only "
                                 "after STOP; Connect refuses while the stop is engaged.")
-        for b in (self.btn_display, self.btn_live, self.btn_rec, self.btn_stop, self.btn_ack):
+        for b in (self.btn_display, self.btn_live, self.btn_rec):
             h.addWidget(b)
+        h.addSpacing(60)                 # design critique 2026-11-05 #4: apart from the other stops, far right
+        h.addWidget(self.btn_stop)
+        return w
+
+    def _estop_banner(self):
+        """Red banner between the top bar and the steps while the emergency stop is engaged, Acknowledge inside it
+        (the mock-up's banner; design critique 2026-11-05 #4). Hidden otherwise."""
+        w = QFrame()
+        w.setStyleSheet("background:#B91C1C;color:white;font-weight:bold")
+        h = QHBoxLayout(w)
+        self.estop_text = QLabel("EMERGENCY STOP ENGAGED")
+        h.addWidget(self.estop_text, 1)
+        h.addWidget(self.btn_ack)
+        w.setVisible(False)
         return w
 
     def _step_bar(self):
@@ -405,7 +438,7 @@ class MainWindow(QMainWindow):
             f.addRow("Backend (developer)", self.backend)
         self.mode = QComboBox()          # owner 2026-10-30: MT and MT-TIRF are distinct modes of the program
         self.mode.addItem("MT: tracking (JAI, motors)", "MT")
-        self.mode.addItem("MT-TIRF: tracking + EMCCD, Arduino sync, lasers, light gating (phase 10a)", "MT-TIRF")
+        self.mode.addItem("MT-TIRF: tracking + EMCCD", "MT-TIRF")
         self.mode.setCurrentIndex(self.mode.findData(api.devices.default_mode()))
         self.mode.currentIndexChanged.connect(self._apply_mode)
         f.addRow("Mode", self.mode)
@@ -434,7 +467,7 @@ class MainWindow(QMainWindow):
         cams_lay = QVBoxLayout(cams)
         self.cam_panel = _Panel(self, "Camera settings", cams)
         f.addRow(QPushButton("Camera settings...", clicked=self.cam_panel.open_))
-        g = QGroupBox("Camera preset (U15)")
+        g = QGroupBox("Camera preset")
         gf = QFormLayout(g)
         self.cam_rate = QComboBox()
         for r in ("90", "150"):
@@ -484,7 +517,7 @@ class MainWindow(QMainWindow):
                                   TOUCH_FILE.with_name("emccd_favourites.json"))
         cams_lay.addWidget(self.em_attrs, 1)
         self.cam_panel.resize(900, 820)
-        g2 = QGroupBox("Analysis (decision 0024)")
+        g2 = QGroupBox("Tracking")
         g2f = QFormLayout(g2)
         self.z_method = QComboBox()
         self.z_method.addItems(list(Z_METHODS))
@@ -492,7 +525,7 @@ class MainWindow(QMainWindow):
         g2f.addRow("Z method", self.z_method)
         g2f.addRow(self.gpu)
         f.addRow(g2)
-        g3 = QGroupBox("Force equation (decision 0018)")
+        g3 = QGroupBox("Force from magnet position")
         g3f = QFormLayout(g3)
         self.touch_mm = _spin(0.0, 60.0, 0.01, load_touch_mm(), 2, " mm")
         self.touch_mm.setEnabled(False)                 # locked: Change... unlocks, Set applies, saves and locks again
@@ -516,18 +549,19 @@ class MainWindow(QMainWindow):
         words of what to do; the other pages keep the settings."""
         w = QWidget()
         f = QFormLayout(w)
-        self.run_cam = QLabel("1. Start acquisition (top bar) and watch the JAI image; no file is written while no "
-                              "beads are selected")
+        self.run_cam = QLabel("1. Start the camera and watch the JAI image; no file is written while no beads are "
+                              "selected")
+        self.btn_run_cam = QPushButton("1. Start the camera", clicked=self._toggle_acq)
         self.run_beads = QLabel("2. Left click the beads on the image (right click removes a pick): 0 picked")
-        self.run_cal = QLabel("3. asks where to write the .cal (cal001, cal002, ... in the data folder), scans the "
-                              "picked beads, then asks for the run file and tracks every bead of the .cal (bead 1 = "
-                              "reference) from the next frame on, the camera never stops. Reset calibration drops "
-                              "the beads so the image takes picks again.")
+        self.run_cal = QLabel("3. asks for the data folder once (the calibration cal001, cal002, ... and the run file "
+                              "tra001.h5, tra002.h5, ... go there), scans the picked beads, then tracks every bead of "
+                              "the .cal (bead 1 = reference) from the next frame on; the camera never stops. Reset "
+                              "calibration drops the beads so the image takes picks again.")
         self.run_track = QLabel("4. not tracking")
         self.run_save = QLabel("5. the traces go next to the run file as tra001-000, tra001-001, ... (LabVIEW's files)")
         for lab in (self.run_cam, self.run_beads, self.run_cal, self.run_track, self.run_save):
             lab.setWordWrap(True)
-        f.addRow(self.run_cam)
+        f.addRow(_row(self.run_cam, self.btn_run_cam))
         f.addRow(_row(self.run_beads, QPushButton("Clear picks", clicked=self._clear_picks)))
         f.addRow(_row(QPushButton("3. Calibrate the picked beads...", clicked=self._flow_calibrate),
                       QPushButton("Reset calibration", clicked=self._new_calibration)))
@@ -539,32 +573,28 @@ class MainWindow(QMainWindow):
         return w
 
     def _flow_calibrate(self):
-        """Step 3 of the Run page: the .cal is asked for, the z scan runs, then _track_from_cal."""
+        """Step 3 of the Run page: the data folder is asked for once (design critique 2026-11-05 #2), the names are
+        LabVIEW's next free ones in it, the z scan runs, then _track_from_cal."""
         if not self.picks or not api.acq.running():
-            self._fail("calibrate", "start acquisition and left click the beads on the image first")
+            self._fail("calibrate", "start the camera and left click the beads on the image first")
             return
-        p, _ = QFileDialog.getSaveFileName(self, "Write the calibration to (LabVIEW names them cal001, cal002, ...)",
-                                           str(next_free(Path(self.cal_out.text()))), "Calibration (cal*);;All (*)",
-                                           options=QFileDialog.DontConfirmOverwrite)   # the z scan asks itself
-        if not p:
+        d = QFileDialog.getExistingDirectory(self, "Data folder: the calibration (cal001, ...) and the run file "
+                                             "(tra001.h5, ...) are written here", str(Path(self.cal_out.text()).parent))
+        if not d:
             return
-        QSettings("KimLab", "MT Tracker").setValue("data_dir", str(Path(p).parent))
-        self.cal_out.setText(p)
-        self._flow = True
+        self.settings.setValue("data_dir", d)
+        cal = next_free(Path(d) / "cal001")
+        self.cal_out.setText(str(cal))
+        self._flow = Path(d)
+        self.run_cal.setText(f"3. scanning -> {cal.name}; then tracking into {next_tra(d)}.h5 in {d}")
         self._run_zscan()
 
     def _track_from_cal(self, path):
-        """After the Run page's scan: the run file is asked for (next to the .cal, tra001.h5, tra002.h5, ...), every
-        bead of the .cal is selected (bead 1 the reference) and the acquisition restarts tracking them."""
-        folder = Path(path).parent
-        run, _ = QFileDialog.getSaveFileName(self, "Run file (the raw data; Save the traces writes next to it)",
-                                             str(folder / f"{next_tra(folder)}.h5"), "Run (*.h5)")
-        if not run:
-            self.run_track.setText("4. calibrated, not tracking: Beads -> Select checked beads, then Start acquisition")
-            return
-        run = Path(run)
-        self.ed_out.setText(str(run.parent))
-        self.ed_name.setText(run.stem)
+        """After the Run page's scan: the run file is the next free tra00N.h5 in the folder chosen before the scan;
+        every bead of the .cal is selected (bead 1 the reference) and tracked from the next frame on."""
+        folder = self._flow
+        self.ed_out.setText(str(folder))
+        self.ed_name.setText(next_tra(folder))
         self.ed_cal.setText(str(path))
         self.role_ref.setText("1")
         self._load_cal_list()
@@ -661,7 +691,8 @@ class MainWindow(QMainWindow):
         f.addRow("Cross (px)", self.cal_cross)
         self.cal_settle = _spin(0.0, 5.0, 0.1, zscan.SETTLE_S, 2, " s")
         f.addRow("Settle after each move", self.cal_settle)
-        data_dir = QSettings("KimLab", "MT Tracker").value("data_dir", str(self.out))   # the folder last chosen
+        data_dir = self.settings.value("data_dir", str(self.out))   # the folder last chosen, if it still exists
+        data_dir = data_dir if Path(data_dir).is_dir() else str(self.out)
         self.cal_out = QLineEdit(str(Path(data_dir) / "cal001"))   # owner 2026-11-05: browsed, not typed; the next free name at Run
         row = QHBoxLayout()
         row.addWidget(self.cal_out)
@@ -682,10 +713,13 @@ class MainWindow(QMainWindow):
         # script below; the text stays the advanced view
         self.exp_table = ExpTable(self._table_to_script, self._start_from_table)
         v.addWidget(self.exp_table)
-        self.prot_edit = QPlainTextEdit(EXAMPLE_PROTOCOL)
+        self.prot_edit = QPlainTextEdit()        # design critique 2026-11-05 #1: opens empty, never a runnable example
+        self.prot_edit.setPlaceholderText("The protocol script (the table above compiles to it; Load example shows one; "
+                                          "Script guide on the Run page explains the lines)")
         self.prot_edit.setStyleSheet("font-family:Consolas,monospace")
         v.addWidget(self.prot_edit, 1)
-        v.addWidget(_row(QPushButton("Load...", clicked=self._load_protocol),
+        v.addWidget(_row(QPushButton("Load example", clicked=lambda: self.prot_edit.setPlainText(EXAMPLE_PROTOCOL)),
+                         QPushButton("Load...", clicked=self._load_protocol),
                          QPushButton("Save as...", clicked=self._save_protocol),
                          QPushButton("Check", clicked=self._check_protocol)))
         self.btn_run = QPushButton("Start", clicked=self._run_protocol)
@@ -742,8 +776,9 @@ class MainWindow(QMainWindow):
             self.prot_status.setText(f"{what}: {msg}")
         self._log(f"[gui] {what}: {msg}")
 
-    def _log(self, line):
-        """The log pane and, so a refusal survives the window (owner 2026-11-04), gui_events.log in the output folder."""
+    def _log(self, line, detail=""):
+        """The log pane and, so a refusal survives the window (owner 2026-11-04), gui_events.log in the output folder
+        (with `detail`, the event's fields, which the pane leaves out: design critique 2026-11-05 #12)."""
         self.events_list.addItem(line)
         if self.events_list.count() > 500:
             self.events_list.takeItem(0)
@@ -752,7 +787,7 @@ class MainWindow(QMainWindow):
             out = Path(self.ed_out.text() or ".")
             out.mkdir(parents=True, exist_ok=True)
             with open(out / "gui_events.log", "a", encoding="utf-8") as f:
-                f.write(time.strftime("%Y-%m-%d ") + line + "\n")
+                f.write(time.strftime("%Y-%m-%d ") + line + ("  " + detail if detail else "") + "\n")
         except OSError:
             pass
 
@@ -1302,9 +1337,9 @@ class MainWindow(QMainWindow):
             self.cal_out.setText(str(next_free(path)))        # the next scan gets the next number unless told otherwise
             self._load_cal_list()
             self.calview.load(path)
-            if getattr(self, "_flow", False):
-                self._flow = False
+            if getattr(self, "_flow", None):
                 self._track_from_cal(path)
+                self._flow = None
         wk = Worker(job)                 # a failed scan is shown in the Calibrate label, not only in the status bar
         wk.setAutoDelete(False)
         self._workers.add(wk)
@@ -1317,7 +1352,7 @@ class MainWindow(QMainWindow):
     def _toggle_acq(self):
         if api.acq.running():
             self._call(api.acq.stop, "stop acquisition",
-                       lambda _: (self.btn_live.setText("Start acquisition"), self.run_track.setText("4. not tracking")))
+                       lambda _: (self._live_text(False), self.run_track.setText("4. not tracking")))
             return
         tracking = bool(self.bead_ids)   # owner 2026-11-05: watching the camera writes no run file; the file is asked
         folder = Path(self.ed_out.text()) if tracking else None   # for when tracking starts (Run page step 3)
@@ -1329,7 +1364,7 @@ class MainWindow(QMainWindow):
         self.t0 = time.time()
 
         def done(st):
-            self.btn_live.setText("Stop acquisition")
+            self._live_text(True)
             self.ed_h5.setText(str(folder / f"{name}.h5") if folder and name else "")
             if folder:
                 self.ed_name.setText(next_tra(folder))
@@ -1337,6 +1372,10 @@ class MainWindow(QMainWindow):
                                    if tracking else "4. camera running, no beads: nothing is written")
         self._call(lambda: api.acq.start(record=False, name=name, folder=folder, roles=roles, z_method=zm, gpu=gpu),
                    "start acquisition", done)
+
+    def _live_text(self, on):
+        self.btn_live.setText("Stop acquisition" if on else "Start acquisition")
+        self.btn_run_cam.setText("Stop the camera" if on else "1. Start the camera")
 
     def _toggle_rec(self):
         on = self.btn_rec.isChecked()
@@ -1350,11 +1389,13 @@ class MainWindow(QMainWindow):
     def _estop(self):
         with events.as_caller("gui"):
             estop.engage("GUI STOP button")
+        self.estop_banner.setVisible(True)
         self.statusBar().showMessage("EMERGENCY STOP engaged: moves are void until Acknowledge", 0)
 
     def _estop_clear(self):
         with events.as_caller("gui"):
             estop.clear()
+        self.estop_banner.setVisible(False)
         self.statusBar().showMessage("emergency stop released", 5000)
 
     def _mark(self):
@@ -1579,8 +1620,12 @@ class MainWindow(QMainWindow):
             self.prot_badge.setStyleSheet("background: #ffd54f; padding: 2px 8px; font-weight: bold" if running else "")
             if p["state"] != "idle":
                 self.prot_status.setText(f"{p['state']}" + (f": {p['reason']}" if p.get("reason") else ""))
-            if estop.active():
+            active = estop.active()
+            if active:
                 parts.append(f"E-STOP ENGAGED ({estop.reason()})")
+                self.estop_text.setText(f"EMERGENCY STOP ENGAGED ({estop.reason()}): every motor halted, every move "
+                                        "refused until Acknowledge")
+            self.estop_banner.setVisible(bool(active))
             self.statusBar().showMessage("   |   ".join(parts))
         except RuntimeError:                  # the window is closing (widgets deleted) while a read was in flight
             pass
@@ -1639,7 +1684,7 @@ class MainWindow(QMainWindow):
         if kind == "motor_reading":
             return
         extra = {k: v for k, v in vars(ev).items() if k not in ("t", "kind", "caller", "event_id") and v not in (None, {})}
-        self._log(f"{time.strftime('%H:%M:%S', time.localtime(ev.t))}  {kind}  {str(extra)[:160]}")
+        self._log(f"{time.strftime('%H:%M:%S', time.localtime(ev.t))}  {kind}  {_sentence(extra)}", detail=str(extra)[:400])
         if kind == "magnet_stall":
             QMessageBox.critical(self, "Magnet stall (decision 0019)",
                                  "The magnet stalled. The move and the protocol were stopped and the magnet returned "

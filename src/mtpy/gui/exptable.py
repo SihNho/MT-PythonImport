@@ -71,14 +71,14 @@ class ExpTable(QWidget):
         self.btn_del = QPushButton("- column", clicked=self.remove_column)
         self.btn_script = QPushButton("Table -> script", clicked=on_script)
         self.btn_start = QPushButton("Start from table", clicked=on_start)
+        self.btn_example = QPushButton("Load example", clicked=lambda: self.set_columns(EXAMPLE))
         self.info = QLabel("columns = steps: a force change at the motor speed, or a rotation at the rotor speed, then the wait")
         self.info.setWordWrap(True)
-        for w in (self.btn_add, self.btn_del, self.btn_script, self.btn_start):
+        for w in (self.btn_add, self.btn_del, self.btn_script, self.btn_start, self.btn_example):
             row.addWidget(w)
         lay.addLayout(row)
         lay.addWidget(self.info)
-        for col in EXAMPLE:
-            self.add_column(col)
+        self.add_column()     # design critique 2026-11-05 #1: the table opens empty (one zero column), never pre-filled
 
     def add_column(self, values=None):
         c = self.table.columnCount()

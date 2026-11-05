@@ -249,6 +249,12 @@ Short and current. Details live in the linked documents; the history is in git a
   `api.beads.select / clear` work while acquisition runs; the GUI's Select beads, the Run page's step 3 and Reset
   calibration use it, so the camera runs in one segment through watch -> calibrate -> track -> reset. Tests:
   test_data (watch -> retarget with a file -> record -> retarget to none), test_gui (one segment).
+- **2026-11-05 ~23:00 (owner: "design lint", then "fix them"):** a linked session wrote
+  `docs/design/design-critique-2026-11-05.md` (+ .ko.md; 4 critical, 14 moderate findings); the five priority
+  fixes applied here: the Experiment page opens empty (Load example), one data-folder dialog before the scan and
+  a camera button on the Run page, the tests kept out of the user's QSettings, the emergency stop apart with a
+  shortcut and Acknowledge inside the red banner only while engaged, the safety profile as a table, plain group
+  titles, event lines as sentences. The rest of the critique is open (design/gui.md lists it).
 - **Next:** protocols on hardware (force ramps, rotation, 3-state clamp, autofocus), the stop / watchdog paths
   exercised on the rig, then the tethered-bead calibration.
 - **Queued (owner 2026-10-30):** lock the camera settings while a z scan runs (the GUI must not change exposure,
