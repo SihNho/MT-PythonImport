@@ -71,6 +71,7 @@ def test_gui_flow_on_simulators(window):
     _until(app, lambda: w.bead_ids, 10, "beads selected")
     w._toggle_acq()
     _until(app, lambda: api.acq.running() and len(w.history) > 20, 30, "acquisition + display history")
+    assert w.ed_h5.text().endswith("tra001.h5") and "tracking 5 beads" in w.run_track.text()
     w.btn_rec.setChecked(True)
     w._toggle_rec()
     w.prot_edit.setPlainText(PROTOCOL)
@@ -502,3 +503,35 @@ def test_calibration_viewer_shows_the_lut_and_saves_the_band_to_the_cal(tmp_path
     v.high.setValue(30)
     v.save()
     assert (read_cal(path)["bead_i32"] == [v.low.value(), 30, 12]).all()
+
+
+
+def test_run_page_calibrates_then_tracks_into_the_chosen_run_file(window, monkeypatch, tmp_path):
+    """Owner 2026-11-05: camera -> picks -> calibrate (asks for the .cal) -> asks for the run file -> tracking every
+    bead of the .cal; watching without beads writes no file."""
+    from PySide6.QtWidgets import QFileDialog
+
+    from mtpy.lvfiles import read_cal
+    app, w = window
+    w._connect()
+    _until(app, lambda: "8 / 8" in w.dev_summary.text(), 15, "connect")
+    w._apply_preset()
+    w._toggle_acq()
+    _until(app, lambda: api.acq.running() and w.img_item.image is not None, 20, "camera")
+    assert w.ed_h5.text() == "" and "no beads" in w.run_track.text()
+    cal = read_cal(FIXTURE / "cal002")
+    w.picks = [tuple(xy) for xy in cal["xy"][:2, :2]]
+    w._draw_picks()
+    assert "2 picked" in w.run_beads.text()
+    w.cal_slices.setValue(3)
+    w.cal_avg.setValue(1)
+    w.cal_settle.setValue(0.0)
+    asked = []
+    answers = iter([str(tmp_path / "cal001"), str(tmp_path / "tra001.h5")])
+    monkeypatch.setattr(QFileDialog, "getSaveFileName", staticmethod(lambda *a, **k: (asked.append(a[1]), (next(answers), ""))[1]))
+    w._flow_calibrate()
+    _until(app, lambda: w.bead_ids == [1, 2] and api.acq.running() and w.ed_h5.text() == str(tmp_path / "tra001.h5"), 60,
+           "scan, beads selected, tracking into the chosen run file")
+    assert len(asked) == 2 and (tmp_path / "cal001").exists() and w.roles[1] == "reference"
+    w._toggle_acq()
+    _until(app, lambda: not api.acq.running(), 15, "stopped")

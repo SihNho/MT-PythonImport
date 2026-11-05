@@ -15,7 +15,8 @@ from pathlib import Path
 
 import numpy as np
 import pyqtgraph as pg
-from PySide6.QtCore import QObject, QRunnable, Qt, QThreadPool, QTimer, Signal
+from PySide6.QtCore import QObject, QRunnable, QSettings, Qt, QThreadPool, QTimer, QUrl, Signal
+from PySide6.QtGui import QDesktopServices
 from PySide6.QtWidgets import (
     QButtonGroup,
     QCheckBox,
@@ -77,15 +78,17 @@ def use_inprocess():
 
 pg.setConfigOptions(imageAxisOrder="row-major", background="k", foreground="w")
 
-STEPS = [("setup", "Setup"), ("explore", "Explore"), ("beads", "Beads"), ("cal", "Calibrate"),
+STEPS = [("setup", "Setup"), ("run", "Run"), ("explore", "Explore"), ("beads", "Beads"), ("cal", "Calibrate"),
          ("exp", "Experiment"), ("save", "Save")]
 TITLES = {"setup": "Setup: devices, camera, analysis", "explore": "Explore (no recording)",
+          "run": "Run: camera -> beads -> calibrate -> track -> save, in that order",
           "beads": "Beads: select from a .cal", "cal": "Calibrate: z scan -> .cal", "exp": "Experiment: protocol",
           "save": "Save and export"}
 AXES = {"t": "Time (s)", "mag": "Magnet (mm)", "force": "Force (pN)", "z": "z (um)", "x": "x (px)", "y": "y (px)"}
 COLORS = ["#60A5FA", "#F472B6", "#34D399", "#FBBF24", "#A78BFA", "#F87171", "#2DD4BF", "#FB923C"]
 CHIPS_PER_ROW = 16                     # bead check boxes wrap after this many (G16)
 PLOT_HZ = 10.0                         # default plot refresh; the user sets it in the plot bar (owner 2026-11-01)
+GUIDE = Path(__file__).resolve().parents[3] / "docs" / "guide" / "protocol-scripts.ko.md"   # the script guide
 EXAMPLE_PROTOCOL = """grammar 0.1
 protocol "example"
 # edit freely; Check validates against the API and the rig safety profile
@@ -507,6 +510,65 @@ class MainWindow(QMainWindow):
             f.addRow(lab)
         return w
 
+    def _panel_run(self):
+        """Owner 2026-11-05 ("the usual experiment: watch the camera, pick beads, calibrate, choose where to save,
+        track, save - here it is scattered"): the experiment in its order on one page, each step a button or the
+        words of what to do; the other pages keep the settings."""
+        w = QWidget()
+        f = QFormLayout(w)
+        self.run_cam = QLabel("1. Start acquisition (top bar) and watch the JAI image; no file is written while no "
+                              "beads are selected")
+        self.run_beads = QLabel("2. Left click the beads on the image (right click removes a pick): 0 picked")
+        self.run_cal = QLabel("3. asks where to write the .cal (cal001, cal002, ... in the data folder), scans the "
+                              "picked beads, then asks for the run file and tracks every bead of the .cal (bead 1 = "
+                              "reference). Reset calibration drops the beads so the image takes picks again.")
+        self.run_track = QLabel("4. not tracking")
+        self.run_save = QLabel("5. the traces go next to the run file as tra001-000, tra001-001, ... (LabVIEW's files)")
+        for lab in (self.run_cam, self.run_beads, self.run_cal, self.run_track, self.run_save):
+            lab.setWordWrap(True)
+        f.addRow(self.run_cam)
+        f.addRow(_row(self.run_beads, QPushButton("Clear picks", clicked=self._clear_picks)))
+        f.addRow(_row(QPushButton("3. Calibrate the picked beads...", clicked=self._flow_calibrate),
+                      QPushButton("Reset calibration", clicked=self._new_calibration)))
+        f.addRow(self.run_cal)
+        f.addRow(_row(self.run_track, QPushButton("Record on / off", clicked=self.btn_rec.click)))
+        f.addRow(_row(QPushButton("5. Save the traces (.tra)", clicked=lambda: self._export("tra")),
+                      QPushButton("Script guide", clicked=lambda: QDesktopServices.openUrl(QUrl.fromLocalFile(str(GUIDE))))))
+        f.addRow(self.run_save)
+        return w
+
+    def _flow_calibrate(self):
+        """Step 3 of the Run page: the .cal is asked for, the z scan runs, then _track_from_cal."""
+        if not self.picks or not api.acq.running():
+            self._fail("calibrate", "start acquisition and left click the beads on the image first")
+            return
+        p, _ = QFileDialog.getSaveFileName(self, "Write the calibration to (LabVIEW names them cal001, cal002, ...)",
+                                           str(next_free(Path(self.cal_out.text()))), "Calibration (cal*);;All (*)",
+                                           options=QFileDialog.DontConfirmOverwrite)   # the z scan asks itself
+        if not p:
+            return
+        QSettings("KimLab", "MT Tracker").setValue("data_dir", str(Path(p).parent))
+        self.cal_out.setText(p)
+        self._flow = True
+        self._run_zscan()
+
+    def _track_from_cal(self, path):
+        """After the Run page's scan: the run file is asked for (next to the .cal, tra001.h5, tra002.h5, ...), every
+        bead of the .cal is selected (bead 1 the reference) and the acquisition restarts tracking them."""
+        folder = Path(path).parent
+        run, _ = QFileDialog.getSaveFileName(self, "Run file (the raw data; Save the traces writes next to it)",
+                                             str(folder / f"{next_tra(folder)}.h5"), "Run (*.h5)")
+        if not run:
+            self.run_track.setText("4. calibrated, not tracking: Beads -> Select checked beads, then Start acquisition")
+            return
+        run = Path(run)
+        self.ed_out.setText(str(run.parent))
+        self.ed_name.setText(run.stem)
+        self.ed_cal.setText(str(path))
+        self.role_ref.setText("1")
+        self._load_cal_list()
+        self._select_beads(restart=True)
+
     def _panel_explore(self):
         w = QWidget()
         f = QFormLayout(w)
@@ -598,7 +660,8 @@ class MainWindow(QMainWindow):
         f.addRow("Cross (px)", self.cal_cross)
         self.cal_settle = _spin(0.0, 5.0, 0.1, zscan.SETTLE_S, 2, " s")
         f.addRow("Settle after each move", self.cal_settle)
-        self.cal_out = QLineEdit(str(self.out / "cal001"))   # owner 2026-11-05: browsed, not typed; the next free name at Run
+        data_dir = QSettings("KimLab", "MT Tracker").value("data_dir", str(self.out))   # the folder last chosen
+        self.cal_out = QLineEdit(str(Path(data_dir) / "cal001"))   # owner 2026-11-05: browsed, not typed; the next free name at Run
         row = QHBoxLayout()
         row.addWidget(self.cal_out)
         row.addWidget(QPushButton("Browse...", clicked=self._browse_cal_out))
@@ -1079,7 +1142,8 @@ class MainWindow(QMainWindow):
                 self._toggle_acq()
         self._call(lambda: (api.acq.running() and api.acq.stop(), api.beads.clear())[1], "new calibration", dropped)
 
-    def _select_beads(self):
+    def _select_beads(self, restart=False):
+        """restart: the acquisition is stopped first and started again with the beads (the Run page's step 3)."""
         self._clear_picks()
         ids = [self.bead_list.item(i).data(Qt.UserRole) for i in range(self.bead_list.count())
                if self.bead_list.item(i).checkState() == Qt.Checked]
@@ -1093,7 +1157,15 @@ class MainWindow(QMainWindow):
             self.beads_info.setText(f"selected {ids}; reference {sorted(refs & set(ids))}")
             self._rebuild_chips()
             self._draw_boxes(np.array([[pos[i]["x_px"], pos[i]["y_px"]] for i in ids]), np.ones(len(ids), bool))
-        self._call(lambda: api.beads.select(ids, cal_path=path), "select beads", done)
+            if restart:
+                self.btn_live.setText("Start acquisition")
+                self._toggle_acq()
+
+        def job():
+            if restart and api.acq.running():
+                api.acq.stop()
+            return api.beads.select(ids, cal_path=path)
+        self._call(job, "select beads", done)
 
     def _rebuild_chips(self):
         while self.bead_chips.count():
@@ -1152,6 +1224,7 @@ class MainWindow(QMainWindow):
         self.picks_info.setText(f"{len(self.picks)} picked (left click on the image adds, right click removes); "
                                 "Calibrate scans them" if self.picks else
                                 "no picks: left click beads on the JAI image (acquisition running, no beads selected)")
+        self.run_beads.setText(f"2. Left click the beads on the image (right click removes a pick): {len(self.picks)} picked")
 
     def _clear_picks(self):
         self.picks = []
@@ -1212,6 +1285,9 @@ class MainWindow(QMainWindow):
             self.cal_out.setText(str(next_free(path)))        # the next scan gets the next number unless told otherwise
             self._load_cal_list()
             self.calview.load(path)
+            if getattr(self, "_flow", False):
+                self._flow = False
+                self._track_from_cal(path)
         wk = Worker(job)                 # a failed scan is shown in the Calibrate label, not only in the status bar
         wk.setAutoDelete(False)
         self._workers.add(wk)
@@ -1223,18 +1299,25 @@ class MainWindow(QMainWindow):
     # ------------------------------------------------------------------ acquisition / recording
     def _toggle_acq(self):
         if api.acq.running():
-            self._call(api.acq.stop, "stop acquisition", lambda _: self.btn_live.setText("Start acquisition"))
+            self._call(api.acq.stop, "stop acquisition",
+                       lambda _: (self.btn_live.setText("Start acquisition"), self.run_track.setText("4. not tracking")))
             return
-        folder, name = Path(self.ed_out.text()), self.ed_name.text().strip() or None
-        folder.mkdir(parents=True, exist_ok=True)
+        tracking = bool(self.bead_ids)   # owner 2026-11-05: watching the camera writes no run file; the file is asked
+        folder = Path(self.ed_out.text()) if tracking else None   # for when tracking starts (Run page step 3)
+        name = (self.ed_name.text().strip() or None) if tracking else None
+        if folder:
+            folder.mkdir(parents=True, exist_ok=True)
         zm, gpu, roles = self.z_method.currentText(), self.gpu.isChecked(), dict(self.roles)
         self.history.clear()
         self.t0 = time.time()
 
         def done(st):
             self.btn_live.setText("Stop acquisition")
-            self.ed_h5.setText(str(folder / f"{name}.h5") if name else "")
-            self.ed_name.setText(next_tra(folder))
+            self.ed_h5.setText(str(folder / f"{name}.h5") if folder and name else "")
+            if folder:
+                self.ed_name.setText(next_tra(folder))
+            self.run_track.setText(f"4. tracking {len(self.bead_ids)} beads -> {self.ed_h5.text()}; Record writes into it"
+                                   if tracking else "4. camera running, no beads: nothing is written")
         self._call(lambda: api.acq.start(record=False, name=name, folder=folder, roles=roles, z_method=zm, gpu=gpu),
                    "start acquisition", done)
 
@@ -1333,9 +1416,15 @@ class MainWindow(QMainWindow):
     def _export(self, kind):
         h5 = self.ed_h5.text()
         out = None if kind == "tra" else str(next_free(Path(h5).parent / "cal001"))   # tra: <run>-000 next to the .h5
-        self._call(lambda: api.data.export(kind, h5, out), f"export .{kind}",
-                   lambda paths: self.save_info.setPlainText(f"exported .{kind}:\n" + "\n".join(
-                       map(str, paths if isinstance(paths, list) else [paths]))))
+        if not h5:
+            self._fail(f"export .{kind}", "no run file: track with a run file first (Run page) or choose one in Save")
+            return
+
+        def done(paths):
+            paths = paths if isinstance(paths, list) else [paths]
+            self.save_info.setPlainText(f"exported .{kind}:\n" + "\n".join(map(str, paths)))
+            self.run_save.setText(f"5. saved: {', '.join(Path(p).name for p in paths)} in {Path(paths[0]).parent}")
+        self._call(lambda: api.data.export(kind, h5, out), f"export .{kind}", done)
 
     def _open_run(self):
         h5 = self.ed_h5.text()

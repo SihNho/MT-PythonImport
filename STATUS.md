@@ -236,6 +236,14 @@ Short and current. Details live in the linked documents; the history is in git a
   simulation fixture"):** the GUI's default backend is the rig (real-motors); `MT Tracker.cmd` launches it (the
   `(rig)` launcher merged into it); the Backend and Simulator-fixture rows show only under `--backend sim` (the
   developer's `MT Tracker (simulators).cmd`, the tests).
+- **2026-11-05 ~21:00 (owner: the experiment flow is scattered; one-click calibration reset; script material;
+  a save dialog for the .cal and before the traces):** the **Run** page - camera, picks, Calibrate (asks for the
+  .cal, scans, asks for the run file, tracks every bead of it), Record, Save the traces - with Reset calibration
+  and a Script guide button (docs/guide/protocol-scripts.md + .ko.md). Watching without beads writes no run file;
+  the data folder last chosen is remembered (QSettings). Owner, same evening: the user should never stop the JAI
+  by hand (no shutter; acquisition control is the EMCCD's) - the restart is inside step 3 now, a selection
+  without a restart is open. Owner: the agent must not control the rig lock; the program takes and releases it
+  itself (the event list shows `rig_lock acquired / released` at Connect / Disconnect).
 - **Next:** protocols on hardware (force ramps, rotation, 3-state clamp, autofocus), the stop / watchdog paths
   exercised on the rig, then the tethered-bead calibration.
 - **Queued (owner 2026-10-30):** lock the camera settings while a z scan runs (the GUI must not change exposure,

@@ -15,6 +15,21 @@ root; the owner never types scripts into a terminal (2026-10-30). The same from 
 `--fixture DIR` (recorded frames + a `cal*` file for the simulated camera; default `$MTPY_DATA/test`), `--out DIR`
 (run files), `--screenshot PNG` (smoke test). `pip install -e .[gui]` adds PySide6 and pyqtgraph.
 
+## The Run page (owner 2026-11-05)
+Owner: "the usual experiment is: watch the camera, pick beads, bead calibration, choose where to save, tracking,
+save - here everything is scattered". Step 2 **Run** is that order on one page: (1) Start acquisition and watch
+(no file is written while no beads are selected); (2) left click the beads; (3) **Calibrate the picked beads...**
+asks where to write the .cal (a save dialog; the folder is remembered as the data folder), scans, then asks for
+the run file (`tra001.h5` next to the .cal) and restarts the acquisition tracking every bead of the .cal with
+bead 1 the reference - the user never stops the camera by hand; **Reset calibration** drops the beads and the
+image takes picks again; (4) Record on / off writes into the run file; (5) **Save the traces** writes the LabVIEW
+`tra001-000` next to it. **Script guide** opens [guide/protocol-scripts.ko.md](../guide/protocol-scripts.ko.md).
+The other pages keep the settings (Calibrate: slices, step, band-pass viewer; Beads: the list and the roles).
+
+Owner 2026-11-05, same evening: the JAI has no shutter, so stopping its acquisition protects nothing; the restart
+at bead selection is the program's (the tracker is built at acquisition start) and now happens inside step 3.
+Open: select beads without a restart; the EMCCD is the camera whose acquisition and shutter the user controls.
+
 ## What the first build has (src/mtpy/gui)
 One window after the mock-up ([mockups/2026-10-23-main-window](../mockups/2026-10-23-main-window/README.md)):
 top bar (device summary, display pause, acquisition start / stop, Record, STOP, Acknowledge), six steps, two camera
