@@ -7,6 +7,7 @@ import numpy as np
 
 ENCODING = "cp949"                      # header and date strings are written in the Korean Windows code page
 WEEKDAYS = "월화수목금토일"   # Monday..Sunday as LabVIEW's %a writes them in this locale
+WEEKDAYS_LONG = ["월요일", "화요일", "수요일", "목요일", "금요일", "토요일", "일요일"]
 
 
 # ------------------------------------------------------------------------------------------------------- .tra ---
@@ -41,6 +42,14 @@ def tra_header(created, cal_path, file_index, n_actual, n_nominal):
 
 
 # ------------------------------------------------------------------------------------------------------- .cal ---
+def cal_date(created):
+    """The .cal's [Date and time] string as LabVIEW writes it in this locale (owner 2026-11-05: the files must stay
+    the LabVIEW files): the long Korean date, CR, the 12-hour time with the am / pm word, CR; month, day and hour
+    are not zero-padded. Read from 40 files of 2023-2026."""
+    return (f"{created.year}년 {created.month}월 {created.day}일 {WEEKDAYS_LONG[created.weekday()]}\r"
+            f"{'오전' if created.hour < 12 else '오후'} {created.hour % 12 or 12}:{created:%M:%S}\r")
+
+
 class _Reader:
     def __init__(self, b):
         self.b, self.o = b, 0

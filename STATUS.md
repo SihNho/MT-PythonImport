@@ -227,6 +227,11 @@ Short and current. Details live in the linked documents; the history is in git a
   calibration viewer (`gui/calview.py`, in Calibrate): per bead the PSF stack image, the band-passed LUT image and
   the self-fit (z found vs z scanned, residual nm) with LOW / HIGH / forget spins re-processing live and Save to
   .cal (bead_i32; select the beads again). To confirm with the owner what LabVIEW's "delta r vs delta z" picture is.
+- **2026-11-05 ~05:00 (owner: "the data files must be the LabVIEW files, .cal and .tra"):** checked against the
+  2023-2026 files: the layouts were byte-identical already (tests); two values were not: the .cal date string
+  (now LabVIEW's Korean long date + 12-hour time, `lvfiles.cal_date`) and the z step (now the single-precision
+  value LabVIEW stores, 0.10000000149). The .tra export (tra001-000) was identical: header, weekday, columns
+  (frame, magnet mm, rotor deg, x y z per bead).
 - **Next:** protocols on hardware (force ramps, rotation, 3-state clamp, autofocus), the stop / watchdog paths
   exercised on the rig, then the tethered-bead calibration.
 - **Queued (owner 2026-10-30):** lock the camera settings while a z scan runs (the GUI must not change exposure,

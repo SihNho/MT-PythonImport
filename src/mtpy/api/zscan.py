@@ -11,7 +11,7 @@ from pathlib import Path
 import numpy as np
 
 from mtpy import calib, track
-from mtpy.lvfiles import write_cal
+from mtpy.lvfiles import cal_date, write_cal
 
 from . import acq, devices, events, focus
 
@@ -104,7 +104,7 @@ def run(path, xy, slices=60, step_nm=100.0, n_avg=20, cross=120, nm_per_px=84.0,
            # kernel is built from (calib.clusters); NOT the position (rig 2026-10-30: x, y, cross here gave an empty
            # band and a division by zero in the kernel)
            "bead_i32": np.array([[low, high, forget]] * len(xy), dtype=np.int32),
-           "z_step": step_um, "n_avg": n_avg, "date": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+           "z_step": float(np.float32(step_um)), "n_avg": n_avg, "date": cal_date(datetime.now()),
            "bead_flags": np.zeros(len(xy), dtype=np.int32), "nm_per_px": nm_per_px}
     write_cal(path, cal)
     events.log("calibration", request={"slices": slices, "step_nm": step_nm, "n_avg": n_avg, "cross": cross,

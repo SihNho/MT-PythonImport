@@ -63,6 +63,9 @@ tail (155 bytes for n = 5):
           a single-precision 0.1 widened to float64 (not 0.1 exactly)
   I32 number of averages (20)                                                 [# avg per slice] (inferred)
   string (I32 length + bytes, CP949): date and time with CR (0x0D) after      [Date and time]
+    the Korean long date, CR, the 12-hour time with the am / pm word, CR; month, day and hour not zero-padded
+    (`2024\ub144 7\uc6d4 19\uc77c \uae08\uc694\uc77c\r\uc624\uc804 10:10:34\r`, 40 files of 2023-2026); written by
+    `lvfiles.cal_date` since 2026-11-05 (before: `2026-11-05 02:52:32`)
           each part, e.g. "2026년 9월 7일 월요일\r오전 2:10:20\r" (35 bytes)
   [I32 n] n x I32 flags, e.g. 0,1,1,1,1 (bead 1 = 0)                          [exp/ref array] (inferred)
   float64 nm per pixel (84.0)                                                 [Pixel distance]
