@@ -81,10 +81,10 @@ The owner ran watch -> picks -> calibrate -> track -> protocol -> Save the trace
   towards the LUT's middle (`n_slices // 2 x z_step`), as the LabVIEW rule (spec F4.06: clamp +-0.2 per firing);
   nothing is sent while the bead is lost or the error is under 10 nm; every move is an `autofocus_move` event.
   Off by default, off again when the camera stops or at Reset calibration. The lost-bead reseed (F4.05) is the
-  tracker's own auto-reset. The sign of the correction follows the z scan's direction (`api.zscan.SCAN_DIR`;
+  tracker's own auto-reset. The sign of the correction follows the z scan's direction (`api.zscan.SCAN_DIR` = +1;
   `_AutoFocus.SIGN` = -SCAN_DIR). **Rig 2026-11-06 18:03:** with the upward scan bead 1 was held at 3.00 +- 0.03 um
-  (gui_events.log autofocus_move lines), so the derivation is right; the downward scan of Request1 flips it. The
-  +-0.2 unit (um here) is still open (Q4.06).
+  (gui_events.log autofocus_move lines), so the derivation is right; the device sign (`asi.Z_SIGN`) cancels between
+  the scan and the correction. The +-0.2 unit (um here) is still open (Q4.06).
 
 ## Owner's feedback after the first experiment (2026-11-06)
 1. The trace plot subtracts the reference beads' mean x / y / z from the tethered beads ("Subtract reference",
@@ -129,12 +129,19 @@ The owner ran watch -> picks -> calibrate -> track -> protocol -> Save the trace
 1. Explore lives inside the Run page (a group at its bottom); the More... pages are Beads, Calibrate, Save.
 2. The calibration's folder dialog starts at `G:\Data\SiHyeong\Dropbox\Data` (`CAL_ROOT`) when that folder exists;
    the Calibrate page's "Write .cal to" starts there too.
-3. The scan direction is a choice on the Calibrate page, remembered: "up (+z per slice, LabVIEW's)", the default,
-   or "down"; `api.zscan.run(direction=)`, the calibration event records it, and the autofocus takes its sign from
-   it (`api.focus.autofocus(scan_direction=)`). The owner reports the rig's piezo sign reversed after a repair
-   (a + command moves the objective down; the oil contact grows) and that the beads sat ABOVE the focus; neither
-   changes what decides the direction: in a force ramp z must RISE with the force. Today's +z data had it falling,
-   the -z scan was not yet checked that way; the choice lets the owner settle it on the rig without a code change.
+3. First answer (2026-11-06): the scan direction as a remembered choice on the Calibrate page. **Settled
+   2026-11-07** (owner's knob test and "Yes, flip it"): the piezo moves the SAMPLE stage, not the objective, so a
+   LUT slice s IS the bead s x step higher and z = index x step is the extension exactly when the scan moves the
+   sample UP per slice (LabVIEW's +z). On this rig a positive controller Z lowers the sample since the repair
+   (owner: the oil contact grows; a "down" scan shrank the pattern of a bead below the focus; the knob turned so
+   the pattern shrinks moves the lens away from the slide, so the bead sits below the focus). The fix is the
+   driver's sign, `asi.Z_SIGN = -1` (program +z = sample up; the SL/SU Z window stays in controller units), the
+   scan is UP again (`SCAN_DIR = +1`, not a choice; `direction=` and `scan_direction=` removed), and the autofocus
+   sign is -SCAN_DIR. The user starts the scan with the beads BELOW the focus (full pattern); the pattern shrinks
+   slice by slice and the top of the LUT is the end nearest the focus (the orange edge warning covers it). Rig
+   checks: Explore focus +1 um shrinks the pattern of a bead below the focus; the up scan shrinks it per slice;
+   z rises with the force in a ramp. Earlier focus positions in .cal / run metadata are in the old sign; the two
+   mirrored runs of 2026-11-06 keep their z.
 4. Found while testing it: `QSettings("KimLab", "MT Tracker")` used the Windows registry whatever the default
    format, so the tests' redirect to a temp ini (design critique #3) never took and every GUI test wrote the user's
    real settings (data_dir = a pytest temp folder, scan_dir). The window now opens

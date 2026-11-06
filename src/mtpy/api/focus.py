@@ -60,13 +60,11 @@ class _AutoFocus:
     The sign follows the z scan's direction (api.zscan.SCAN_DIR): slice s = focus start + SCAN_DIR * s * step, so a
     bead reading above the middle means the focus is SCAN_DIR-wards of where it should be. Rig 2026-11-06 18:03:
     with the upward scan and SIGN -1 bead 1 was held at 3.00 +- 0.03 um (the log's autofocus_move lines), so the
-    derivation holds; the downward scan (Request1) flips it to +1."""
+    derivation holds (the scan and the correction share the device's sign, so devices/asi.py Z_SIGN cancels)."""
 
-    SIGN = None               # set per instance: -(the scan direction of the .cal in use)
-
-    def __init__(self, bead_id, z_center_um, period_s, max_step_um, dead_um, sign=None):
+    def __init__(self, bead_id, z_center_um, period_s, max_step_um, dead_um):
         from . import zscan
-        self.SIGN = float(-zscan.SCAN_DIR if sign is None else sign)
+        self.SIGN = -zscan.SCAN_DIR
         self.bead_id, self.z_center_um = int(bead_id), float(z_center_um)
         self.period_s, self.max_step_um, self.dead_um = float(period_s), float(max_step_um), float(dead_um)
         self.moves, self.last, self.error = 0, None, None
@@ -123,11 +121,10 @@ class _AutoFocus:
 
 
 def autofocus(on, bead_id=None, z_center_um=None, period_s=AUTOFOCUS_PERIOD_S, max_step_um=AUTOFOCUS_MAX_STEP_UM,
-              dead_um=AUTOFOCUS_DEAD_UM, scan_direction=None):
+              dead_um=AUTOFOCUS_DEAD_UM):
     """Switch the autofocus on (hold bead `bead_id`'s tracked z at `z_center_um` by moving the focus; z_center None =
-    the middle of the selected beads' calibration, n_slices // 2 * z_step) or off. scan_direction: the direction
-    the .cal in use was scanned in (+1 / -1; None = zscan.SCAN_DIR), the correction's sign is its opposite.
-    Returns autofocus_status(). Example: `api.focus.autofocus(True, bead_id=1)`."""
+    the middle of the selected beads' calibration, n_slices // 2 * z_step) or off. Returns autofocus_status().
+    Example: `api.focus.autofocus(True, bead_id=1)`."""
     global _af
     if _af is not None:
         _af.stop()
@@ -144,8 +141,7 @@ def autofocus(on, bead_id=None, z_center_um=None, period_s=AUTOFOCUS_PERIOD_S, m
             cal = read_cal(b.source)
             z_center_um = (cal["n_slices"] // 2) * float(cal["z_step"])
         service("focus").require()
-        _af = _AutoFocus(bead_id, z_center_um, period_s, max_step_um, dead_um,
-                         None if scan_direction is None else -float(scan_direction))
+        _af = _AutoFocus(bead_id, z_center_um, period_s, max_step_um, dead_um)
         _af.start()
     events.log("autofocus", request={"on": bool(on)}, bead=bead_id, z_center_um=z_center_um)
     return autofocus_status()

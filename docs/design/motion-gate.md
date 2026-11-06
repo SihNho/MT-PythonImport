@@ -51,6 +51,9 @@ the session end homes the magnet first and releases only after; a failed home re
    with a direct 40 mm target), close (home, release, readback).
 3. Then the stage (+-0.5 mm steps, a target beyond +-2 mm refused), the rotor (1 turn each way, 6 turns refused;
    the profile's `rotor_turns` entry must be verified by the owner before the API allows it), the focus (window =
-   the controller's own SL/SU Z; the profile's `focus_z_um` must be set).
+   the controller's own SL/SU Z; the profile's `focus_z_um` must be set). The focus SIGN (owner 2026-11-07): the
+   piezo moves the sample stage and, since the repair, a positive controller Z lowers it; `asi.Z_SIGN = -1` turns
+   the controller's Z into the program's z, the sample up positive, in `move_to` and `position` only - the window
+   check and `moving()` stay in controller units, so the limits are untouched by the sign.
 4. The independent motor-limit check (`motor-limit-checker`): per device, per call site, PASS / FAIL, logs kept in
    `docs/results/`.

@@ -5,6 +5,8 @@ Units: motion commands and `W` replies are in 0.1 um (1 mm = 10 000 units); SL /
 the controller. Session: the stage's open() writes SL/SU X Y = position +- the profile's window and reads them back;
 close() writes the release values +-500 mm. Z: SL/SU Z are READ at open and never written (decision 0021); a Z move
 must lie inside them. Every move re-reads SL/SU in this port session first and sends exactly one single-axis 'M'.
+The focus sign: Z_SIGN turns the controller's Z into the program's z (the sample up positive); the window is
+checked in controller units, so the sign never touches the limits.
 """
 from mtpy.api import safety
 
@@ -14,6 +16,11 @@ from .gate import Line
 
 PORT, BAUD = "COM4", 115200
 UNIT_MM = 1e-4                       # one controller unit = 0.1 um
+Z_SIGN = -1.0                        # program z (um, the SAMPLE up positive) = Z_SIGN x controller Z / 10. Owner
+                                     # 2026-11-06/07: the piezo moves the sample stage, and since the repair a positive
+                                     # controller Z lowers it (the oil contact grows; a "down" scan shrank the pattern
+                                     # of a bead below the focus). LabVIEW's +z stacked the LUT with the sample rising,
+                                     # which is what z = index x step as the extension needs
 RELEASE = 500.0                      # mm, V6 motor_limits.json asi.release
 TOL = 0.001                          # SL/SU readback tolerance, mm
 _shared = {}                         # port name -> Line: the stage and the focus share COM4
@@ -246,7 +253,7 @@ class AsiFocus(Device):
         lo, hi = sl / UNIT_MM, su / UNIT_MM
         if abs(lo - self.window[0]) > 5 or abs(hi - self.window[1]) > 5:
             raise ValueError(f"ASI SL/SU Z {sl}/{su} differ from the window read at open; reconnect")
-        target = round(float(z_um) * 10.0, 3)                       # um -> 0.1 um units, 3 decimals (owner 2026-10-27)
+        target = round(Z_SIGN * float(z_um) * 10.0, 3)              # um -> 0.1 um units, 3 decimals (owner 2026-10-27)
         if not lo <= target <= hi:
             raise ValueError(f"ASI Z target {target} outside the controller window {lo:.0f}..{hi:.0f}")
         reply = L.ask(f"M Z={target:.3f}".rstrip("0").rstrip("."))
@@ -284,7 +291,7 @@ class AsiFocus(Device):
         return got
 
     def position(self):
-        return self._z_units(self._io()) / 10.0
+        return Z_SIGN * self._z_units(self._io()) / 10.0
 
     def stop(self):
         if self.line is not None:

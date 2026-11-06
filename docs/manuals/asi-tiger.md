@@ -61,6 +61,10 @@ Motion and position units are **0.1 um** (10 000 units = 1 mm). `SL` / `SU` are 
 - The limits are absolute coordinates: they move with the coordinate zero (HOME / HERE / ZERO).
 - On an axis configured with negative direction, ASI warns that upper and lower may swap; read `SL?` / `SU?` before
   writing, and never write `SL >= SU`.
+- **Z sign on the rig (owner 2026-11-06/07):** the piezo moves the sample stage, and a positive controller Z lowers
+  it (the oil contact between objective and coverslip grows; a bead below the focus shrinks its pattern on a
+  negative move). The driver's `Z_SIGN = -1` (devices/asi.py) makes the program's +z the sample up; the SL/SU Z
+  window is applied in controller units.
 
 ## Safety envelope and what to restore after a job
 

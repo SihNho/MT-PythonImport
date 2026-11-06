@@ -580,11 +580,12 @@ class MainWindow(QMainWindow):
         self.btn_rec.setCheckable(True)
         self.run_beads = QLabel("2. Left click the beads on the image (right click removes a pick): 0 picked")
         self.run_cal = QLabel("3. asks for the data folder once (the calibration cal001, cal002, ... and the run file "
-                              "tra001.h5, tra002.h5, ... go there), scans the picked beads from the current focus in "
-                              "the Scan direction of the Calibrate page (the LUT's middle is 3 um from the start at 60 x "
-                              "100 nm; the focus goes there after the scan), then tracks every bead of the .cal (bead 1 "
-                              "= reference) from the next frame on; the camera never stops. Reset calibration drops "
-                              "the beads so the image takes picks again.")
+                              "tra001.h5, tra002.h5, ... go there), scans the picked beads UP from the current focus: "
+                              "start with the beads BELOW the focus (full ring pattern), the sample rises per slice "
+                              "and the pattern shrinks; the LUT's middle is 3 um above the start at 60 x 100 nm and "
+                              "the focus goes there after the scan. Then it tracks every bead of the .cal (bead 1 = "
+                              "reference) from the next frame on; the camera never stops. Reset calibration drops the "
+                              "beads so the image takes picks again.")
         self.run_track = QLabel("4. not tracking")
         self.run_save = QLabel("5. the traces go next to the run file as tra001-000, tra001-001, ... (LabVIEW's files)")
         for lab in (self.run_cam, self.run_beads, self.run_cal, self.run_track, self.run_save):
@@ -728,15 +729,6 @@ class MainWindow(QMainWindow):
         f.addRow("Cross (px)", self.cal_cross)
         self.cal_settle = _spin(0.0, 5.0, 0.1, zscan.SETTLE_S, 2, " s")
         f.addRow("Settle after each move", self.cal_settle)
-        # Request2 (owner 2026-11-06): LabVIEW stacked the profiles in +z; the rig's piezo sign is in question, so
-        # the direction is a choice here (remembered), and the autofocus follows it. The ramp's z against the force
-        # tells which is right: z must RISE with the force
-        self.scan_dir = QComboBox()
-        self.scan_dir.addItem("up (+z per slice, LabVIEW's)", 1.0)
-        self.scan_dir.addItem("down (-z per slice)", -1.0)
-        self.scan_dir.setCurrentIndex(0 if float(self.settings.value("scan_dir", 1.0)) > 0 else 1)
-        self.scan_dir.currentIndexChanged.connect(lambda _i: self.settings.setValue("scan_dir", self.scan_dir.currentData()))
-        f.addRow("Scan direction", self.scan_dir)
         data_dir = str(CAL_ROOT) if CAL_ROOT.is_dir() else self.settings.value("data_dir", str(self._data_root()))
         data_dir = data_dir if Path(data_dir).is_dir() else str(self._data_root())
         self.cal_out = QLineEdit(str(Path(data_dir) / "cal001"))   # owner 2026-11-05: browsed, not typed; the next free name at Run
@@ -1420,10 +1412,8 @@ class MainWindow(QMainWindow):
         xy = np.array(self.picks, dtype=np.float64) if self.picks else beads.xy0.copy()
         self.cal_status.setText("running...")
 
-        direction = self.scan_dir.currentData()
-
         def job():
-            return api.zscan.run(str(path), xy.tolist(), slices, step, avg, cross, settle_s=settle, direction=direction)
+            return api.zscan.run(str(path), xy.tolist(), slices, step, avg, cross, settle_s=settle)
 
         def done(cal):
             self.cal_status.setText(f"done: {len(cal['xy'])} beads, {slices} slices x {step:.0f} nm -> {path}; "
@@ -1475,8 +1465,7 @@ class MainWindow(QMainWindow):
             self.autofocus.setChecked(False)
             self._fail("autofocus", "no reference bead is tracked: calibrate and select beads with a reference first")
             return
-        direction = self.scan_dir.currentData()
-        self._call(lambda: api.focus.autofocus(on, bead_id=refs[0] if on else None, scan_direction=direction), "autofocus",
+        self._call(lambda: api.focus.autofocus(on, bead_id=refs[0] if on else None), "autofocus",
                    lambda st: self.af_status.setText(f"holding bead {st['bead']} at z {st['z_center_um']:.2f} um"
                                                      if st["on"] else "off"))
 

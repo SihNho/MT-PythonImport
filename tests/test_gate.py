@@ -175,13 +175,17 @@ def test_asi_stage_window_set_relative_and_released():
 
 
 def test_asi_focus_reads_the_controller_z_window_and_never_writes_it():
+    """Owner 2026-11-07 ("Yes, flip it"): the controller's +Z lowers the sample stage, so the program's z (the sample
+    up positive) is Z_SIGN = -1 times the controller's; the window check stays in controller units."""
     ctl, _, fz = _asi()
     fz.open()
-    assert fz.window == (-500.0, 500.0) and fz.position() == 10.0
+    assert fz.window == (-500.0, 500.0) and fz.position() == -10.0           # controller Z=100 units
     fz.move_to(20.0)
-    assert ctl.p["Z"] == 200.0 and "M Z=200" in ctl.log
+    assert ctl.p["Z"] == -200.0 and "M Z=-200" in ctl.log and fz.position() == 20.0
     with pytest.raises(ValueError, match="outside"):
         fz.move_to(100.0)
+    with pytest.raises(ValueError, match="outside"):
+        fz.move_to(-100.0)
     assert not any(c.startswith(("SL Z=", "SU Z=")) for c in ctl.log)
     fz.stop()
     assert ctl.halted == 1
