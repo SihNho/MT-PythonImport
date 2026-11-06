@@ -29,7 +29,7 @@ end protocol
 | 줄 | 프로그램이 하는 일 |
 |---|---|
 | `hold f=F t=T` | 힘 보정(M270 v3, Setup에서 잡은 touch position 기준)으로 F pN에 해당하는 자석 위치를 구하고, 모션 게이트를 거쳐 자석을 그 위치로 보낸 뒤 T초 기다림 |
-| `ramp from=A to=B t=T` | 자석을 A의 위치로 보낸 뒤, B의 위치까지 T초가 걸리는 속도로 이동(`t=` 대신 `speed=` mm/s도 가능). 프로파일의 자석 속도 한계를 넘는 속도는 한계로 낮추고 `coerced` 이벤트로 기록 |
+| `ramp from=A to=B t=T` | 자석을 A의 위치로 보낸 뒤, B의 위치까지 T초가 걸리는 속도로 이동(`t=` 대신 `speed=` mm/s 또는 `rate=` pN/s도 가능. `rate=`는 진짜 loading rate: 램프를 힘이 같은 1초 조각으로 나눠 조각마다 그 조각에 필요한 속도로 한 번씩 이동하므로 touch 쪽으로 갈수록 모터가 빨라짐. 조각 사이에 모터가 약 50 ms 멈춤). 프로파일의 자석 속도 한계를 넘는 속도는 한계로 낮추고 `coerced` 이벤트로 기록 |
 | `move mm=X t=T` | 자석을 힘과 무관하게 X mm로, 그 뒤 T초 |
 | `zero t=T` | 자석을 0 mm(맨 위, 힘 없음)로, T초. 추적의 영점은 잡지 않음 |
 | `rotate from=A to=B f=F t=T` | 힘 F로 두고, 로터를 원점 기준 A turn으로 보낸 뒤 B turn까지 (B-A)/T turn/s로 회전 |
@@ -65,6 +65,8 @@ end protocol
 
 ## 5. 표
 
-열 하나가 한 단계: Force (pN), Wait (s), Motor (mm/s), Rotor (degree), Rotor speed (SPD). 한 열은 모터 속도로 그
-힘까지 `ramp`(속도 0이면 `hold`), 그 각도만큼 SPD로 `rotate`(turn/s = SPD x 10 / 500), 그 뒤 Wait만큼 `hold`로
-변환됩니다. Start from table은 변환하고 바로 시작합니다.
+열 하나가 한 단계: Force (pN), Wait (s), Loading, Rotor (degree), Rotor speed (SPD). **Loading**(표 위의 선택)은
+Motor (mm/s) = LabVIEW 실험에서 쓰던 자석 loading rate, 또는 Force rate (pN/s) = 힘 loading rate이며 표 전체에
+하나만 적용됩니다. 한 열은 그 loading 값으로 그 힘까지 `ramp`(`speed=` 또는 `rate=`; 0이면 `hold`), 그 각도만큼
+SPD로 `rotate`(turn/s = SPD x 10 / 500), 그 뒤 Wait만큼 `hold`로 변환됩니다. Start from table은 변환하고 바로
+시작합니다.

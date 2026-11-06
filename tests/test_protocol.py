@@ -6,6 +6,8 @@ import threading
 import time
 from pathlib import Path
 
+import numpy as np
+
 import pytest
 from test_acq import _connect
 from test_devices import SYNTHETIC_TABLE, WIDE_TABLE, _config
@@ -880,3 +882,32 @@ def test_ramp_with_a_magnet_speed_is_one_move_at_that_speed(rig):
         parse(HEAD + "ramp from=1 to=5\n", "none.mtprot")
     rep = api.protocol.check(parse(HEAD + "ramp from=1 to=5 speed=99\n", "fast.mtprot"), devices=False)
     assert not rep["ok"] and any("magnet_speed_mm_s" in str(e) or "speed" in str(e) for e in rep["errors"])
+
+
+def test_ramp_with_a_force_rate_holds_the_rate_by_changing_the_speed_during_one_move(rig):
+    """Owner 2026-11-06 (the table's Loading = Force rate): `ramp rate=` is the TRUE loading rate: ONE magnet move
+    whose speed is set again from the position read back (rate / the calibration's slope there), so dF/dt stays
+    at the rate; t=, speed= and rate= are exclusive."""
+    api.magnet.use_force_table(WIDE_TABLE)
+    s = parse(HEAD + "hold f=1 t=0.1\nramp from=1 to=5 rate=2\n", "rate.mtprot")
+    n = len(events.events())
+    api.protocol.run(s)
+    samples = []
+    while api.protocol.status()["state"] not in ("completed", "failed", "refused", "aborted", "stopped"):
+        samples.append((time.monotonic(), api.magnet.force_at(api.magnet.position())))
+        time.sleep(0.02)
+    st = api.protocol.wait(60)
+    assert st["state"] == "completed" and st["steps_done"] == 2, st
+    end = [e for e in events.events()[n:] if e.kind == "protocol_step" and e.extra["line"] == 4][1]
+    assert end.extra["rate_pN_s"] == 2 and not end.extra["coerced"]
+    assert end.extra["speed_mm_s"] == end.extra["speeds_mm_s"][-1] and end.extra["speed_updates"] == len(end.extra["speeds_mm_s"]) - 1
+    acts = [e for e in events.events()[n:] if e.kind == "act" and e.request["quantity"] == "magnet_speed_mm_s"]
+    assert len(acts) == end.extra["speed_updates"]
+    t = np.array([a for a, _ in samples])
+    f = np.array([b for _, b in samples])
+    inside = (f > 1.3) & (f < 4.7)                              # the ramp's middle: dF/dt = the rate within 15 %
+    assert inside.sum() >= 10, samples
+    slope = np.polyfit(t[inside], f[inside], 1)[0]
+    assert slope == pytest.approx(2.0, rel=0.15), slope
+    with pytest.raises(ScriptError, match="exactly one of t="):
+        parse(HEAD + "ramp from=1 to=5 rate=2 speed=2\n", "both.mtprot")

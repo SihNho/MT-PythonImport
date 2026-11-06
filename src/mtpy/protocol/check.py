@@ -344,6 +344,8 @@ def duration(body):
             total += st.args["n"].value * duration(st.body)
         elif st.kind in ("zero", "ramp", "hold", "move", "rotate", "wait", "record") and "t" in st.args:
             total += st.args["t"].value
+        elif st.kind == "ramp" and "rate" in st.args:
+            total += abs(st.args["to"].value - st.args["from"].value) / st.args["rate"].value
     return total if math.isfinite(total) else float("inf")
 
 

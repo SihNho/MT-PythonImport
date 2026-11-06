@@ -51,7 +51,10 @@ _svc = None           # the camera service of the running acquisition
 _make_kernel = make_kernel
 SNAPSHOT_FIELDS = ("roi", "rate_Hz", "exposure_ms", "gain_dB")   # = api.camera.PRESET_FIELDS (no import: cycle)
 _start_lock = threading.Lock()
-MOTOR_POLL_S = 0.05   # 20 readings per second per motor (LabVIEW reads them every frame; 0005: ms-level timing)
+# owner 2026-11-06 ("can the reading be faster?"): one thread per motor, each at its own period. The rotor's POS
+# takes ~40 ms, the magnet's ERR? + POS? ~5-10 ms (rig 2026-11-05/06); read in one loop with a 50 ms wait they gave
+# ~10 Hz each, and the force curve of a slow ramp drew as stairs. LabVIEW reads them every frame (0005).
+MOTOR_POLL_S = {"magnet": 0.02, "rotor": 0.05}
 
 
 class _MotorPoller:
@@ -65,20 +68,24 @@ class _MotorPoller:
              ("rotor", "rotor_turns", lambda: _rotor.position()))
 
     def __init__(self, pipe, period_s, retry_s=1.0):
-        self.pipe, self.period_s, self.retry_s = pipe, float(period_s), float(retry_s)
+        if not isinstance(period_s, dict):             # one number: the same period for every motor
+            period_s = {n: period_s for n, _, _ in self._READ}
+        self.pipe, self.period_s, self.retry_s = pipe, {n: float(v) for n, v in period_s.items()}, float(retry_s)
         self.latest, self.errors, self.reads = {}, {}, 0
         self._next = {}
         self._stop = threading.Event()
         self._ctx = contextvars.copy_context()           # events carry the caller that started acquisition
-        self._thread = None
+        self._threads = []
 
     def _devices(self):
         return [r for r in self._READ if r[0] in _services and _services[r[0]].connected]
 
-    def read_once(self):
+    def read_once(self, only=None):
         """One reading of every connected motor (also called synchronously at the start of acquisition, so every
-        recorded frame has a reading before it)."""
+        recorded frame has a reading before it); only: one motor's name (its own poll thread)."""
         for name, quantity, read in self._devices():
+            if only is not None and name != only:
+                continue
             now = time.monotonic()
             if now < self._next.get(name, 0.0):
                 continue
@@ -114,18 +121,20 @@ class _MotorPoller:
                 events.log("motor_reading", request={"quantity": quantity}, readback=v, device=name, t_read=t,
                            t_request=t_request, repeated=True, **self.pipe.last_record())
 
-    def _loop(self):
-        while not self._stop.wait(self.period_s):
-            self.read_once()
+    def _loop(self, name):
+        while not self._stop.wait(self.period_s.get(name, 0.05)):
+            self.read_once(only=name)
 
     def start(self):
-        self._thread = threading.Thread(target=self._ctx.run, args=(self._loop,), name="acq-motor-poll", daemon=True)
-        self._thread.start()
+        for name, _, _ in self._READ:            # one Context per thread: a Context can be entered by one thread only
+            t = threading.Thread(target=self._ctx.copy().run, args=(self._loop, name), name="acq-motor-poll", daemon=True)
+            self._threads.append(t)
+            t.start()
 
     def stop(self, timeout_s=1.0):
         self._stop.set()
-        if self._thread is not None:
-            self._thread.join(timeout_s)        # a read stuck in a device keeps only this daemon thread
+        for t in self._threads:
+            t.join(timeout_s)                   # a read stuck in a device keeps only that daemon thread
 
     def status(self):
         return {"period_s": self.period_s, "reads": self.reads, "errors": dict(self.errors),

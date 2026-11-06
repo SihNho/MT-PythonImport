@@ -17,7 +17,8 @@ from mtpy.devices.sim import SimCamera
 REPO_CONFIG = Path(__file__).resolve().parents[1] / "config"
 # TEST ONLY - not a rig value: every limit set and verified so the simulators can exercise every device function.
 TEST_LIMITS = {"magnet_position_mm": (0.0, 39.0), "magnet_speed_mm_s": (0.0, 10.0), "rotor_turns": (-5.0, 5.0),
-               "rotor_speed_turns_s": (0.0, 10.0), "focus_z_um": (-50.0, 50.0)}
+               "rotor_speed_turns_s": (0.0, 10.0), "focus_z_um": (-50.0, 50.0),
+               "stage_x_mm": (-2.0, 2.0), "stage_y_mm": (-2.0, 2.0)}   # the shipped window is +-500 since v11 / v12
 # TEST ONLY - a clearly synthetic position-to-force table (no physics; decision 0010 needs a recorded one).
 SYNTHETIC_TABLE = {"name": "synthetic test table", "version": "test", "position_mm": [0.0, 10.0, 20.0],
                    "force_pN": [0.1, 1.0, 10.0]}

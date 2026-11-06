@@ -51,6 +51,8 @@ proposals; phase 5 may refine them, and every change after the first release fol
 | `api.magnet.position()` | position_mm read back |
 | `api.rotor.rotate(turns, speed_turns_s=None)` / `api.rotor.position()` | signed turns, inside the profile |
 | `api.stage.move_to(x_mm, y_mm)` / `api.focus.move_to(z_um)` | ASI; inside the window; focus moves invalidate nothing but are logged (U35) |
+| `api.magnet.set_speed(mm_s)` | the magnet speed now, also during a move (the `ramp rate=` loop); inside `magnet_speed_mm_s`, an `act` event (owner 2026-11-06) |
+| `api.focus.autofocus(on, bead_id=)` / `autofocus_status()` | the focus holds a tracked bead's z at the LUT's middle (spec F4.06): own thread, one move of at most 0.2 um per 0.3 s through `move_to`, `autofocus_move` events (owner 2026-11-06) |
 | `api.light.set(laser, on: bool)` | manual on / off (U24); refused while a sequence runs |
 | `api.light.load_sequence(seq)` / `start_sequence()` / `stop_sequence()` | illumination sequence run by the Arduino (0005, U24) |
 | `api.sync.set_ratio(n)` | JAI frames per EMCCD frame (0005) |
@@ -429,7 +431,7 @@ checked separately in phases 6/7):**
   carries none (only events with a frame position carry one; arrival order is not used to guess); event kinds are
   the `api.events` kinds (`act`, `refused`, `recording`, `segment`, `acquisition`, `mark`, `guarded_change`, ...),
   plus the writer's `writer_refused` and `writer_tracking_error`. Not written yet (no source in WP3/WP4): `focus_pos`,
-  `cal_slice`, `reseed`, `autofocus_move`, `protocol_*`, `clamp_state`, `emccd_frame`, `light_state`,
+  `cal_slice`, `reseed`, `protocol_*`, `clamp_state`, `emccd_frame`, `light_state`,
   `/fluorescence`, `/derived`, `/metadata/presets` content (only what `metadata=` passes), `git_commit`,
   `legacy_tra_files` (stays empty: export does not modify the data file). `/metadata/calibration` adds `cal_bytes`,
   `n_slices`, `date`, `path`.
@@ -822,6 +824,8 @@ allows is **coerced to the nearest reachable value** - no alarm, no refusal - an
   `coerced` event per value (`stage: "protocol run check"` / `"protocol edit check"`, original and plan sha256). The
   plan's numbers have at most 4 decimals, rounded toward the inside, so the run needs no second coercion; a change of
   touch or calibration during the run is still coerced by `set_force` at each step.
+- **Arrival readings (owner 2026-11-06):** while the magnet moves, each arrival poll's `POS?` is a `motor_reading`
+  event with `source` "arrival" and the poller's fields (`magnet._moving_logged`), ~100 /s, raw.
 - **Off the frame path (0018 item 1):** the acquisition's motor poller adds `force_pN`, `force_calibration`,
   `touch_mm` to each magnet `motor_reading` (via `magnet.live_force`, two exponentials, never on the acquisition
   thread); the raw record stays the position (0010).

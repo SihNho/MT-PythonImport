@@ -30,7 +30,7 @@ Units are fixed per key and never written: `f`, `from`, `to` in pN (on `hold` / 
 | Line | The program does |
 |---|---|
 | `hold f=F t=T` | the force calibration (M270 v3, from the touch position set in Setup) gives the magnet position for F pN; the magnet moves there through the motion gate; then T seconds pass |
-| `ramp from=A to=B t=T` | the magnet goes to the position of A, then moves to the position of B at the speed that takes T seconds (`speed=` mm/s instead of `t=` is allowed). A speed above the profile's magnet limit is lowered to the limit and logged as `coerced` |
+| `ramp from=A to=B t=T` | the magnet goes to the position of A, then moves to the position of B at the speed that takes T seconds (`speed=` mm/s or `rate=` pN/s instead of `t=` is allowed; `rate=` is the true loading rate: the ramp is cut into 1 s pieces of equal force, each one magnet move at the speed that piece needs, so the motor speeds up towards the touch position; between pieces the motor stops for ~50 ms). A speed above the profile's magnet limit is lowered to the limit and logged as `coerced` |
 | `move mm=X t=T` | the magnet to X mm directly (no force), then T seconds |
 | `zero t=T` | the magnet to 0 mm (the top, no force), T seconds. It does NOT set the tracking zero |
 | `rotate from=A to=B f=F t=T` | force F, the rotor to A turns (from its origin), then to B turns at (B-A)/T turns/s |
@@ -67,6 +67,8 @@ the top bar badge shows `PROTOCOL running (name)`.
 
 ## 5. The table
 
-Each column is one step: Force (pN), Wait (s), Motor (mm/s), Rotor (degree), Rotor speed (SPD). A column
-compiles to: a `ramp` to the force at the motor speed (or `hold` when the speed is 0), a `rotate` by the degrees at
-the SPD (turns/s = SPD x 10 / 500), then a `hold` for the wait. Start from table compiles and starts.
+Each column is one step: Force (pN), Wait (s), Loading, Rotor (degree), Rotor speed (SPD). **Loading** (the
+choice above the table) is either Motor (mm/s), the magnet loading rate of the LabVIEW experiments, or Force rate
+(pN/s), the force loading rate: one or the other for the whole table. A column compiles to: a `ramp` to the force
+at the loading value (`speed=` or `rate=`; `hold` when it is 0), a `rotate` by the degrees at the SPD
+(turns/s = SPD x 10 / 500), then a `hold` for the wait. Start from table compiles and starts.

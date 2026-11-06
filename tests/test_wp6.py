@@ -70,6 +70,11 @@ def test_motor_poller_gives_every_frame_a_reading_off_the_frame_path(cam, tmp_pa
     rd = run["events"]["motor_reading"]
     assert len(rd["event_id"]) >= 10 and (rd["buffer_number"] >= -1).all()
     assert {d["device"] for d in rd["data"]} == {"magnet", "rotor"}
+    n_rotor = sum(d["device"] == "rotor" for d in rd["data"])    # 2026-11-06: one thread per motor; the rotor's own
+    assert n_rotor >= 5 and sum(d["device"] == "magnet" for d in rd["data"]) > n_rotor   # thread must stay alive
+    arrival = [d for d in rd["data"] if d["device"] == "magnet" and d.get("source") == "arrival"]
+    assert len(arrival) >= 20                                    # proposal 3 (owner 2026-11-06): the arrival poll's
+    assert all(d["t_read"] >= d["t_request"] for d in arrival)   # ~100 readings/s while the magnet moves (0.5 s here)
     assert (np.diff(mt["magnet_t"]) >= 0).all()                  # the last reading before each frame
 
 

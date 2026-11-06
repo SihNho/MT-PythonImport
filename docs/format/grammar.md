@@ -43,7 +43,7 @@ kind experiment            # experiment | screening
 | Statement | Keys (unit, range) | Meaning |
 |---|---|---|
 | `zero t=` | t (s, 0.1-600) | magnet to zero force, hold, then set the zero (U12) |
-| `ramp from= to= t=` | from, to (pN, >= 0; outside the reachable range of the force calibration inside the magnet position limit -> coerced to the nearest reachable force, 0018); t (s, 0.1-36000) | force ramp |
+| `ramp from= to= t=` | from, to (pN, >= 0; outside the reachable range of the force calibration inside the magnet position limit -> coerced to the nearest reachable force, 0018); exactly one of t (s, 0.1-36000), speed (mm/s of the magnet, > 0) or rate (pN/s, > 0: the true loading rate, one magnet move per second of ramp at the speed that piece needs; the ramp takes \|to - from\| / rate s plus ~50 ms per piece) | force ramp |
 | `hold f= t=` | f (pN; coerced into the reachable range, 0018); t (s) | constant force |
 | `move mm= t=` | mm (magnet position, mm; outside the position limit -> the nearest limit, 0018); t (s, optional) | magnet by position instead of force |
 | `rotate from= to= f= t=` | from, to (turns, ±profile max); f (pN); t (s) | rotation at a force |

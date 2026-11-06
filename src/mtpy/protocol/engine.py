@@ -17,6 +17,8 @@ thread, ONLY through the public function layer `mtpy.api` - it never calls a dev
 - **Pause:** time stops counting in holds and waits within ~20 ms; a move already sent finishes - a `ramp` is one
   continuous move, so a pause takes effect after it; the next step does not start until resume. The magnet stays
   where it is.
+- **Ramp rate= (owner 2026-11-06):** the true force loading rate: one move whose VEL is set again every 0.1 s from
+  the position read back (`_ramp_at_rate`, `api.magnet.set_speed`); the C-863's VEL during a move is a rig check.
 - **Ramp (owner 2026-11-04):** one magnet move from the position of `from` to the position of `to` at the constant
   speed distance / t, as LabVIEW ramps (a motor speed), never force increments: the owner saw the increments as
   stairs in the trace, and each increment's move time stretched the ramp (10 s asked, 52 s run). A speed above the
@@ -33,6 +35,7 @@ thread, ONLY through the public function layer `mtpy.api` - it never calls a dev
   request of the run is void - nothing is sent - once an emergency stop was engaged after the run started, even when
   the request itself was made after the release (e.g. during a step-start event or a device pre-read).
 """
+import math
 import threading
 import time
 
@@ -41,6 +44,8 @@ from mtpy import api
 from .check import structure_diff, walk
 
 FINAL = ("completed", "stopped", "refused", "failed", "aborted")
+RATE_UPDATE_S = 0.1       # `ramp rate=`: the magnet speed is set again from the position read back this often
+RATE_SPEED_TOL = 0.02     # ... when it differs from the speed in force by more than this fraction
 
 
 class _End(Exception):
@@ -280,16 +285,20 @@ class Engine:
         with self._lock:
             self.steps_done += 1
 
-    def _motion(self, start):
+    def _motion(self, start, tick=None, expected_s=None):
         """Start a move (an API call returning a Motion) and wait for it in short slices; stop -> cancel. A Motion
-        that knows its own duration (`expected_s`, the magnet's distance / speed) extends the timeout by 1.5 x it."""
+        that knows its own duration (`expected_s`, the magnet's distance / speed) extends the timeout by 1.5 x it;
+        expected_s given here wins (a rate ramp knows its time). tick: called every slice while the move runs
+        (the rate ramp's speed update); its MtpyError ends the step like the move's own."""
         m = start()
         t0 = time.monotonic()
         while True:
-            exp = getattr(m, "expected_s", None)
+            exp = expected_s if expected_s is not None else getattr(m, "expected_s", None)
             exp = exp() if callable(exp) else exp        # known once the move's send has read the position
             limit = self.motion_timeout_s + 1.5 * float(exp or 0.0)
             t_end = t0 + limit
+            if tick is not None and not m.done and not self._stop.is_set():
+                tick()
             if self._stop.is_set() and not m.done:
                 m.cancel()
                 try:
@@ -343,11 +352,14 @@ class Engine:
 
     def _do_ramp(self, st):
         f0, f1, t, given = self._a(st, "from"), self._a(st, "to"), self._a(st, "t"), self._a(st, "speed")
+        rate = self._a(st, "rate")
         p0, p1 = api.magnet.force_position(f0), api.magnet.force_position(f1)
         self._motion(lambda: api.magnet.set_force(f0))
         self._check()
-        speed = given if given is not None else (abs(p1 - p0) / t if t else None)   # t= or speed= (grammar)
         vmax = (api.safety.profile()["limits"].get("magnet_speed_mm_s") or {}).get("max")
+        if rate is not None:        # owner 2026-11-06: the TRUE force loading rate, not the mean over the ramp
+            return self._ramp_at_rate(f0, f1, p0, p1, rate, vmax)
+        speed = given if given is not None else (abs(p1 - p0) / t if t else None)   # t= or speed= (grammar)
         coerced = speed is not None and vmax is not None and speed > vmax
         if coerced:
             api.events.log("coerced", request={"quantity": "magnet_speed_mm_s", "value": speed}, applied=vmax,
@@ -358,6 +370,47 @@ class Engine:
         elif t:
             self._sleep(t)
         return {"from_mm": p0, "to_mm": p1, "speed_mm_s": speed, "coerced": coerced}
+
+    def _ramp_at_rate(self, f0, f1, p0, p1, rate, vmax):
+        """`ramp rate=` (pN/s), the TRUE loading rate (owner 2026-11-06): ONE magnet move from p0 to p1 whose speed
+        is set again every RATE_UPDATE_S from the position read back, v = rate / |dF/dp| at that position (the
+        calibration's slope), so dF/dt stays at the rate while the motor speeds up towards the touch position or
+        slows away from it. A speed above the profile's maximum is capped there (one `coerced` event: far from the
+        magnet the slope is too small for the rate). shortcut: the C-863's VEL-during-motion is not yet seen on
+        the rig; if it refuses, the step fails with the controller's ERR and the owner is told."""
+        d = 1e-3
+
+        def speed_at(p):
+            slope = abs(api.magnet.force_at(p + d) - api.magnet.force_at(p - d)) / (2 * d)     # pN/mm
+            return rate / slope if slope > 0 else math.inf
+        state = {"v": None, "t": 0.0, "coerced": False, "updates": 0, "speeds": []}
+
+        def capped(p):
+            v = speed_at(p)
+            if vmax is not None and v > vmax:
+                if not state["coerced"]:
+                    api.events.log("coerced", request={"quantity": "magnet_speed_mm_s", "value": v}, applied=vmax,
+                               reason=f"ramp {f0} -> {f1} pN at {rate} pN/s needs {v:.3g} mm/s at {p:.3f} mm; the "
+                                      f"profile allows {vmax} (the rate is not held there)")
+                state["coerced"], v = True, vmax
+            return v
+
+        def tick():
+            now = time.monotonic()
+            if now - state["t"] < RATE_UPDATE_S:
+                return
+            state["t"] = now
+            v = capped(api.magnet.position())
+            if abs(v - state["v"]) > RATE_SPEED_TOL * state["v"]:
+                api.magnet.set_speed(v)
+                state["v"], state["updates"] = v, state["updates"] + 1
+                state["speeds"].append(v)
+        v0 = capped(p0)
+        state["v"], state["speeds"] = v0, [v0]
+        if abs(p1 - p0) > 1e-6:
+            self._motion(lambda: api.magnet.move_to(p1, speed_mm_s=v0), tick=tick, expected_s=abs(f1 - f0) / rate)
+        return {"from_mm": p0, "to_mm": p1, "rate_pN_s": rate, "speed_mm_s": state["v"], "speed_updates": state["updates"],
+                "speeds_mm_s": state["speeds"], "coerced": state["coerced"]}
 
     def _do_move(self, st):
         self._motion(lambda: api.magnet.move_to(self._a(st, "mm")))

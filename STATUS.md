@@ -261,10 +261,17 @@ Short and current. Details live in the linked documents; the history is in git a
   `G:\Data\protocols` listed on the Experiment page, magnet speed 15 mm/s in Explore, the residual plot on its
   own axis, `repeat N x` and the estimated time, the Script guide inside the program, the protocol that stopped at
   50 pN (the 60 s arrival wait on a 300 s ramp: #28), the magnet curve at the poller's rate. Recorded, not built:
-  autofocus (lost-bead reseed, the piezo clamp at a user-chosen position), the 1-2 s step overhead (to measure),
-  the rotor column of the .tra (absolute count vs LabVIEW's told position).
+  the 1-2 s step overhead (to measure), the rotor column of the .tra (absolute count vs LabVIEW's told position).
+  2026-11-06, the owner's feedback after the first experiment (gui.md): reference subtraction on the plot, the
+  autofocus through the piezo (sign to verify on the rig), the run-file page, the running step highlighted, the run
+  folder following the .cal, `ramp rate=` (pN/s, the true rate in 1 s pieces) and the table's Loading choice (magnet mm/s or force pN/s); the .meta.json without the .cal copy; one poll thread per motor (magnet ~30-40 readings/s) and the arrival poll's readings logged (~100/s while the magnet moves).
 - **Next:** protocols on hardware (force ramps, rotation, 3-state clamp, autofocus), the stop / watchdog paths
   exercised on the rig, then the tethered-bead calibration.
+- **Queued (owner 2026-11-06):** which side of the focus to track on. The owner's first run had the beads below
+  the focus and the z of the tethered beads fell as the force rose (extension inverted in the MATLAB analysis;
+  the owner: on purpose). To check on the rig with a reference bead: z accuracy and noise with the bead above
+  vs below the focus (the refbead tools), and whether the sign of z against bead height follows the scan
+  direction (api/zscan.py: focus start + s x step) as the code reads, not the side.
 - **Queued (owner 2026-10-30):** lock the camera settings while a z scan runs (the GUI must not change exposure,
   rate or ROI between slices; `api.acq.average` would otherwise mix frames of two settings).
 

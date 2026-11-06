@@ -57,9 +57,12 @@ def test_pi_refuses_outside_limits_before_writing_and_controller_refuses_too():
 def test_pi_close_homes_then_releases_and_a_failed_home_releases_nothing():
     ctl, dev = _pi()
     dev.open()
-    dev.move_to(30.0)
+    assert ctl.vel == 15.0                       # owner 2026-11-06: VEL = the profile's maximum at open
+    dev.move_to(30.0, speed=0.03)                # a slow ramp leaves its VEL in the controller ...
     dev.close()
     assert ctl.pos == 0.0 and (ctl.tmn, ctl.tmx) == (0.0, 52.0) and ctl.closed
+    last = {c: len(ctl.log) - 1 - ctl.log[::-1].index(c) for c in ("VEL 1 15", "MOV 1 0.00000")}
+    assert ctl.vel == 15.0 and last["VEL 1 15"] < last["MOV 1 0.00000"]                      # ... the home runs at the max
     ctl, dev = _pi()
     dev.open()
     dev.move_to(30.0)
@@ -278,3 +281,16 @@ def test_pi_failed_home_keeps_the_port_and_limits_for_the_retry():
     dev.close()
     assert ctl.closed and (ctl.tmn, ctl.tmx) == (pi.RELEASE_LO, pi.RELEASE_HI) and ctl.pos == 0.0
     assert ctl.log.count("FNL 1") == fnl_before and dev.line is None
+
+
+def test_pi_speed_can_change_while_the_axis_moves():
+    """Owner 2026-11-06 (`ramp rate=`): VEL written during a move, read back; outside the profile refused."""
+    ctl, dev = _pi()
+    dev.open()
+    dev.move_to(30.0, speed=0.5)
+    assert ctl.vel == 0.5                   # the fake arrives at once; VEL during a move is the rig check
+    dev.set_speed(2.0)
+    assert ctl.vel == 2.0 and ctl.log[-3:] == ["VEL 1 2", "VEL?", "ERR?"]
+    with pytest.raises(ValueError, match="outside the profile"):
+        dev.set_speed(16.0)
+    dev.close()

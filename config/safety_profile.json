@@ -1,9 +1,9 @@
 {
-  "version": 10,
-  "base_version": 9,
-  "created": "2026-11-05T02:18:04",
+  "version": 12,
+  "base_version": 11,
+  "created": "2026-11-06T14:45:07",
   "by": "rig-admin (owner, tools/rig_set_limit.py)",
-  "reason": "owner 2026-11-05: 'Rotor 150 SPD limit' = 3 turns/s (SPD x 10 / 500)",
+  "reason": "owner 2026-11-06: 'xy\ucd95\ub3c4 \ud558\ub4dc\uc6e8\uc5b4 \ub9ac\ubc0b\uc5d0 \ub9de\uac8c \ud574\uc918' - the session window equals the ASI release values +-500 mm, so only the stage's own limit switches bound X/Y",
   "allow_unverified": false,
   "unverified": [],
   "limits": {
@@ -48,27 +48,27 @@
       "source": "ASI Tiger SL Z? / SU Z? read on the rig 2026-10-30 (decision 0025, owner: 'Focus Z lock\uc740 \ud558\ub4dc\uc6e8\uc5b4 \ub9ac\ubc0b \ub530\ub77c\uac08\uac83'); +1 um driver move read back inside them (tools/phase7_motors.py)"
     },
     "stage_x_mm": {
-      "min": -2.0,
-      "max": 2.0,
+      "min": -500.0,
+      "max": 500.0,
       "unit": "mm",
       "relative_to": "session_start",
       "verified": true,
-      "source": "ASI SL/SU = session-start position +- 2.0 mm (motor_limits.json asi half_width_mm, owner 2026-10-15)"
+      "source": "rig-admin (owner, tools/rig_set_limit.py) 2026-11-06 14:45: owner 2026-11-06: 'xy\ucd95\ub3c4 \ud558\ub4dc\uc6e8\uc5b4 \ub9ac\ubc0b\uc5d0 \ub9de\uac8c \ud574\uc918' - the session window equals the ASI release values +-500 mm, so only the stage's own limit switches bound X/Y"
     },
     "stage_y_mm": {
-      "min": -2.0,
-      "max": 2.0,
+      "min": -500.0,
+      "max": 500.0,
       "unit": "mm",
       "relative_to": "session_start",
       "verified": true,
-      "source": "ASI SL/SU = session-start position +- 2.0 mm (motor_limits.json asi half_width_mm, owner 2026-10-15)"
+      "source": "rig-admin (owner, tools/rig_set_limit.py) 2026-11-06 14:45: owner 2026-11-06: 'xy\ucd95\ub3c4 \ud558\ub4dc\uc6e8\uc5b4 \ub9ac\ubc0b\uc5d0 \ub9de\uac8c \ud574\uc918' - the session window equals the ASI release values +-500 mm, so only the stage's own limit switches bound X/Y"
     }
   },
   "recommissioning": {
     "by": "rig-admin (owner, tools/rig_set_limit.py)",
-    "t": 1793812684.3598263,
+    "t": 1793943907.002518,
     "checked": {
-      "rotor_speed_turns_s": true
+      "stage_y_mm": true
     },
     "notes": "",
     "not_checked_unverified": []

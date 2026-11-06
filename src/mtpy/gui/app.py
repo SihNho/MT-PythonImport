@@ -9,6 +9,7 @@ import contextlib
 import json
 import re
 import time
+import warnings
 from collections import deque
 from datetime import datetime
 from pathlib import Path
@@ -16,6 +17,7 @@ from pathlib import Path
 import numpy as np
 import pyqtgraph as pg
 from PySide6.QtCore import QObject, QRunnable, QSettings, Qt, QThreadPool, QTimer, Signal
+from PySide6.QtGui import QColor, QTextCursor, QTextFormat
 from PySide6.QtWidgets import (
     QButtonGroup,
     QCheckBox,
@@ -44,6 +46,7 @@ from PySide6.QtWidgets import (
     QTableWidget,
     QTableWidgetItem,
     QTextBrowser,
+    QTextEdit,
     QVBoxLayout,
     QWidget,
 )
@@ -90,8 +93,10 @@ TITLES = {"setup": "Setup: devices, camera, analysis", "explore": "Explore (no r
 AXES = {"t": "Time (s)", "mag": "Magnet (mm)", "force": "Force (pN)", "z": "z (um)", "x": "x (px)", "y": "y (px)"}
 COLORS = ["#60A5FA", "#F472B6", "#34D399", "#FBBF24", "#A78BFA", "#F87171", "#2DD4BF", "#FB923C"]
 CHIPS_PER_ROW = 16                     # bead check boxes wrap after this many (G16)
+EDGE_SLICES = 10                       # owner 2026-11-06: a bead this close to a LUT end is shown orange (box, chip)
 PLOT_HZ = 10.0                         # default plot refresh; the user sets it in the plot bar (owner 2026-11-01)
 GUIDE = Path(__file__).resolve().parents[3] / "docs" / "guide" / "protocol-scripts.ko.md"   # the script guide
+RUN_DOC = Path(__file__).resolve().parents[3] / "docs" / "format" / "run-file.ko.html"       # what the .h5 holds
 
 
 class _Signals(QObject):
@@ -404,6 +409,10 @@ class MainWindow(QMainWindow):
         self.follow = QCheckBox("Follow 30 s")
         self.follow.setChecked(True)
         self.auto_scale = QCheckBox("Auto scale")
+        # owner 2026-11-06: the reference beads' mean x / y / z is subtracted from the tethered beads (thermal drift
+        # out); the reference beads themselves stay raw, so their drift is seen
+        self.sub_ref = QCheckBox("Subtract reference")
+        self.sub_ref.setChecked(True)
         # owner 2026-11-01: the plot's refresh rate is the user's (the data keep arriving at the display rate; only
         # the redraw is paced) - 16:00 isolation: the plot was the GUI's largest cost per tick
         self.plot_hz = _spin(1.0, 30.0, 1.0, PLOT_HZ, 0, " Hz")
@@ -415,6 +424,7 @@ class MainWindow(QMainWindow):
             ctl.addWidget(wdg)
         ctl.addWidget(self.follow)
         ctl.addWidget(self.auto_scale)
+        ctl.addWidget(self.sub_ref)
         ctl.addWidget(QLabel("Plot refresh"))
         ctl.addWidget(self.plot_hz)
         ctl.addLayout(self.bead_chips)
@@ -576,6 +586,13 @@ class MainWindow(QMainWindow):
                       QPushButton("Reset calibration", clicked=self._new_calibration)))
         f.addRow(self.run_cal)
         f.addRow(_row(self.run_track, self.btn_rec))
+        # owner 2026-11-06: autofocus through the piezo (spec F4.06): the focus holds the reference bead's tracked z at
+        # the LUT's middle; off by default, off again at Reset calibration and when the camera stops
+        self.autofocus = QCheckBox("Autofocus: the piezo holds the reference bead's z at the LUT's middle "
+                                   "(+-0.2 um steps; verify on the rig that z converges)")
+        self.autofocus.toggled.connect(self._toggle_autofocus)
+        self.af_status = QLabel("")
+        f.addRow(_row(self.autofocus, self.af_status))
         f.addRow(QPushButton("5. Save the traces (.tra)", clicked=lambda: self._export("tra")))
         f.addRow(self.run_save)
         return w
@@ -747,7 +764,7 @@ class MainWindow(QMainWindow):
         w = QWidget()
         f = QFormLayout(w)
         self.ed_out = QLineEdit(str(self.out))
-        f.addRow("Run folder", _row(self.ed_out, QPushButton("Browse...", clicked=self._browse_out)))
+        f.addRow("Run folder (the .cal's folder unless browsed)", _row(self.ed_out, QPushButton("Browse...", clicked=self._browse_out)))
         self.ed_name = QLineEdit(next_tra(self.out))     # owner 2026-11-05: LabVIEW's names, tra001 with cal001
         f.addRow("Run name (next acquisition)", self.ed_name)
         lab = QLabel("The run file <folder>/<name>.h5 is the raw data: every frame's record, the traces, the events and the "
@@ -761,7 +778,8 @@ class MainWindow(QMainWindow):
         f.addRow("Run file", _row(self.ed_h5, QPushButton("Browse...", clicked=self._browse_h5)))
         f.addRow(_row(QPushButton("Export .tra", clicked=lambda: self._export("tra")),
                       QPushButton("Export .cal", clicked=lambda: self._export("cal")),
-                      QPushButton("Open run (summary)", clicked=self._open_run)))
+                      QPushButton("Open run (summary)", clicked=self._open_run),
+                      QPushButton("What the run file holds", clicked=self._show_run_doc)))
         self.save_info = QPlainTextEdit()
         self.save_info.setReadOnly(True)
         f.addRow(self.save_info)
@@ -1151,7 +1169,17 @@ class MainWindow(QMainWindow):
         p, _ = QFileDialog.getOpenFileName(self, "Calibration (.cal) file", str(Path(self.cal_out.text()).parent))
         if p:
             self.ed_cal.setText(p)
+            self._follow_cal_folder(p)
             self._load_cal_list()
+
+    _out_browsed = False          # the user chose the run folder by hand (Save page): the .cal's folder no longer wins
+
+    def _follow_cal_folder(self, cal_path):
+        """Owner 2026-11-06: the run file goes next to the calibration unless the user browsed a run folder."""
+        if not self._out_browsed:
+            folder = Path(cal_path).parent
+            self.ed_out.setText(str(folder))
+            self.ed_name.setText(next_tra(folder))
 
     def _load_cal_list(self):
         path = Path(self.ed_cal.text())
@@ -1167,7 +1195,10 @@ class MainWindow(QMainWindow):
             it.setCheckState(Qt.Checked)
             it.setData(Qt.UserRole, i)
             self.bead_list.addItem(it)
-        self.beads_info.setText(f"{len(cal['xy'])} beads, {cal['n_slices']} slices x {cal['z_step'] * 1000:.0f} nm, "
+        self.lut = (int(cal["n_slices"]), float(cal["z_step"]))     # z = index x step: 0 .. (n - 1) x step
+        self.beads_info.setText(f"{len(cal['xy'])} beads, {cal['n_slices']} slices x {cal['z_step'] * 1000:.0f} nm "
+                                f"(z 0 .. {(cal['n_slices'] - 1) * cal['z_step']:.1f} um, middle "
+                                f"{(cal['n_slices'] // 2) * cal['z_step']:.1f}), "
                                 f"{cal['date']}")
         with contextlib.suppress(Exception):           # the viewer (Calibrate) shows the same file
             self.calview.load(path)
@@ -1176,6 +1207,7 @@ class MainWindow(QMainWindow):
         """Owner 2026-11-05: to calibrate again while tracking, the beads must go: the selection is dropped, the
         acquisition goes on without beads (the run file closes; no camera restart), and left clicks pick on the
         image."""
+        self.autofocus.setChecked(False)
         self.bead_ids, self.roles, self.cal_path = [], {}, None
         self._clear_picks()
         self._rebuild_chips()
@@ -1228,6 +1260,23 @@ class MainWindow(QMainWindow):
                 api.acq.retarget(folder=folder, name=name, roles=roles, z_method=zm, gpu=gpu)
             return pos
         self._call(job, "select beads", done)
+
+    def _chip_texts(self, z):
+        """'b3 z 5.4/5.9': the raw z (never reference-subtracted) against the LUT's top (owner 2026-11-06: is the bead
+        near the calibration boundary?); orange when near, 'lost' at -1."""
+        if self.lut is None:
+            return
+        top = (self.lut[0] - 1) * self.lut[1]
+        for k, i in enumerate(self.bead_ids):
+            c = self.chips.get(i)
+            if c is None or k >= len(z):
+                continue
+            zk = float(z[k])
+            c.setText(f"b{i} lost" if zk < 0 else f"b{i} z {zk:.1f}/{top:.1f}")
+            near = self._near_edge(zk)
+            if getattr(c, "_near", None) != near:
+                c._near = near
+                c.setStyleSheet(f"color:{'#F97316' if near else COLORS[k % len(COLORS)]}")
 
     def _rebuild_chips(self):
         while self.bead_chips.count():
@@ -1292,7 +1341,16 @@ class MainWindow(QMainWindow):
         self.picks = []
         self._draw_picks()
 
-    def _draw_boxes(self, xy, good):
+    lut = None                     # (n_slices, z_step um) of the .cal in use
+
+    def _near_edge(self, z):
+        """Owner 2026-11-06: z within EDGE_SLICES of either LUT end (the tracker drops the bead 2-3 slices from it)."""
+        if self.lut is None or z is None or z < 0:
+            return False
+        n, step = self.lut
+        return z < EDGE_SLICES * step or z > (n - 1 - EDGE_SLICES) * step
+
+    def _draw_boxes(self, xy, good, z=None):
         for b in self.boxes:
             self.vb.removeItem(b)
         self.boxes = []
@@ -1300,7 +1358,8 @@ class MainWindow(QMainWindow):
         for k, ((x, y), g) in enumerate(zip(xy, good)):
             if x < 0:
                 continue
-            pen = pg.mkPen(COLORS[k % len(COLORS)] if g else "#9CA3AF", width=2)
+            near = z is not None and self._near_edge(float(z[k]))
+            pen = pg.mkPen("#9CA3AF" if not g else "#F97316" if near else COLORS[k % len(COLORS)], width=2)
             r = pg.QtWidgets.QGraphicsRectItem(x - h, y - h, 2 * h, 2 * h)
             r.setPen(pen)
             self.vb.addItem(r)
@@ -1315,6 +1374,7 @@ class MainWindow(QMainWindow):
                                            self.cal_out.text(), "Calibration (cal*);;All (*)")
         if p:
             self.cal_out.setText(p)
+            self._follow_cal_folder(p)
 
     def _run_zscan(self):
         beads = api.beads.selected()
@@ -1345,6 +1405,7 @@ class MainWindow(QMainWindow):
                                     "the focus is at the LUT's middle - track from here")
             self.ed_cal.setText(str(path))
             self.cal_out.setText(str(next_free(path)))        # the next scan gets the next number unless told otherwise
+            self._follow_cal_folder(path)
             self._load_cal_list()
             self.calview.load(path)
             if getattr(self, "_flow", None):
@@ -1383,8 +1444,20 @@ class MainWindow(QMainWindow):
         self._call(lambda: api.acq.start(record=False, name=name, folder=folder, roles=roles, z_method=zm, gpu=gpu),
                    "start acquisition", done)
 
+    def _toggle_autofocus(self, on):
+        refs = [i for i in self.bead_ids if self.roles.get(i) == "reference"]
+        if on and not refs:
+            self.autofocus.setChecked(False)
+            self._fail("autofocus", "no reference bead is tracked: calibrate and select beads with a reference first")
+            return
+        self._call(lambda: api.focus.autofocus(on, bead_id=refs[0] if on else None), "autofocus",
+                   lambda st: self.af_status.setText(f"holding bead {st['bead']} at z {st['z_center_um']:.2f} um"
+                                                     if st["on"] else "off"))
+
     def _live_text(self, on):
         self.btn_run_cam.setText("Stop the camera" if on else "1. Start the camera")
+        if not on:
+            self.autofocus.setChecked(False)
 
     def _toggle_rec(self):
         on = self.btn_rec.isChecked()
@@ -1464,7 +1537,7 @@ class MainWindow(QMainWindow):
             for st in body:
                 if st.kind == "loop":
                     total += st.args["n"].value * travel(st.body)
-                elif st.kind == "ramp" and "t" not in st.args and "speed" in st.args:
+                elif st.kind == "ramp" and "speed" in st.args:
                     try:
                         p0 = api.magnet.force_position(st.args["from"].value)
                         p1 = api.magnet.force_position(st.args["to"].value)
@@ -1473,7 +1546,7 @@ class MainWindow(QMainWindow):
                         pass
             return total
         total = duration(script.body) + travel(script.body)
-        return f"estimated {int(total // 60)} min {total % 60:.0f} s (t= and speed= moves; the rest not counted)"
+        return f"estimated {int(total // 60)} min {total % 60:.0f} s (t=, speed= and rate= moves; the rest not counted)"
 
     def _show_guide(self):
         """The script guide inside the program (owner 2026-11-05: the .md opened in another application)."""
@@ -1484,6 +1557,17 @@ class MainWindow(QMainWindow):
             self.guide_panel = _Panel(self, "Script guide", tb)
             self.guide_panel.resize(760, 820)
         self.guide_panel.open_()
+
+    def _show_run_doc(self):
+        """Owner 2026-11-06: what the .h5 holds and what its metadata is, as a page inside the program
+        (docs/format/run-file.ko.html, generated by tools/run_file_doc.py from a real run)."""
+        if not hasattr(self, "run_doc_panel"):
+            tb = QTextBrowser()
+            tb.setOpenExternalLinks(True)
+            tb.setHtml(RUN_DOC.read_text(encoding="utf-8"))
+            self.run_doc_panel = _Panel(self, "The run file (.h5)", tb)
+            self.run_doc_panel.resize(900, 820)
+        self.run_doc_panel.open_()
 
     def _check_protocol(self):
         text = self.prot_edit.toPlainText()
@@ -1538,6 +1622,8 @@ class MainWindow(QMainWindow):
         d = QFileDialog.getExistingDirectory(self, "Run folder", self.ed_out.text())
         if d:
             self.ed_out.setText(d)
+            self.ed_name.setText(next_tra(Path(d)))
+            self._out_browsed = True
 
     def _browse_h5(self):
         p, _ = QFileDialog.getOpenFileName(self, "Run file", self.ed_out.text(), "HDF5 (*.h5)")
@@ -1582,7 +1668,7 @@ class MainWindow(QMainWindow):
         if self.display_on:
             self.img_item.setImage(snap.image, autoLevels=False, levels=(0, 255))
             if res is not None and res.xyz is not None:
-                self._draw_boxes(res.xyz[:, :2], res.good)
+                self._draw_boxes(res.xyz[:, :2], res.good, res.xyz[:, 2])
             r = snap.record
             self.cam_label.setText(f"JAI frame {r.buffer_number}  seg {r.segment}  t {r.t_camera_s:.3f} s  "
                                    f"{r.rate_Hz:.1f} Hz  {'REC' if r.recording else ''}")
@@ -1593,6 +1679,7 @@ class MainWindow(QMainWindow):
             if now >= self._next_plot:
                 self._next_plot = now + 1.0 / self.plot_hz.value()
                 self._update_plot()
+                self._chip_texts(res.xyz[:, 2])
 
     _mag = _force = float("nan")
 
@@ -1691,8 +1778,11 @@ class MainWindow(QMainWindow):
             self.prot_badge.setText(f"PROTOCOL {p['state']}" + (f" ({p.get('name')})" if running and p.get("name") else "")
                                     if running else "no protocol")
             self.prot_badge.setStyleSheet("background: #ffd54f; padding: 2px 8px; font-weight: bold" if running else "")
+            cur = p.get("current") if running else None
             if p["state"] != "idle":
-                self.prot_status.setText(f"{p['state']}" + (f": {p['reason']}" if p.get("reason") else ""))
+                self.prot_status.setText(f"{p['state']}" + (f": {p['reason']}" if p.get("reason") else "")
+                                         + (f" - step {cur['step']} line {cur['line']}: {cur['statement']}" if cur else ""))
+            self._show_current(cur)
             active = estop.active()
             if active:
                 parts.append(f"E-STOP ENGAGED ({estop.reason()})")
@@ -1702,6 +1792,31 @@ class MainWindow(QMainWindow):
             self.statusBar().showMessage("   |   ".join(parts))
         except RuntimeError:                  # the window is closing (widgets deleted) while a read was in flight
             pass
+
+    def _show_current(self, cur):
+        """Owner 2026-11-06: the running statement is highlighted in the script and its column in the table (the
+        `# column k` comment above the line names the column). The plan that runs is the text as it was at Start."""
+        line = cur["line"] if cur else None
+        if getattr(self, "_shown_line", None) == line:
+            return
+        self._shown_line = line
+        sel, col = [], None
+        if line:
+            block = self.prot_edit.document().findBlockByNumber(line - 1)
+            if block.isValid():
+                s = QTextEdit.ExtraSelection()
+                s.format.setBackground(QColor("#ffd54f"))
+                s.format.setForeground(QColor("black"))
+                s.format.setProperty(QTextFormat.FullWidthSelection, True)
+                s.cursor = QTextCursor(block)
+                sel.append(s)
+            for txt in reversed(self.prot_edit.toPlainText().splitlines()[:line]):
+                m = re.match(r"#\s*column\s+(\d+)", txt.strip())
+                if m:
+                    col = int(m.group(1)) - 1
+                    break
+        self.prot_edit.setExtraSelections(sel)
+        self.exp_table.highlight(col)
 
     def _plot_profiles(self, p):
         """During a z scan the graph shows every pick's radial profile of the slice just taken (owner 2026-11-05)."""
@@ -1728,15 +1843,25 @@ class MainWindow(QMainWindow):
         mag = np.array([r[1] for r in h])
         force = np.array([r[2] for r in h])
         xyz = np.array([r[3] for r in h])          # (n, nb, 3)
+        xyz = np.where(xyz == -1.0, np.nan, xyz)   # lost = -1 (the kernel's marker)
+        refs = [k for k, i in enumerate(self.bead_ids) if self.roles.get(i) == "reference"]
+        if self.sub_ref.isChecked() and refs:
+            with warnings.catch_warnings():            # a frame with every reference lost: NaN, no warning
+                warnings.simplefilter("ignore", RuntimeWarning)
+                ref = np.nanmean(xyz[:, refs, :], axis=1, keepdims=True)
+            xyz = np.where(np.isin(np.arange(len(self.bead_ids)), refs)[None, :, None], xyz, xyz - ref)
         base = {"t": t, "mag": mag, "force": force}
         xs = base[kx]
         self.plot.setLabel("bottom", AXES[kx])
         self.plot.setLabel("left", AXES[ky])
-        if getattr(self, "_plot_ky", None) != ky:        # rig 2026-11-05: the legend kept the old axis's name
+        sub = self.sub_ref.isChecked() and bool(refs) and ky in ("x", "y", "z")
+        if ky in ("x", "y", "z"):
+            self.plot.setLabel("left", AXES[ky] + (" - reference" if sub else ""))
+        if getattr(self, "_plot_ky", None) != (ky, sub):   # rig 2026-11-05: the legend kept the old axis's name
             for c in self.curves.values():
                 self.plot.removeItem(c)
             self.curves.clear()
-            self._plot_ky = ky
+            self._plot_ky = (ky, sub)
         if ky in base:
             ys = {None: base[ky]}
         else:
@@ -1749,9 +1874,9 @@ class MainWindow(QMainWindow):
         for key, y in ys.items():
             if key not in self.curves:
                 k = self.bead_ids.index(key) if key is not None else 0
-                self.curves[key] = self.plot.plot(pen=pg.mkPen(COLORS[k % len(COLORS)], width=1.5),
-                                                  name=f"b{key}" if key is not None else AXES[ky])
-            y = np.where(y == -1.0, np.nan, y)
+                name = AXES[ky] if key is None else f"b{key}" + (" (ref, raw)" if sub and self.roles.get(key) == "reference"
+                                                                  else " - ref" if sub else "")
+                self.curves[key] = self.plot.plot(pen=pg.mkPen(COLORS[k % len(COLORS)], width=1.5), name=name)
             self.curves[key].setData(xs, y, connect="finite")
         if self.auto_scale.isChecked():
             self.plot.enableAutoRange()

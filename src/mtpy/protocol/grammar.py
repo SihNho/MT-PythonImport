@@ -122,7 +122,8 @@ PN = Key("num", "pN", 0.0)                 # forces >= 0; the upper bound is the
 PROTOCOL_KEYS = {
     "zero": {"t": _t(0.1, 600.0)},
     "ramp": {"from": PN, "to": PN, "t": _t(0.1, required=False),
-             "speed": Key("num", "mm/s", 0.0, None, False, True)},     # one of t= / speed= (owner 2026-11-04: a motor speed)
+             "speed": Key("num", "mm/s", 0.0, None, False, True),      # one of t= / speed= / rate= (owner 2026-11-04: a
+             "rate": Key("num", "pN/s", 0.0, None, False, True)},      # motor speed; 2026-11-06: a force loading rate)
     "hold": {"f": PN, "t": _t()},
     "move": {"mm": Key("num", "mm"), "t": _t(required=False)},
     "rotate": {"from": Key("num", "turns"), "to": Key("num", "turns"), "f": PN, "t": _t(0.1)},
@@ -549,8 +550,9 @@ class _Parser:
             _keyvals(cur, PROTOCOL_KEYS[kw], st, kw)
             if kw == "rotate" and st.args["from"].value == st.args["to"].value:
                 raise _LineError(st.args["to"].col, "'rotate' needs from= and to= to differ (use 'hold' to stay)")
-            if kw == "ramp" and ("t" in st.args) == ("speed" in st.args):
-                raise _LineError(cur.end_col(), "'ramp' needs exactly one of t= (seconds) or speed= (mm/s of the magnet)")
+            if kw == "ramp" and sum(k in st.args for k in ("t", "speed", "rate")) != 1:
+                raise _LineError(cur.end_col(), "'ramp' needs exactly one of t= (seconds), speed= (mm/s of the magnet) "
+                                                "or rate= (pN/s of the force)")
         elif kw == "record":
             if cur.is_word("on") or cur.is_word("off"):
                 st.form = cur.next().text

@@ -75,17 +75,55 @@ The owner ran watch -> picks -> calibrate -> track -> protocol -> Save the trace
   nominal) and columns (frame, magnet mm, rotor deg, x y z per bead: 3 + 3 x 4 = 15) as the LabVIEW file. One
   difference to decide with the owner: the rotor column holds the controller's absolute count (72000 deg here)
   where the LabVIEW file holds the position told relative to its origin (0 at the start).
-- **Autofocus - not built** (owner: "I do not know whether auto-focusing is on"). Two functions the LabVIEW
-  program has and this one does not yet: (1) a bead reported bad returns to its calibration position and tracking
-  is retried (spec F4.05 lost-bead reseed); (2) the piezo keeps a chosen coverslip position (spec F4.06, the
-  +-0.2 clamp rule) - the owner must be able to choose which position to hold. Queued for the hardware phase
-  (STATUS Next); until then the focus stays where the z scan or Explore left it.
+- **Autofocus** (owner 2026-11-06: "autofocus through the piezo stage is not built - fix it"): the Run page's
+  check box switches `api.focus.autofocus(on, bead_id=<the first reference bead>)`: a thread off the frame path
+  (RULES 6) takes the display tap's newest result every 0.3 s and sends ONE relative focus move of at most 0.2 um
+  towards the LUT's middle (`n_slices // 2 x z_step`), as the LabVIEW rule (spec F4.06: clamp +-0.2 per firing);
+  nothing is sent while the bead is lost or the error is under 10 nm; every move is an `autofocus_move` event.
+  Off by default, off again when the camera stops or at Reset calibration. The lost-bead reseed (F4.05) is the
+  tracker's own auto-reset. **Not verified on the rig:** the sign of the correction follows this program's z scan
+  (slice s = focus start + s x step); if the reference bead's z diverges instead of converging, `_AutoFocus.SIGN`
+  is wrong (api/focus.py). The +-0.2 unit (um here) is still open (Q4.06).
+
+## Owner's feedback after the first experiment (2026-11-06)
+1. The trace plot subtracts the reference beads' mean x / y / z from the tethered beads ("Subtract reference",
+   on by default; the reference beads stay raw and the legend says so), so what is left is the molecule, not the
+   thermal drift. The run file and the .tra stay raw.
+2. The force curve's stairs during a slow ramp were the magnet poll: one loop read the magnet (ERR? + POS?,
+   5-10 ms) and the rotor (POS, ~40 ms) then waited 50 ms, so each gave ~10 readings/s (rig files 2026-11-05/06),
+   held until the next. Now each motor has its own poll thread and period (`api/acq.py` MOTOR_POLL_S: magnet
+   20 ms, rotor 50 ms), so the magnet reads at ~30-40/s; and while the magnet moves, every arrival poll's `POS?` (every ~10 ms,
+   `Motion.wait_arrival`) is logged too as a `motor_reading` with `source` "arrival" (owner 2026-11-06, proposal 3:
+   ~100 raw readings/s during a move). The data stay raw (owner: no interpolation); the run file's `magnet_mm`
+   is the last reading before each frame.
+3. Autofocus, above.
+4. What the .h5 holds: [format/run-file.html](../format/run-file.html) (and .ko.html), generated from a real run by
+   `tools/run_file_doc.py`; the Save page's "What the run file holds" opens it inside the program.
+5. The running statement is highlighted in the script box and its column in the table; the status line says the
+   step and line. The plan that runs is the text as it was at Start: table or text edits during the run change
+   nothing until Apply edits (value edits only, at the next statement).
+6. Data are written in real time (1 s / 150 rows per flush), never kept in RAM until Save; Save the traces only
+   exports the .tra from the .h5.
+7. The run folder follows the .cal's folder (Browse on Calibrate, a .cal picked on Beads, a finished scan) unless
+   the user browsed a run folder on the Save page.
+8. Loading, magnet or force, one or the other (owner: the LabVIEW experiments used the magnet loading rate; the
+   force loading rate is wanted, and it must be the true rate, not a mean): the table's "Loading" choice names its
+   third row Motor (mm/s) or Force rate (pN/s); `ramp rate=` cuts the ramp into 1 s pieces of equal force, each
+   one magnet move at the speed that piece needs (engine `_ramp_at_rate`); the motor stops ~50 ms between pieces.
+   A VEL changed on the fly during one move would be smoother; to try on the rig if wanted.
+9. "How do I know the bead is near the calibration boundary?": within 10 slices of either LUT end the bead's box
+   on the image and its chip above the plot turn orange; the chip reads the raw z against the LUT top
+   ("b2 z 5.2/5.9", "b3 lost"); the Beads text gives the LUT's z range and middle. Grey box = the tracker's own
+   bad flag (2-3 slices from an end, or at the image edge): the bead is lost on the next frame.
+10. The program's close timed out waiting for the magnet to home: a slow ramp (0.03 mm/s) leaves its VEL in the
+    PI controller and the home crawled. The PI open and close now set VEL to the profile's maximum (15 mm/s)
+    and read it back (motion-gate.md); the simulator does the same.
 
 ## What the first build has (src/mtpy/gui)
 One window after the mock-up ([mockups/2026-10-23-main-window](../mockups/2026-10-23-main-window/README.md)):
 top bar (device summary, display pause, acquisition start / stop, Record, STOP, Acknowledge), six steps, two camera
 screens side by side (owner 2026-10-30: the JAI with the bead boxes, the EMCCD with its snap or Live frames), any-axis live graphs (x / y / z per bead, magnet, force against time, magnet or force; follow
-30 s; bead chips), the event list (without the 20 Hz motor readings) and the status line (frames, fps, recording,
+30 s; bead chips), the event list (without the motor readings) and the status line (frames, fps, recording,
 magnet position and live force, protocol state, e-stop).
 
 **Camera SDK** (owner 2026-11-01, decision 0028): a box in Setup, IMAQdx (default; NI's driver, shared with LabVIEW) or eBUS (Pleora's driver); it must match the USB3 Vision driver the camera is bound to.

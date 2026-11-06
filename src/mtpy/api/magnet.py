@@ -80,11 +80,53 @@ def move_to(position_mm, speed_mm_s=None, _stall_return=False):
     def expected():
         return abs(applied - pre["from_mm"]) / speed if speed and "from_mm" in pre else None
     m = _move("magnet", "magnet_position_mm", applied, lambda: _read_checked(svc, dev, n_stall, _stall_return),
-              gen=gen, send=send, read_on_caller=True, expected_s=expected)
+              gen=gen, send=send, read_on_caller=True, expected_s=expected, moving=lambda: _moving_logged(dev))
     m.expected_s = expected
     m.requested_mm, m.applied_mm = position_mm, applied
     m.coerced = applied is not position_mm and abs(applied - position_mm) > COERCE_TOL
     return m
+
+
+def set_speed(speed_mm_s):
+    """Change the magnet speed now, also during a running move (the force loading rate ramp, owner 2026-11-06:
+    `ramp rate=` keeps dF/dt constant by setting VEL from the position read back). Inside the profile's
+    `magnet_speed_mm_s` or SafetyRefused; NotReady under the emergency stop. Logged as an `act` event
+    (quantity magnet_speed_mm_s). Example: `api.magnet.set_speed(2.5)`."""
+    svc = service("magnet")
+    dev = svc.require()
+    request = {"quantity": "magnet_speed_mm_s", "value": speed_mm_s}
+    if estop.active():
+        events.log("refused", request=request, reason="emergency stop engaged")
+        raise NotReady("the emergency stop is engaged; no magnet speed change")
+    try:
+        safety.check("magnet_speed_mm_s", speed_mm_s)
+    except SafetyRefused as e:
+        events.log("refused", request=request, reason=str(e))
+        raise
+    svc.call(dev.set_speed, float(speed_mm_s), what=f"VEL 1 {speed_mm_s!r}")
+    events.log("act", request=request, readback=float(speed_mm_s), device="magnet")
+    return float(speed_mm_s)
+
+
+def _moving_logged(dev):
+    """The arrival poll (Motion.wait_arrival, every ~10 ms on the service thread): dev.moving() reads POS? anyway,
+    so that reading is logged as a `motor_reading` event with the poller's fields (owner 2026-11-06, proposal 3:
+    ~100 raw readings/s in the run file while the magnet moves, no interpolation). `source` = "arrival" tells it
+    from the poller's."""
+    still = dev.moving()
+    last = getattr(dev, "last_pos", None)
+    if last is not None and last[2] is not None:
+        t_request, t_read, v = last
+        try:
+            derived = live_force(v) or {}
+        except MtpyError:
+            derived = {}
+        from . import acq as _acq
+        pipe = _acq._pipe
+        events.log("motor_reading", request={"quantity": "magnet_position_mm"}, readback=float(v), device="magnet",
+                   t_read=t_read, t_request=t_request, source="arrival", **derived,
+                   **(pipe.last_record() if pipe is not None else {}))
+    return still
 
 
 def _coerce_position(position_mm):

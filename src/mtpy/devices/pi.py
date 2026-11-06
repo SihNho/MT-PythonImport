@@ -122,6 +122,7 @@ class PiMagnet(Device):
                 L.close()
             raise
         self.line, self.lo, self.hi = L, lo, hi
+        self._reset_speed(L)
 
     def close(self):
         """Magnet home at 0 mm verified while the limits are still set, then the release limits. A failed home
@@ -131,6 +132,7 @@ class PiMagnet(Device):
         L = self.line
         if L is None:
             return
+        self._reset_speed(L)
         self._checked_move(L, 0.0)
         self._wait(L, lambda: _num(L.ask("ONT?")) == 1, 60)
         p = _num(L.ask("POS?"))
@@ -181,21 +183,41 @@ class PiMagnet(Device):
     def session_origin(self):
         return None
 
+    def _set_speed(self, L, speed):
+        """VEL inside the profile's magnet_speed_mm_s, read back (audit item 7: the driver's own cap)."""
+        vmax = safety.profile()["limits"]["magnet_speed_mm_s"]["max"]
+        if vmax is None or not 0 < speed <= vmax:
+            raise ValueError(f"PI VEL {speed!r} outside the profile's 0..{vmax} mm/s")
+        L.say(f"VEL 1 {speed:g}")
+        v, err = _num(L.ask("VEL?")), _num(L.ask("ERR?"))
+        if err or v is None or abs(v - speed) > 1e-3:
+            raise ValueError(f"PI VEL {speed:g}: read back {v}, ERR {err}")
+
+    def _reset_speed(self, L):
+        """Owner 2026-11-06: VEL back to the profile's maximum at the session's start and end (a slow ramp leaves
+        its VEL in the controller: the home at close then crawled at 0.03 mm/s and timed out)."""
+        vmax = safety.profile()["limits"]["magnet_speed_mm_s"]["max"]
+        if vmax:
+            L.ask("ERR?")                     # a stale error (ERR 10 after an e-stop's HLT) must not fail the reset
+            self._set_speed(L, float(vmax))
+
     def move_to(self, target, speed=None):
         L = self._io()
         if speed is not None:
-            vmax = safety.profile()["limits"]["magnet_speed_mm_s"]["max"]      # audit item 7: the driver's own cap
-            if vmax is None or not 0 < speed <= vmax:
-                raise ValueError(f"PI VEL {speed!r} outside the profile's 0..{vmax} mm/s")
-            L.say(f"VEL 1 {speed:g}")
-            v, err = _num(L.ask("VEL?")), _num(L.ask("ERR?"))
-            if err or v is None or abs(v - speed) > 1e-3:
-                raise ValueError(f"PI VEL {speed:g}: read back {v}, ERR {err}")
+            self._set_speed(L, speed)
         self._checked_move(L, float(target))
+
+    def set_speed(self, speed):
+        """VEL now, also while the axis moves (the force loading rate ramp, owner 2026-11-06). The C-863 takes a
+        new VEL during a move (GCS: the profile generator follows it); NOT yet seen on the rig - a controller that
+        refuses answers ERR, and the read-back check turns that into ValueError (the ramp step then fails)."""
+        self._set_speed(self._io(), speed)
 
     def moving(self):
         L = self._io()
+        t_request = time.time()
         p = _num(L.ask("POS?"))
+        self.last_pos = (t_request, time.time(), p)       # the arrival poll's own reading (owner 2026-11-06, proposal 3)
         if p is not None and (p > self.hi + 0.5 or p < self.lo - 0.5):
             L.say("HLT 1")                   # watchdog: outside the limits by more than 0.5 mm
             raise ValueError(f"PI position {p} outside the limits; HLT sent")

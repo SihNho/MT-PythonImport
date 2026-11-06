@@ -570,3 +570,113 @@ def test_experiment_opens_empty_and_the_estop_banner_shows_only_while_engaged(wi
     _until(app, lambda: w.estop_banner.isVisible() and w.btn_ack.isVisible(), 5, "banner")
     w._estop_clear()
     _until(app, lambda: not w.estop_banner.isVisible(), 5, "banner gone")
+
+
+def test_owner_feedback_2026_11_06_plot_folder_rate_and_step_highlight(window, monkeypatch, tmp_path):
+    """Owner 2026-11-06 after the first experiment: (1) the trace plot subtracts the reference beads' mean from the
+    tethered beads; (2) the run folder follows the .cal's folder unless the user browsed one; (3) a table column with
+    a Force rate compiles to `ramp rate=` (pN/s); (4) the running statement and its column are highlighted."""
+    from PySide6.QtWidgets import QFileDialog
+
+    from mtpy.gui.exptable import compile_table
+    app, w = window
+    # (1) reference subtraction on the plot
+    w.bead_ids, w.roles = [1, 2], {1: "reference", 2: "tethered"}
+    w._rebuild_chips()
+    w.t0 = time.time()
+    for k in range(5):
+        w.history.append((0.1 * k, 1.0, 2.0, np.array([[10.0, 20.0, 0.5 * k], [11.0, 21.0, 1.0 + 0.5 * k]])))
+    w.history.append((0.5, 1.0, 2.0, np.array([[10.0, 20.0, -1.0], [11.0, 21.0, 3.5]])))   # the reference lost once
+    w.ax_y.setCurrentIndex(list(w.ax_y.itemData(i) for i in range(w.ax_y.count())).index("z"))
+    w._update_plot()
+    y2 = w.curves[2].yData
+    assert np.allclose(y2[:5], 1.0) and np.isnan(y2[5])                    # tethered - reference; lost = gap
+    assert np.allclose(w.curves[1].yData[:5], [0, 0.5, 1.0, 1.5, 2.0])     # the reference stays raw
+    assert w.curves[2].name() == "b2 - ref" and "ref, raw" in w.curves[1].name()
+    w.sub_ref.setChecked(False)
+    w._update_plot()
+    assert np.allclose(w.curves[2].yData[:5], [1.0, 1.5, 2.0, 2.5, 3.0]) and w.curves[2].name() == "b2"
+    # (2) the run folder follows the calibration's folder
+    cal_dir = tmp_path / "cells" / "A"
+    cal_dir.mkdir(parents=True)
+    monkeypatch.setattr(QFileDialog, "getSaveFileName", staticmethod(lambda *a, **k: (str(cal_dir / "cal003"), "")))
+    w._browse_cal_out()
+    assert w.ed_out.text() == str(cal_dir) and w.ed_name.text() == "tra001"
+    monkeypatch.setattr(QFileDialog, "getExistingDirectory", staticmethod(lambda *a, **k: str(tmp_path / "elsewhere")))
+    w._browse_out()
+    monkeypatch.setattr(QFileDialog, "getOpenFileName", staticmethod(lambda *a, **k: (str(FIXTURE / "cal002"), "")))
+    w._browse_cal()
+    assert w.ed_out.text() == str(tmp_path / "elsewhere")                 # browsed by hand: the .cal no longer wins
+    # (3) the table's Loading choice: magnet mm/s or force pN/s, one or the other
+    text = compile_table([[1, 0, 0.1, 0, 0], [10, 2, 0.5, 0, 0], [1, 0, 0.1, 0, 0]], force_rate=True)
+    assert "ramp from=1 to=10 rate=0.5" in text and "ramp from=10 to=1 rate=0.1" in text
+    w.exp_table.set_columns([[1, 0, 0.1, 0, 0], [10, 2, 0.5, 0, 0]])
+    assert "speed=0.5" in w.exp_table.to_script() and w.exp_table.table.verticalHeaderItem(2).text() == "Motor (mm/s)"
+    w.exp_table.loading.setCurrentIndex(1)
+    assert "rate=0.5" in w.exp_table.to_script() and w.exp_table.table.verticalHeaderItem(2).text() == "Force rate (pN/s)"
+    w.exp_table.loading.setCurrentIndex(0)
+    # (4) the running statement highlighted in the script and the table
+    w.prot_edit.setPlainText(text)
+    w._show_current({"step": 2, "line": 6, "statement": "ramp from=1 to=10 rate=0.5"})
+    assert [s.cursor.blockNumber() for s in w.prot_edit.extraSelections()] == [5]
+    assert w.exp_table.table.item(0, 1).background().color().name() == "#ffd54f"
+    assert w.exp_table.table.item(0, 0).background().color().name() != "#ffd54f"
+    w._show_current(None)
+    assert w.prot_edit.extraSelections() == [] and w.exp_table.table.item(0, 1).background().color().name() != "#ffd54f"
+    w._show_run_doc()
+    assert "metadata" in w.run_doc_panel.findChild(QTextBrowser_).toPlainText()
+
+
+from PySide6.QtWidgets import QTextBrowser as QTextBrowser_  # noqa: E402 - used by the test above only
+
+
+def test_autofocus_holds_the_reference_bead_through_the_focus(window):
+    """Owner 2026-11-06: the piezo (focus) holds the reference bead's z at the LUT's middle; on its own thread, one
+    step of at most 0.2 um per period; off with the camera."""
+    app, w = window
+    w._connect()
+    _until(app, lambda: "8 / 8" in w.dev_summary.text(), 15, "connect")
+    w._apply_preset()
+    w.autofocus.setChecked(True)                 # no beads yet: refused, stays off
+    _pump(app, 0.3)
+    assert not w.autofocus.isChecked() and not api.focus.autofocus_status()["on"]
+    w.ed_cal.setText(str(FIXTURE / "cal002"))
+    w._load_cal_list()
+    w._select_beads()
+    _until(app, lambda: w.bead_ids and w.roles.get(1) == "reference", 10, "beads")
+    w._toggle_acq()
+    _until(app, lambda: api.acq.running() and api.acq.display() is not None and api.acq.display().result is not None, 20, "camera")
+    z0 = api.focus.position()
+    w.autofocus.setChecked(True)
+    _until(app, lambda: api.focus.autofocus_status()["on"] and api.focus.autofocus_status()["moves"] >= 2, 15, "autofocus moves")
+    st = api.focus.autofocus_status()
+    assert st["bead"] == 1 and st["error"] is None and "holding bead 1" in w.af_status.text()
+    assert abs(api.focus.position() - z0) <= 0.2 * (st["moves"] + 1) + 1e-6
+    af = [e for e in events.events() if e.kind == "autofocus_move"]
+    assert af and abs(af[-1].extra["step_um"]) <= 0.2 and af[-1].extra["bead"] == 1
+    w._toggle_acq()
+    _until(app, lambda: not api.acq.running() and not w.autofocus.isChecked(), 15, "stopped, autofocus off")
+    assert not api.focus.autofocus_status()["on"]
+
+
+def test_bead_near_the_lut_edge_is_shown_orange_on_the_box_and_the_chip(window):
+    """Owner 2026-11-06 ("how do I know the bead is near the calibration boundary?"): within 10 slices of either
+    LUT end the bead's box and chip turn orange, the chip reads the raw z against the LUT top."""
+    app, w = window
+    w.ed_cal.setText(str(FIXTURE / "cal002"))
+    w._load_cal_list()
+    n, step = w.lut
+    assert n == 60 and step == pytest.approx(0.1, abs=1e-6) and "z 0 .. 5.9 um, middle 3.0" in w.beads_info.text()
+    w.bead_ids, w.roles = [1, 2, 3], {1: "reference", 2: "tethered", 3: "tethered"}
+    w._rebuild_chips()
+    z = np.array([3.0, 5.2, -1.0])
+    w._draw_boxes(np.array([[100.0, 100.0], [200.0, 200.0], [300.0, 300.0]]), np.array([True, True, False]), z)
+    colors = [b.pen().color().name().upper() for b in w.boxes if hasattr(b, "pen")]
+    assert colors == [COLORS_[0].upper(), "#F97316", "#9CA3AF"]
+    w._chip_texts(z)
+    assert w.chips[1].text() == "b1 z 3.0/5.9" and w.chips[2].text() == "b2 z 5.2/5.9" and w.chips[3].text() == "b3 lost"
+    assert "#F97316" in w.chips[2].styleSheet() and "#F97316" not in w.chips[1].styleSheet()
+    assert w._near_edge(0.9) and not w._near_edge(1.1) and w._near_edge(4.95) and not w._near_edge(4.8)
+
+
+from mtpy.gui.app import COLORS as COLORS_  # noqa: E402 - used by the test above only

@@ -78,6 +78,9 @@ def _plain(o):
     return repr(o)
 
 
+META_JSON_SKIP = ("cal_bytes", "stack")   # the .cal's bytes and profile stack: megabytes of JSON that duplicate the .cal
+
+
 def to_json(x):
     return json.dumps(x, default=_plain, ensure_ascii=False)
 
@@ -386,8 +389,10 @@ class HDF5Writer(ResultSink):
             self.f.attrs["closed_cleanly"] = np.uint8(1)
             self.f.flush()
             if self.json_copy:
-                self.path.with_suffix(".meta.json").write_text(
-                    to_json(_read_group(self.f["metadata"])), encoding="utf-8")
+                meta = _read_group(self.f["metadata"])
+                for k in META_JSON_SKIP:          # owner 2026-11-06: the .cal copy stays in the .h5 only
+                    meta.get("calibration", {}).pop(k, None)
+                self.path.with_suffix(".meta.json").write_text(to_json(meta), encoding="utf-8")
         finally:
             self.f.close()
         if not_written or outside:

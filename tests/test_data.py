@@ -8,6 +8,8 @@ import time
 from pathlib import Path
 
 import h5py
+import json
+
 import numpy as np
 import pytest
 from conftest import FIXTURE, need
@@ -368,6 +370,10 @@ def test_late_cal_applied_and_beads_rebuilt_order_independent(tmp_path):
     assert a["attrs"]["legacy_cal_file"] == b["attrs"]["legacy_cal_file"] == str(FIXTURE / "cal002")
     assert (export_cal(tmp_path / "a.h5", tmp_path / "a.cal").read_bytes()
             == export_cal(tmp_path / "b.h5", tmp_path / "b.cal").read_bytes() == (FIXTURE / "cal002").read_bytes())
+    meta = json.loads((tmp_path / "a.meta.json").read_text(encoding="utf-8"))    # owner 2026-11-06: no .cal copy in
+    assert "cal_bytes" not in meta["calibration"] and "stack" not in meta["calibration"]      # the JSON sidecar
+    assert meta["calibration"]["sha256"] == a["metadata"]["calibration"]["sha256"] and meta["calibration"]["n_slices"] == 60
+    assert (tmp_path / "a.meta.json").stat().st_size < 50_000
 
 
 def _motor_file(path, event_first):

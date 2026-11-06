@@ -10,7 +10,9 @@ Owner's example (five columns):
     Rotor (degree)   -3600   3600      0      0      0
     Rotor speed (SPD)   50     50      0      0      0
 """
+from PySide6.QtGui import QBrush, QColor
 from PySide6.QtWidgets import (
+    QComboBox,
     QHBoxLayout,
     QLabel,
     QPushButton,
@@ -24,16 +26,19 @@ from PySide6.QtWidgets import (
 from mtpy.devices.autonics import PULSES_PER_TURN
 
 ROWS = ("Force (pN)", "Wait (s)", "Motor (mm/s)", "Rotor (degree)", "Rotor speed (SPD)")
+LOADING = ("Motor (mm/s)", "Force rate (pN/s)")   # owner 2026-11-06: magnet loading or force loading, one or the other
 SPD_TO_TURNS_S = 10.0 / PULSES_PER_TURN     # shortcut: the Autonics multiplier assumed 10 as in devices/autonics.py, upgrade when read
 EXAMPLE = [[1, 0, 0.1, -3600, 50], [1, 0, 0.1, 3600, 50], [1, 0, 0.1, 0, 0], [50, 0, 0.03, 0, 0], [1, 0, 0.1, 0, 0]]
 
 
-def compile_table(columns, name="table", repeat=1):
-    """columns: [[force_pN, wait_s, motor_mm_s, rotor_deg, rotor_spd], ...] -> the protocol script text; repeat > 1
-    wraps the columns in `loop n=repeat` (owner 2026-11-05: cycle repeat).
+def compile_table(columns, name="table", repeat=1, force_rate=False):
+    """columns: [[force_pN, wait_s, loading, rotor_deg, rotor_spd], ...] -> the protocol script text; repeat > 1
+    wraps the columns in `loop n=repeat` (owner 2026-11-05: cycle repeat). loading is the magnet speed in mm/s
+    (`ramp speed=`), or with force_rate=True the force loading rate in pN/s (`ramp rate=`; owner 2026-11-06: the
+    two are exclusive, the table's Loading choice).
     A rotation column turns by the degrees at the SPD speed (the force set first, as `rotate` does); a column whose
-    force differs from the previous one ramps to it at the motor speed (`hold` when no speed is given); a wait
-    follows when given; an empty column is a comment. ValueError names the column of a bad value."""
+    force differs from the previous one ramps to it at the loading value (`hold` when it is 0); a wait follows when
+    given; an empty column is a comment. ValueError names the column of a bad value."""
     lines = ["grammar 0.1", f'protocol "{name}"']
     repeat = int(repeat)
     if repeat < 1:
@@ -47,7 +52,7 @@ def compile_table(columns, name="table", repeat=1):
         except (TypeError, ValueError) as e:
             raise ValueError(f"column {k}: not a number ({e})") from None
         if f < 0 or w < 0 or v < 0 or spd < 0:
-            raise ValueError(f"column {k}: force, wait, motor speed and rotor speed must be >= 0")
+            raise ValueError(f"column {k}: force, wait, loading and rotor speed must be >= 0")
         done = []
         if deg != 0:
             if spd <= 0:
@@ -60,7 +65,8 @@ def compile_table(columns, name="table", repeat=1):
             done.append(f"hold f={f:g} t={w:g}")
             w = 0.0
         elif f != prev_f:
-            done.append(f"ramp from={prev_f:g} to={f:g} speed={v:g}" if v > 0 else f"hold f={f:g} t=0")
+            key = "rate" if force_rate else "speed"
+            done.append(f"ramp from={prev_f:g} to={f:g} {key}={v:g}" if v > 0 else f"hold f={f:g} t=0")
         prev_f = f
         if w > 0:
             done.append(f"wait t={w:g}")
@@ -93,9 +99,13 @@ class ExpTable(QWidget):
         self.repeat.setRange(1, 100000)
         self.repeat.setPrefix("repeat ")
         self.repeat.setSuffix(" x")
-        self.info = QLabel("columns = steps: a force change at the motor speed, or a rotation at the rotor speed, then the wait")
+        self.loading = QComboBox()            # owner 2026-11-06: magnet loading (mm/s) or force loading (pN/s)
+        self.loading.addItems(LOADING)
+        self.loading.currentIndexChanged.connect(self._loading_changed)
+        self.info = QLabel("columns = steps: a force change at the loading value (Motor mm/s, or Force rate pN/s: the "
+                           "true loading rate, 1 s pieces), or a rotation at the rotor speed; then the wait")
         self.info.setWordWrap(True)
-        for w in (self.btn_add, self.btn_del, self.btn_example, self.repeat):
+        for w in (self.btn_add, self.btn_del, self.btn_example, self.repeat, QLabel("Loading"), self.loading):
             row.addWidget(w)
         lay.addLayout(row)
         row2 = QHBoxLayout()               # design critique review 2026-11-05: one row cut the button texts off
@@ -128,5 +138,21 @@ class ExpTable(QWidget):
         for col in columns:
             self.add_column(col)
 
+    def highlight(self, col):
+        """Colour the running column (owner 2026-11-06); None clears."""
+        for c in range(self.table.columnCount()):
+            for r in range(len(ROWS)):
+                it = self.table.item(r, c)
+                if it is not None:
+                    it.setBackground(QBrush(QColor("#ffd54f")) if c == col else QBrush())
+                    it.setForeground(QBrush(QColor("black")) if c == col else QBrush())
+
+    def _loading_changed(self, i):
+        self.table.setVerticalHeaderItem(2, QTableWidgetItem(LOADING[i]))
+
+    @property
+    def force_rate(self):
+        return self.loading.currentIndex() == 1
+
     def to_script(self, name="table"):
-        return compile_table(self.columns(), name, self.repeat.value())
+        return compile_table(self.columns(), name, self.repeat.value(), self.force_rate)

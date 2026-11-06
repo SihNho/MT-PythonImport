@@ -263,7 +263,8 @@ class SimCamera(Device):
             img = self._synthetic
         else:
             from PIL import Image
-            img = np.asarray(Image.open(self.files[b % len(self.files)]))
+            with Image.open(self.files[b % len(self.files)]) as im:   # closed at once: 10 000 TIFFs at 90 Hz must
+                img = np.asarray(im)                                   # not wait for the garbage collector's close
         return img[y:y + h, x:x + w].copy()
 
     def _produce(self):

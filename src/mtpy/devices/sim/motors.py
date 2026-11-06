@@ -36,6 +36,12 @@ class Axis:
                 self.speed = speed
             self._target = min(max(target, self.travel[0]), self.travel[1])   # a limit switch stops it there
 
+    def set_speed(self, speed):
+        """A new speed from here on, also in the middle of a move (the force loading rate ramp)."""
+        with self._lock:
+            self._p0, self._t0 = self._now(), time.monotonic()
+            self.speed = float(speed)
+
     def stop(self):
         with self._lock:
             self._p0 = self._target = self._now()
@@ -98,6 +104,10 @@ class SimMotor(Device):
 
     def set_speed(self, speed):
         self._io()
+        self.axis.set_speed(speed)
+
+    def set_speed(self, speed):
+        self._io()
         if not (isinstance(speed, (int, float)) and speed > 0):
             raise ValueError(f"speed {speed!r} must be > 0")
         self.axis.speed = float(speed)
@@ -105,6 +115,8 @@ class SimMotor(Device):
 
     def moving(self):
         self._io()
+        t = time.time()
+        self.last_pos = (t, t, self.axis.position())       # as pi.moving: the arrival poll's own reading
         return self.axis.moving()
 
     def speed(self):
@@ -149,6 +161,18 @@ class SimMagnet(SimMotor):
         lim = safety.profile()["limits"]["magnet_position_mm"]
         if lim["min"] is not None and lim["max"] is not None:
             self.soft = (float(lim["min"]), float(lim["max"]))
+        self._reset_speed()
+
+    def _reset_speed(self):
+        """As pi._reset_speed (owner 2026-11-06): the speed back to the profile's maximum at open and close."""
+        from mtpy.api import safety
+        vmax = safety.profile()["limits"]["magnet_speed_mm_s"]["max"]
+        if vmax:
+            self.axis.speed = float(vmax)
+
+    def close(self):
+        self._reset_speed()
+        super().close()
 
     def limits(self):
         return {**super().limits(), "soft_limits_TMN_TMX": self.soft}
@@ -187,6 +211,8 @@ class SimMagnet(SimMotor):
     def moving(self):
         self._io()
         self._update()
+        t = time.time()
+        self.last_pos = (t, t, self.axis.position())       # as pi.moving: the arrival poll's own reading
         return self.axis.moving()
 
     def position(self):
