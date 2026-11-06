@@ -57,11 +57,15 @@ class _AutoFocus:
     move = clamp(slice index - n_slices / 2, +-0.2) relative). Runs on its own thread: each period it takes the
     display tap's newest result (never the frame path), and sends ONE relative focus move through api.focus.move_to
     (the profile window and the e-stop apply as to a manual move). A lost bead (-1) or a stale frame sends nothing.
-    shortcut: the sign is derived from this program's z scan (slice s = focus start + s * step, so a bead reading
-    above the middle means the focus is too high relative to it), not verified on the rig - verify on the rig
-    (owner): the reference bead's z must converge on z_center; flip SIGN if it diverges."""
+    The sign follows the z scan's direction (api.zscan.SCAN_DIR): slice s = focus start + SCAN_DIR * s * step, so a
+    bead reading above the middle means the focus is SCAN_DIR-wards of where it should be. Rig 2026-11-06 18:03:
+    with the upward scan and SIGN -1 bead 1 was held at 3.00 +- 0.03 um (the log's autofocus_move lines), so the
+    derivation holds; the downward scan (Request1) flips it to +1."""
 
-    SIGN = -1.0
+    @property
+    def SIGN(self):  # noqa: N802 - the name the docs use
+        from . import zscan
+        return -zscan.SCAN_DIR
 
     def __init__(self, bead_id, z_center_um, period_s, max_step_um, dead_um):
         self.bead_id, self.z_center_um = int(bead_id), float(z_center_um)

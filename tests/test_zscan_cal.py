@@ -135,9 +135,10 @@ def test_radial_profile_reads_zero_outside_the_sub_image():
     assert np.allclose(before, track.radial_profile(np.pad(sub, 10), 82.3, 81.6, 60))
 
 
-def test_zscan_starts_at_the_current_focus_and_stacks_upwards(sim, tmp_path, monkeypatch):
-    """Owner 2026-11-05: no jump down first (drift); from the start position up, step by step, back at the end.
-    centred=True keeps the bench tools' LUT centred on the start."""
+def test_zscan_starts_at_the_current_focus_and_stacks_downwards(sim, tmp_path, monkeypatch):
+    """Owner 2026-11-05: no jump first (drift); from the start position step by step, back at the LUT's middle at
+    the end. Owner 2026-11-06 (Request1): DOWN, so that z rises with the bead (an upward scan inverted the
+    extension). centred=True keeps the bench tools' LUT centred on the start."""
     from mtpy.api import zscan
     monkeypatch.setattr(api.acq, "average", lambda n, timeout_s=10.0: np.full((1024, 1280), 100.0))
     moves = []
@@ -148,8 +149,8 @@ def test_zscan_starts_at_the_current_focus_and_stacks_upwards(sim, tmp_path, mon
     monkeypatch.setattr(api.focus, "move_to", lambda z: (moves.append(round(z, 4)), _M())[1])
     z0 = api.focus.position()
     zscan.run(tmp_path / "cal_up", [(640.0, 512.0)], slices=3, n_avg=1)
-    assert moves == [round(z0, 4), round(z0 + 0.1, 4), round(z0 + 0.2, 4), round(z0 + 0.1, 4)]   # ends mid-LUT
+    assert moves == [round(z0, 4), round(z0 - 0.1, 4), round(z0 - 0.2, 4), round(z0 - 0.1, 4)]   # ends mid-LUT
     assert zscan.last_profiles()["slice"] == 3 and len(zscan.last_profiles()["profiles"]) == 1
     moves.clear()
     zscan.run(tmp_path / "cal_mid", [(640.0, 512.0)], slices=3, n_avg=1, centred=True)
-    assert moves == [round(z0 - 0.1, 4), round(z0, 4), round(z0 + 0.1, 4), round(z0, 4)]
+    assert moves == [round(z0 + 0.1, 4), round(z0, 4), round(z0 - 0.1, 4), round(z0, 4)]

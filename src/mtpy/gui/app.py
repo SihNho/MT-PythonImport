@@ -92,7 +92,9 @@ TITLES = {"setup": "Setup: devices, camera, analysis", "explore": "Explore (no r
           "save": "Save and export"}
 AXES = {"t": "Time (s)", "mag": "Magnet (mm)", "force": "Force (pN)", "z": "z (um)", "x": "x (px)", "y": "y (px)"}
 COLORS = ["#60A5FA", "#F472B6", "#34D399", "#FBBF24", "#A78BFA", "#F87171", "#2DD4BF", "#FB923C"]
-CHIPS_PER_ROW = 16                     # bead check boxes wrap after this many (G16)
+CHIPS_PER_ROW = 8                      # bead check boxes wrap after this many (G16; 8 x CHIP_W fits any screen)
+CHIP_W = 104                           # a chip's fixed width: "b16 3.3/5.9"; Request1 item 2: a chip that changed
+                                       # width with its text ("lost" <-> the z) re-laid the window out every tick
 EDGE_SLICES = 10                       # owner 2026-11-06: a bead this close to a LUT end is shown orange (box, chip)
 PLOT_HZ = 10.0                         # default plot refresh; the user sets it in the plot bar (owner 2026-11-01)
 GUIDE = Path(__file__).resolve().parents[3] / "docs" / "guide" / "protocol-scripts.ko.md"   # the script guide
@@ -401,10 +403,9 @@ class MainWindow(QMainWindow):
         ctl = QHBoxLayout()
         self.ax_y = QComboBox()
         self.ax_x = QComboBox()
-        for k, label in AXES.items():
+        for k, label in AXES.items():          # Request1 item 3: the X axis offers every Y option
             self.ax_y.addItem(label, k)
-            if k in ("t", "mag", "force"):
-                self.ax_x.addItem(label, k)
+            self.ax_x.addItem(label, k)
         self.ax_y.setCurrentIndex(3)
         self.follow = QCheckBox("Follow 30 s")
         self.follow.setChecked(True)
@@ -427,9 +428,12 @@ class MainWindow(QMainWindow):
         ctl.addWidget(self.sub_ref)
         ctl.addWidget(QLabel("Plot refresh"))
         ctl.addWidget(self.plot_hz)
-        ctl.addLayout(self.bead_chips)
         ctl.addStretch(1)
         v.addLayout(ctl)
+        chips_row = QHBoxLayout()           # the chips under the controls, never widening the window (Request1 item 2)
+        chips_row.addLayout(self.bead_chips)
+        chips_row.addStretch(1)
+        v.addLayout(chips_row)
         self.plot = pg.PlotWidget()
         self.plot.showGrid(x=True, y=True, alpha=0.3)
         self.plot.addLegend(offset=(10, 10))
@@ -573,9 +577,11 @@ class MainWindow(QMainWindow):
         self.btn_rec.setCheckable(True)
         self.run_beads = QLabel("2. Left click the beads on the image (right click removes a pick): 0 picked")
         self.run_cal = QLabel("3. asks for the data folder once (the calibration cal001, cal002, ... and the run file "
-                              "tra001.h5, tra002.h5, ... go there), scans the picked beads, then tracks every bead of "
-                              "the .cal (bead 1 = reference) from the next frame on; the camera never stops. Reset "
-                              "calibration drops the beads so the image takes picks again.")
+                              "tra001.h5, tra002.h5, ... go there), scans the picked beads DOWNWARDS from the current "
+                              "focus (set it above the working focus: the LUT's middle is 3 um below the start at 60 x "
+                              "100 nm), then tracks every bead of the .cal (bead 1 = reference) from the next frame "
+                              "on; the camera never stops. Reset calibration drops the beads so the image takes picks "
+                              "again.")
         self.run_track = QLabel("4. not tracking")
         self.run_save = QLabel("5. the traces go next to the run file as tra001-000, tra001-001, ... (LabVIEW's files)")
         for lab in (self.run_cam, self.run_beads, self.run_cal, self.run_track, self.run_save):
@@ -1272,7 +1278,7 @@ class MainWindow(QMainWindow):
             if c is None or k >= len(z):
                 continue
             zk = float(z[k])
-            c.setText(f"b{i} lost" if zk < 0 else f"b{i} z {zk:.1f}/{top:.1f}")
+            c.setText(f"b{i} lost" if zk < 0 else f"b{i} {zk:.1f}/{top:.1f}")
             near = self._near_edge(zk)
             if getattr(c, "_near", None) != near:
                 c._near = near
@@ -1287,6 +1293,7 @@ class MainWindow(QMainWindow):
         for k, i in enumerate(self.bead_ids):
             c = QCheckBox(f"b{i}")
             c.setChecked(True)
+            c.setFixedWidth(CHIP_W)
             c.setStyleSheet(f"color:{COLORS[k % len(COLORS)]}")
             self.bead_chips.addWidget(c, k // CHIPS_PER_ROW, k % CHIPS_PER_ROW)
             self.chips[i] = c
@@ -1851,33 +1858,30 @@ class MainWindow(QMainWindow):
                 ref = np.nanmean(xyz[:, refs, :], axis=1, keepdims=True)
             xyz = np.where(np.isin(np.arange(len(self.bead_ids)), refs)[None, :, None], xyz, xyz - ref)
         base = {"t": t, "mag": mag, "force": force}
-        xs = base[kx]
-        self.plot.setLabel("bottom", AXES[kx])
-        self.plot.setLabel("left", AXES[ky])
-        sub = self.sub_ref.isChecked() and bool(refs) and ky in ("x", "y", "z")
-        if ky in ("x", "y", "z"):
-            self.plot.setLabel("left", AXES[ky] + (" - reference" if sub else ""))
-        if getattr(self, "_plot_ky", None) != (ky, sub):   # rig 2026-11-05: the legend kept the old axis's name
+        cols = {"x": 0, "y": 1, "z": 2}
+        sub = self.sub_ref.isChecked() and bool(refs)
+        for side, key in (("bottom", kx), ("left", ky)):
+            self.plot.setLabel(side, AXES[key] + (" - reference" if sub and key in cols else ""))
+        if getattr(self, "_plot_ky", None) != (kx, ky, sub):   # rig 2026-11-05: the legend kept the old axis's name
             for c in self.curves.values():
                 self.plot.removeItem(c)
             self.curves.clear()
-            self._plot_ky = (ky, sub)
-        if ky in base:
-            ys = {None: base[ky]}
-        else:
-            col = {"x": 0, "y": 1, "z": 2}[ky]
-            ys = {i: xyz[:, k, col] for k, i in enumerate(self.bead_ids) if self.chips.get(i) and
-                  self.chips[i].isChecked()}
+            self._plot_ky = (kx, ky, sub)
+        if kx in base and ky in base:
+            series = {None: (base[kx], base[ky])}
+        else:                                   # Request1 item 3: a per-bead axis is each bead's own x / y / z
+            series = {i: (base[kx] if kx in base else xyz[:, k, cols[kx]], base[ky] if ky in base else xyz[:, k, cols[ky]])
+                      for k, i in enumerate(self.bead_ids) if self.chips.get(i) and self.chips[i].isChecked()}
         for key in list(self.curves):
-            if key not in ys:
+            if key not in series:
                 self.plot.removeItem(self.curves.pop(key))
-        for key, y in ys.items():
+        for key, (x, y) in series.items():
             if key not in self.curves:
                 k = self.bead_ids.index(key) if key is not None else 0
                 name = AXES[ky] if key is None else f"b{key}" + (" (ref, raw)" if sub and self.roles.get(key) == "reference"
                                                                   else " - ref" if sub else "")
                 self.curves[key] = self.plot.plot(pen=pg.mkPen(COLORS[k % len(COLORS)], width=1.5), name=name)
-            self.curves[key].setData(xs, y, connect="finite")
+            self.curves[key].setData(x, y, connect="finite")
         if self.auto_scale.isChecked():
             self.plot.enableAutoRange()
 

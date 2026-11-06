@@ -674,7 +674,8 @@ def test_bead_near_the_lut_edge_is_shown_orange_on_the_box_and_the_chip(window):
     colors = [b.pen().color().name().upper() for b in w.boxes if hasattr(b, "pen")]
     assert colors == [COLORS_[0].upper(), "#F97316", "#9CA3AF"]
     w._chip_texts(z)
-    assert w.chips[1].text() == "b1 z 3.0/5.9" and w.chips[2].text() == "b2 z 5.2/5.9" and w.chips[3].text() == "b3 lost"
+    assert w.chips[1].text() == "b1 3.0/5.9" and w.chips[2].text() == "b2 5.2/5.9" and w.chips[3].text() == "b3 lost"
+    assert all(c.width() == 104 for c in w.chips.values())      # Request1 item 2: a fixed width, no re-layout
     assert "#F97316" in w.chips[2].styleSheet() and "#F97316" not in w.chips[1].styleSheet()
     assert w._near_edge(0.9) and not w._near_edge(1.1) and w._near_edge(4.95) and not w._near_edge(4.8)
 

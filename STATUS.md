@@ -270,8 +270,8 @@ Short and current. Details live in the linked documents; the history is in git a
 - **Queued (owner 2026-11-06):** which side of the focus to track on. The owner's first run had the beads below
   the focus and the z of the tethered beads fell as the force rose (extension inverted in the MATLAB analysis;
   the owner: on purpose). To check on the rig with a reference bead: z accuracy and noise with the bead above
-  vs below the focus (the refbead tools), and whether the sign of z against bead height follows the scan
-  direction (api/zscan.py: focus start + s x step) as the code reads, not the side.
+  vs below the focus (the refbead tools). Settled 2026-11-06 evening (Request1): the sign of z against bead height
+  follows the scan direction, not the side; the scan now goes DOWN (api.zscan.SCAN_DIR) so z rises with the bead.
 - **Queued (owner 2026-10-30):** lock the camera settings while a z scan runs (the GUI must not change exposure,
   rate or ROI between slices; `api.acq.average` would otherwise mix frames of two settings).
 

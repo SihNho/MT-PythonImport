@@ -81,9 +81,10 @@ The owner ran watch -> picks -> calibrate -> track -> protocol -> Save the trace
   towards the LUT's middle (`n_slices // 2 x z_step`), as the LabVIEW rule (spec F4.06: clamp +-0.2 per firing);
   nothing is sent while the bead is lost or the error is under 10 nm; every move is an `autofocus_move` event.
   Off by default, off again when the camera stops or at Reset calibration. The lost-bead reseed (F4.05) is the
-  tracker's own auto-reset. **Not verified on the rig:** the sign of the correction follows this program's z scan
-  (slice s = focus start + s x step); if the reference bead's z diverges instead of converging, `_AutoFocus.SIGN`
-  is wrong (api/focus.py). The +-0.2 unit (um here) is still open (Q4.06).
+  tracker's own auto-reset. The sign of the correction follows the z scan's direction (`api.zscan.SCAN_DIR`;
+  `_AutoFocus.SIGN` = -SCAN_DIR). **Rig 2026-11-06 18:03:** with the upward scan bead 1 was held at 3.00 +- 0.03 um
+  (gui_events.log autofocus_move lines), so the derivation is right; the downward scan of Request1 flips it. The
+  +-0.2 unit (um here) is still open (Q4.06).
 
 ## Owner's feedback after the first experiment (2026-11-06)
 1. The trace plot subtracts the reference beads' mean x / y / z from the tethered beads ("Subtract reference",
@@ -118,6 +119,19 @@ The owner ran watch -> picks -> calibrate -> track -> protocol -> Save the trace
 10. The program's close timed out waiting for the magnet to home: a slow ramp (0.03 mm/s) leaves its VEL in the
     PI controller and the home crawled. The PI open and close now set VEL to the profile's maximum (15 mm/s)
     and read it back (motion-gate.md); the simulator does the same.
+
+## Requests/Request1.md (owner 2026-11-06 18:06; the answer is Requests/Request1.answer.ko.md)
+1. z fell as the force rose (extension inverted in the plot and the .tra). Cause: the z scan stepped the focus UP
+   per slice, so a rising bead (closer to the focus) reads a LOWER slice and z = index x step falls; LabVIEW's
+   data, read by the same MATLAB code, rise, so its scan went the other way. Fix: `api.zscan.SCAN_DIR = -1`, the
+   scan goes DOWN from the start (the user sets the start ABOVE the working focus; the LUT's middle is slices/2 x
+   step below it); the autofocus sign follows. .cal files made by this program before this change are reversed
+   (scan again); the z of the .h5 / .tra written with them is the mirror image (negate it).
+2. The window grew and shrank and pushed the right panel off the screen: the bead chips above the plot had got
+   the z readout ("b16 z 3.3/5.9"), four times wider than "b16", 16 per row, and their width changed every tick
+   ("lost" <-> the z). Now: fixed width (CHIP_W), 8 per row, on their own row under the plot controls.
+3. The X axis offers every Y option; a per-bead X (x, y, z) is each bead's own value, so Y = z against X = x is
+   one curve per bead (and z against force stays as before).
 
 ## What the first build has (src/mtpy/gui)
 One window after the mock-up ([mockups/2026-10-23-main-window](../mockups/2026-10-23-main-window/README.md)):
