@@ -137,10 +137,11 @@ The owner ran watch -> picks -> calibrate -> track -> protocol -> Save the trace
    the pattern shrinks moves the lens away from the slide, so the bead sits below the focus). The fix is the
    driver's sign, `asi.Z_SIGN = -1` (program +z = sample up; the SL/SU Z window stays in controller units), the
    scan is UP again (`SCAN_DIR = +1`, not a choice; `direction=` and `scan_direction=` removed), and the autofocus
-   sign is -SCAN_DIR. The user starts the scan with the beads BELOW the focus (full pattern); the pattern shrinks
-   slice by slice and the top of the LUT is the end nearest the focus (the orange edge warning covers it). Rig
-   checks: Explore focus +1 um shrinks the pattern of a bead below the focus; the up scan shrinks it per slice;
-   z rises with the force in a ramp. Earlier focus positions in .cal / run metadata are in the old sign; the two
+   sign is -SCAN_DIR. The user starts the scan with the beads just ABOVE the focus (small pattern, as LabVIEW;
+   owner 2026-11-07: "small to large"): the sample rises per slice, the pattern grows, and a bead pulled up by
+   the force moves away from the focus, never across it; index 0 is the end nearest the focus (the orange edge
+   warning covers both ends). Rig checks: Explore focus +1 um grows the pattern of a bead above the focus; the up
+   scan grows it per slice; z rises with the force in a ramp. Earlier focus positions in .cal / run metadata are in the old sign; the two
    mirrored runs of 2026-11-06 keep their z.
 4. Found while testing it: `QSettings("KimLab", "MT Tracker")` used the Windows registry whatever the default
    format, so the tests' redirect to a temp ini (design critique #3) never took and every GUI test wrote the user's

@@ -272,7 +272,7 @@ Short and current. Details live in the linked documents; the history is in git a
   the owner: on purpose). To check on the rig with a reference bead: z accuracy and noise with the bead above
   vs below the focus (the refbead tools). Settled 2026-11-07: the piezo moves the sample stage and its controller sign is reversed
   since the repair (`asi.Z_SIGN = -1`); the scan goes UP (the sample rises per slice, LabVIEW's +z) with the beads
-  below the focus, and z = index x step is the extension. The side question stays open as a precision check.
+  just above the focus (small pattern, growing per slice), and z = index x step is the extension. The side question stays open as a precision check.
 - **Queued (owner 2026-10-30):** lock the camera settings while a z scan runs (the GUI must not change exposure,
   rate or ROI between slices; `api.acq.average` would otherwise mix frames of two settings).
 

@@ -581,8 +581,8 @@ class MainWindow(QMainWindow):
         self.run_beads = QLabel("2. Left click the beads on the image (right click removes a pick): 0 picked")
         self.run_cal = QLabel("3. asks for the data folder once (the calibration cal001, cal002, ... and the run file "
                               "tra001.h5, tra002.h5, ... go there), scans the picked beads UP from the current focus: "
-                              "start with the beads BELOW the focus (full ring pattern), the sample rises per slice "
-                              "and the pattern shrinks; the LUT's middle is 3 um above the start at 60 x 100 nm and "
+                              "start with the beads just ABOVE the focus (small pattern), the sample rises per slice "
+                              "and the pattern grows; the LUT's middle is 3 um above the start at 60 x 100 nm and "
                               "the focus goes there after the scan. Then it tracks every bead of the .cal (bead 1 = "
                               "reference) from the next frame on; the camera never stops. Reset calibration drops the "
                               "beads so the image takes picks again.")

@@ -60,8 +60,9 @@ def run(path, xy, slices=60, step_nm=100.0, n_avg=20, cross=120, nm_per_px=84.0,
         low=calib.DEFAULT_LOW, high=calib.DEFAULT_HIGH, forget=calib.DEFAULT_FORGET, settle_s=SETTLE_S,
         centred=False):
     """Scan `slices` focus positions `step_nm` apart, from the current focus UPWARDS (SCAN_DIR; owner 2026-11-05:
-    no jump first, drift; the user sets the start with the bead BELOW the focus, the LUT's middle is slices/2 x
-    step above the start and the pattern shrinks slice by slice), or centred on it (centred=True: the bench tools,
+    no jump first, drift; the user sets the start with the bead just ABOVE the focus - small pattern, as LabVIEW
+    (owner 2026-11-07: "small to large") - the LUT's middle is slices/2 x step above the start and the pattern
+    grows slice by slice), or centred on it (centred=True: the bench tools,
     which put the bead at the LUT's middle first); write the .cal to `path`, return the focus to the LUT's middle (owner 2026-11-05: tracking must start
     mid-LUT, else z errs) - to the start after a failure. xy: (n, 2) bead positions in px. progress(i, slices) is
     called per slice. settle_s: wait after each focus move reports arrival before the frames are averaged."""
