@@ -681,3 +681,36 @@ def test_bead_near_the_lut_edge_is_shown_orange_on_the_box_and_the_chip(window):
 
 
 from mtpy.gui.app import COLORS as COLORS_  # noqa: E402 - used by the test above only
+
+
+def test_request2_explore_on_the_run_page_scan_direction_choice_and_the_cal_dialog_start(window, monkeypatch, tmp_path):
+    """Requests/Request2 (owner 2026-11-06): Explore sits inside the Run page; the Calibrate page's Scan direction
+    (up = LabVIEW's +z, default; down) goes to the z scan and, as its opposite, to the autofocus; the calibration
+    folder dialog starts at the owner's Dropbox data folder when it exists."""
+    from PySide6.QtWidgets import QFileDialog
+
+    from mtpy.gui import app as appmod
+    app, w = window
+    assert [k for k, _ in appmod.STEPS] == ["setup", "run", "exp", "beads", "cal", "save"]
+    assert w.mag_by.window() is w and w.panel.widget(1).isAncestorOf(w.mag_by)       # Explore inside Run (page 1)
+    assert w.scan_dir.currentData() == 1.0
+    seen = {}
+    monkeypatch.setattr(api.zscan, "run", lambda *a, **k: seen.update(k) or {"xy": [[1, 2]]})
+    w._connect()
+    _until(app, lambda: "8 / 8" in w.dev_summary.text(), 15, "connect")
+    w._apply_preset()
+    w._toggle_acq()
+    _until(app, lambda: api.acq.running(), 20, "camera")
+    w.picks = [(640.0, 512.0)]
+    w.cal_out.setText(str(tmp_path / "cal001"))
+    w.scan_dir.setCurrentIndex(1)
+    w._run_zscan()
+    _until(app, lambda: seen.get("direction") is not None, 10, "scan started with a direction")
+    assert seen["direction"] == -1.0 and w.settings.value("scan_dir") == -1.0
+    w.scan_dir.setCurrentIndex(0)
+    asked = []
+    monkeypatch.setattr(QFileDialog, "getExistingDirectory", staticmethod(lambda *a, **k: (asked.append(a[2]), "")[1]))
+    w._flow_calibrate()
+    assert asked and asked[0] == (str(appmod.CAL_ROOT) if appmod.CAL_ROOT.is_dir() else str(Path(w.cal_out.text()).parent))
+    w._toggle_acq()
+    _until(app, lambda: not api.acq.running(), 15, "stopped")

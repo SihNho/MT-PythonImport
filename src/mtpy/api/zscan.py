@@ -57,13 +57,19 @@ SCAN_DIR = -1.0   # slice s is at focus start + SCAN_DIR * s * step: DOWN (owner
 
 def run(path, xy, slices=60, step_nm=100.0, n_avg=20, cross=120, nm_per_px=84.0, progress=None,
         low=calib.DEFAULT_LOW, high=calib.DEFAULT_HIGH, forget=calib.DEFAULT_FORGET, settle_s=SETTLE_S,
-        centred=False):
+        centred=False, direction=None):
     """Scan `slices` focus positions `step_nm` apart, from the current focus DOWNWARDS (SCAN_DIR; owner 2026-11-05:
     no jump first, drift; the user sets the start - now ABOVE the working focus, the LUT's middle is slices/2 x
     step below the start), or centred on it (centred=True: the bench tools, which put the bead at the LUT's middle
     first); write the .cal to `path`, return the focus to the LUT's middle (owner 2026-11-05: tracking must start
     mid-LUT, else z errs) - to the start after a failure. xy: (n, 2) bead positions in px. progress(i, slices) is
-    called per slice. settle_s: wait after each focus move reports arrival before the frames are averaged."""
+    called per slice. settle_s: wait after each focus move reports arrival before the frames are averaged.
+    direction: +1 (slices upwards in focus units, LabVIEW's) or -1 (downwards); None = SCAN_DIR. The Calibrate
+    page offers both (Request2, owner 2026-11-06: LabVIEW stacked the profiles in +z; the piezo's sign on the rig
+    is in question), the ramp's z against the force decides which is right on the rig."""
+    d = float(SCAN_DIR if direction is None else direction)
+    if d not in (1.0, -1.0):
+        raise ValueError(f"z scan: direction must be +1 or -1, got {direction!r}")
     xy = np.asarray(xy, dtype=np.float64).reshape(-1, 2)
     if len(xy) == 0:        # rig 2026-10-31: an empty pick list scanned 60 slices, then write_cal crashed
         raise ValueError("z scan: no bead positions to scan")
@@ -85,7 +91,7 @@ def run(path, xy, slices=60, step_nm=100.0, n_avg=20, cross=120, nm_per_px=84.0,
     _progress, _last, ok = (0, slices), None, False
     try:
         for s in range(slices):
-            focus.move_to(z0 + SCAN_DIR * (s - (slices // 2 if centred else 0)) * step_um).wait(10)
+            focus.move_to(z0 + d * (s - (slices // 2 if centred else 0)) * step_um).wait(10)
             time.sleep(settle_s)
             img = acq.average(n_avg)
             for b, (x, y) in enumerate(xy):
@@ -102,7 +108,7 @@ def run(path, xy, slices=60, step_nm=100.0, n_avg=20, cross=120, nm_per_px=84.0,
     finally:
         cam.scanning = False
         _progress = (0, 0)
-        z_end = z0 + SCAN_DIR * (slices // 2) * step_um if ok and not centred else z0
+        z_end = z0 + d * (slices // 2) * step_um if ok and not centred else z0
         focus.move_to(z_end).wait(10)
     cal = {"xy": xy, "stack": stack, "n_slices": slices,
            # per bead (LOW, HIGH, forget) as LabVIEW's .cal holds it - the band-pass bins and the forget radius the
@@ -114,7 +120,7 @@ def run(path, xy, slices=60, step_nm=100.0, n_avg=20, cross=120, nm_per_px=84.0,
     write_cal(path, cal)
     events.log("calibration", request={"slices": slices, "step_nm": step_nm, "n_avg": n_avg, "cross": cross,
                                            "settle_s": settle_s},
-                   path=str(path), beads=len(xy), focus_start_um=z0, focus_end_um=z_end)
+                   path=str(path), beads=len(xy), focus_start_um=z0, focus_end_um=z_end, direction=d)
     return cal
 
 

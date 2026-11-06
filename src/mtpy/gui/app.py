@@ -81,10 +81,11 @@ def use_inprocess():
 
 pg.setConfigOptions(imageAxisOrder="row-major", background="k", foreground="w")
 
-STEPS = [("setup", "Setup"), ("run", "Run"), ("exp", "Experiment"), ("explore", "Explore"), ("beads", "Beads"),
-         ("cal", "Calibrate"), ("save", "Save")]
-DETAILS = ("explore", "beads", "cal", "save")   # owner 2026-11-05: the pages the Run page duplicates stay behind "More"
+STEPS = [("setup", "Setup"), ("run", "Run"), ("exp", "Experiment"), ("beads", "Beads"),
+         ("cal", "Calibrate"), ("save", "Save")]       # Request2 (owner 2026-11-06): Explore lives inside the Run page
+DETAILS = ("beads", "cal", "save")              # owner 2026-11-05: the pages the Run page duplicates stay behind "More"
 DATA_ROOT = Path(r"G:\Data")                     # owner 2026-11-05: every data dialog starts here
+CAL_ROOT = Path(r"G:\Data\SiHyeong\Dropbox\Data")   # Request2: the calibration's folder dialog starts here
 PROTOCOLS_DIR = DATA_ROOT / "protocols"          # the owner's own protocols (.mtprot), listed on the Experiment page
 TITLES = {"setup": "Setup: devices, camera, analysis", "explore": "Explore (no recording)",
           "run": "Run: camera -> beads -> calibrate -> track -> save, in that order",
@@ -231,7 +232,9 @@ class MainWindow(QMainWindow):
         super().__init__()
         self.fixture, self.out, self.sim_dev = Path(fixture), Path(out), sim_dev
         self.backend_arg = backend
-        self.settings = QSettings("KimLab", "MT Tracker")       # the data folder last chosen (tests: a temp ini)
+        # an .ini, never the registry: QSettings(org, app) ignored setDefaultFormat on this PySide, so the tests had
+        # been writing the user's real registry settings (design critique #3; found 2026-11-06 with scan_dir)
+        self.settings = QSettings(QSettings.IniFormat, QSettings.UserScope, "KimLab", "MT Tracker")
         self.pool = QThreadPool.globalInstance()
         self._workers = set()                          # alive until done / failed: the pool would delete them first
         self._slow_busy, self._acq_running = False, False
@@ -577,11 +580,11 @@ class MainWindow(QMainWindow):
         self.btn_rec.setCheckable(True)
         self.run_beads = QLabel("2. Left click the beads on the image (right click removes a pick): 0 picked")
         self.run_cal = QLabel("3. asks for the data folder once (the calibration cal001, cal002, ... and the run file "
-                              "tra001.h5, tra002.h5, ... go there), scans the picked beads DOWNWARDS from the current "
-                              "focus (set it above the working focus: the LUT's middle is 3 um below the start at 60 x "
-                              "100 nm), then tracks every bead of the .cal (bead 1 = reference) from the next frame "
-                              "on; the camera never stops. Reset calibration drops the beads so the image takes picks "
-                              "again.")
+                              "tra001.h5, tra002.h5, ... go there), scans the picked beads from the current focus in "
+                              "the Scan direction of the Calibrate page (the LUT's middle is 3 um from the start at 60 x "
+                              "100 nm; the focus goes there after the scan), then tracks every bead of the .cal (bead 1 "
+                              "= reference) from the next frame on; the camera never stops. Reset calibration drops "
+                              "the beads so the image takes picks again.")
         self.run_track = QLabel("4. not tracking")
         self.run_save = QLabel("5. the traces go next to the run file as tra001-000, tra001-001, ... (LabVIEW's files)")
         for lab in (self.run_cam, self.run_beads, self.run_cal, self.run_track, self.run_save):
@@ -601,6 +604,9 @@ class MainWindow(QMainWindow):
         f.addRow(_row(self.autofocus, self.af_status))
         f.addRow(QPushButton("5. Save the traces (.tra)", clicked=lambda: self._export("tra")))
         f.addRow(self.run_save)
+        explore = QGroupBox("Explore: move by hand (no recording)")     # Request2: on the Run page itself
+        QVBoxLayout(explore).addWidget(self._panel_explore())
+        f.addRow(explore)
         return w
 
     def _flow_calibrate(self):
@@ -609,8 +615,9 @@ class MainWindow(QMainWindow):
         if not self.picks or not api.acq.running():
             self._fail("calibrate", "start the camera and left click the beads on the image first")
             return
+        start = CAL_ROOT if CAL_ROOT.is_dir() else Path(self.cal_out.text()).parent     # Request2: the Dropbox data folder
         d = QFileDialog.getExistingDirectory(self, "Data folder: the calibration (cal001, ...) and the run file "
-                                             "(tra001.h5, ...) are written here", str(Path(self.cal_out.text()).parent))
+                                             "(tra001.h5, ...) are written here", str(start))
         if not d:
             return
         self.settings.setValue("data_dir", d)
@@ -721,7 +728,16 @@ class MainWindow(QMainWindow):
         f.addRow("Cross (px)", self.cal_cross)
         self.cal_settle = _spin(0.0, 5.0, 0.1, zscan.SETTLE_S, 2, " s")
         f.addRow("Settle after each move", self.cal_settle)
-        data_dir = self.settings.value("data_dir", str(self._data_root()))   # the folder last chosen, if it still exists
+        # Request2 (owner 2026-11-06): LabVIEW stacked the profiles in +z; the rig's piezo sign is in question, so
+        # the direction is a choice here (remembered), and the autofocus follows it. The ramp's z against the force
+        # tells which is right: z must RISE with the force
+        self.scan_dir = QComboBox()
+        self.scan_dir.addItem("up (+z per slice, LabVIEW's)", 1.0)
+        self.scan_dir.addItem("down (-z per slice)", -1.0)
+        self.scan_dir.setCurrentIndex(0 if float(self.settings.value("scan_dir", 1.0)) > 0 else 1)
+        self.scan_dir.currentIndexChanged.connect(lambda _i: self.settings.setValue("scan_dir", self.scan_dir.currentData()))
+        f.addRow("Scan direction", self.scan_dir)
+        data_dir = str(CAL_ROOT) if CAL_ROOT.is_dir() else self.settings.value("data_dir", str(self._data_root()))
         data_dir = data_dir if Path(data_dir).is_dir() else str(self._data_root())
         self.cal_out = QLineEdit(str(Path(data_dir) / "cal001"))   # owner 2026-11-05: browsed, not typed; the next free name at Run
         row = QHBoxLayout()
@@ -1404,8 +1420,10 @@ class MainWindow(QMainWindow):
         xy = np.array(self.picks, dtype=np.float64) if self.picks else beads.xy0.copy()
         self.cal_status.setText("running...")
 
+        direction = self.scan_dir.currentData()
+
         def job():
-            return api.zscan.run(str(path), xy.tolist(), slices, step, avg, cross, settle_s=settle)
+            return api.zscan.run(str(path), xy.tolist(), slices, step, avg, cross, settle_s=settle, direction=direction)
 
         def done(cal):
             self.cal_status.setText(f"done: {len(cal['xy'])} beads, {slices} slices x {step:.0f} nm -> {path}; "
@@ -1457,7 +1475,8 @@ class MainWindow(QMainWindow):
             self.autofocus.setChecked(False)
             self._fail("autofocus", "no reference bead is tracked: calibrate and select beads with a reference first")
             return
-        self._call(lambda: api.focus.autofocus(on, bead_id=refs[0] if on else None), "autofocus",
+        direction = self.scan_dir.currentData()
+        self._call(lambda: api.focus.autofocus(on, bead_id=refs[0] if on else None, scan_direction=direction), "autofocus",
                    lambda st: self.af_status.setText(f"holding bead {st['bead']} at z {st['z_center_um']:.2f} um"
                                                      if st["on"] else "off"))
 

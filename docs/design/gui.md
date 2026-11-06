@@ -125,7 +125,23 @@ The owner ran watch -> picks -> calibrate -> track -> protocol -> Save the trace
     PI controller and the home crawled. The PI open and close now set VEL to the profile's maximum (15 mm/s)
     and read it back (motion-gate.md); the simulator does the same.
 
-## Requests/Request1.md (owner 2026-11-06 18:06; the answer is Requests/Request1.answer.ko.md)
+## Requests/Request2.md (owner 2026-11-06 19:36; the answers are in the file)
+1. Explore lives inside the Run page (a group at its bottom); the More... pages are Beads, Calibrate, Save.
+2. The calibration's folder dialog starts at `G:\Data\SiHyeong\Dropbox\Data` (`CAL_ROOT`) when that folder exists;
+   the Calibrate page's "Write .cal to" starts there too.
+3. The scan direction is a choice on the Calibrate page, remembered: "up (+z per slice, LabVIEW's)", the default,
+   or "down"; `api.zscan.run(direction=)`, the calibration event records it, and the autofocus takes its sign from
+   it (`api.focus.autofocus(scan_direction=)`). The owner reports the rig's piezo sign reversed after a repair
+   (a + command moves the objective down; the oil contact grows) and that the beads sat ABOVE the focus; neither
+   changes what decides the direction: in a force ramp z must RISE with the force. Today's +z data had it falling,
+   the -z scan was not yet checked that way; the choice lets the owner settle it on the rig without a code change.
+4. Found while testing it: `QSettings("KimLab", "MT Tracker")` used the Windows registry whatever the default
+   format, so the tests' redirect to a temp ini (design critique #3) never took and every GUI test wrote the user's
+   real settings (data_dir = a pytest temp folder, scan_dir). The window now opens
+   `QSettings(IniFormat, UserScope, ...)`: the settings live in `%APPDATA%\KimLab\MT Tracker.ini`, the tests'
+   redirect works, and the registry keys under HKCU\Software\KimLab are stale leftovers (harmless, may be deleted).
+
+## Requests/Request1.md (owner 2026-11-06 18:06; the answers are in the file)
 1. z fell as the force rose (extension inverted in the plot and the .tra). Cause: the z scan stepped the focus UP
    per slice, so a rising bead (closer to the focus) reads a LOWER slice and z = index x step falls; LabVIEW's
    data, read by the same MATLAB code, rise, so its scan went the other way. Fix: `api.zscan.SCAN_DIR = -1`, the
