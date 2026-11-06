@@ -5,6 +5,8 @@ quoted span. Allowed:
   - Hangul inside quotes on one line: "...", '...', `...`, \u201c...\u201d, \u2018...\u2019
     (verbatim quotes of the owner's words, Korean data strings such as a date in a .cal file, accepted aliases)
   - Korean translations in files named *.ko.<ext> (e.g. README.ko.md)
+  - the owner's request files in Requests/ (owner 2026-11-06: the requests are written in Korean and the answers
+    go into the same .md, under each item)
   - files outside the repository
 Exit 2 = blocked (the reason goes to stderr and back to the assistant); exit 0 = allowed.
 Decision: docs/decisions/0009-development-method.md (documents in English; Korean optional).
@@ -59,6 +61,8 @@ def main():
         return 0
     name = os.path.basename(full)
     if re.search(r"\.ko\.[^.]+$", name):
+        return 0
+    if full.startswith(os.path.join(root, "requests") + os.sep):     # normcase: lower case on Windows
         return 0
     bad = []
     for t in new_texts(tool, inp):
