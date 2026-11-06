@@ -36,17 +36,20 @@ An **experiment bundle** (`.mtexp`, U36) is a folder or zip of one of each plus 
 ```
 grammar 0.1
 protocol "Force-extension + rotation"
-kind experiment            # experiment | screening
+kind experiment            # experiment | screening; `loading magnet` | `loading force` may follow (see 3.2 ramp)
 ```
+
+`loading` (optional, the table writes it from its Loading choice) says the ramps are written by magnet speed
+(`speed=`, mm/s) or by force loading rate (`rate=`, pN/s); a ramp written the other way is a check warning.
 
 ### 3.2 Action statements
 | Statement | Keys (unit, range) | Meaning |
 |---|---|---|
 | `zero t=` | t (s, 0.1-600) | magnet to zero force, hold, then set the zero (U12) |
-| `ramp from= to= t=` | from, to (pN, >= 0; outside the reachable range of the force calibration inside the magnet position limit -> coerced to the nearest reachable force, 0018); exactly one of t (s, 0.1-36000), speed (mm/s of the magnet, > 0) or rate (pN/s, > 0: the true loading rate, one magnet move per second of ramp at the speed that piece needs; the ramp takes \|to - from\| / rate s plus ~50 ms per piece) | force ramp |
+| `ramp from= to= t=` | from, to (pN, >= 0; outside the reachable range of the force calibration inside the magnet position limit -> coerced to the nearest reachable force, 0018); exactly one of t (s, 0.1-36000), speed (mm/s of the magnet, > 0) or rate (pN/s, > 0: the true loading rate, one magnet move whose speed is set again from the position read back every 0.1 s; the ramp takes \|to - from\| / rate s) | force ramp |
 | `hold f= t=` | f (pN; coerced into the reachable range, 0018); t (s) | constant force |
 | `move mm= t=` | mm (magnet position, mm; outside the position limit -> the nearest limit, 0018); t (s, optional) | magnet by position instead of force |
-| `rotate from= to= f= t=` | from, to (turns, ±profile max); f (pN); t (s) | rotation at a force |
+| `rotate from= to= f= t=` | from, to (turns, ±profile max); f (pN); exactly one of t (s), speed (turns/s, > 0) or spd (the rotor's SPD setting, > 0; turns/s = SPD x 10 / 500) | rotation at a force |
 | `focus um= ` | um (µm, relative to start, ±profile window) | focus step (U35; use sparingly) |
 | `record t=` / `record on` / `record off` | t (s) | recording on for a time, or switch |
 | `light seq="name"` / `light off` | seq (name of an `.mtseq`) | start / stop an illumination sequence (MT-TIRF) |

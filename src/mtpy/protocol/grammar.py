@@ -126,7 +126,9 @@ PROTOCOL_KEYS = {
              "rate": Key("num", "pN/s", 0.0, None, False, True)},      # motor speed; 2026-11-06: a force loading rate)
     "hold": {"f": PN, "t": _t()},
     "move": {"mm": Key("num", "mm"), "t": _t(required=False)},
-    "rotate": {"from": Key("num", "turns"), "to": Key("num", "turns"), "f": PN, "t": _t(0.1)},
+    "rotate": {"from": Key("num", "turns"), "to": Key("num", "turns"), "f": PN, "t": _t(0.1, required=False),
+               "speed": Key("num", "turns/s", 0.0, None, False, True),     # one of t= / speed= / spd= (owner 2026-11-06:
+               "spd": Key("num", "SPD", 0.0, None, False, True)},          # the rotor speed written in the script)
     "focus": {"um": Key("num", "um")},
     "record": {"t": _t(0.1)},
     "light": {"seq": Key("str")},
@@ -134,6 +136,19 @@ PROTOCOL_KEYS = {
     "loop": {"n": Key("int", "", 1, 10000)},
 }
 BLOCK_OPENERS = {"protocol": ("loop", "if", "on"), "sequence": ("header", "body", "footer"), "recipe": ()}
+SPD_TO_TURNS_S = 10.0 / 500.0       # Autonics SPD -> turns/s (PULSES_PER_TURN 500; shortcut: the multiplier assumed 10 as in
+                                    # devices/autonics.py, upgrade when read)
+LOADING = ("magnet", "force")       # the `loading` header: the ramps' speed= (mm/s) or rate= (pN/s), as the table's choice
+
+
+def rotor_speed(st):
+    """A rotate statement's rotor speed in turns/s from whichever of t= / speed= / spd= it carries."""
+    a = {k: v.value for k, v in st.args.items()}
+    if "speed" in a:
+        return float(a["speed"])
+    if "spd" in a:
+        return float(a["spd"]) * SPD_TO_TURNS_S
+    return abs(a["to"] - a["from"]) / a["t"]
 LIVE_NAMES = ("force_pN", "extension_um", "z_um", "turns", "t_s")          # grammar section 6
 LIBRARY = ("fret", "present", "fell", "rose", "mean", "sd", "rel", "at_start", "fraction")   # section 7
 
@@ -546,10 +561,25 @@ class _Parser:
             cur.done("the kind")
             self.script.meta["type"] = t.text
             st.kind = "_header"
+        elif kw == "loading":                 # owner 2026-11-06: the script says which loading rate it is written in
+            t = cur.next()
+            if self.script.meta.get("loading") is not None:
+                raise _LineError(st.col, "'loading' is given twice")
+            if self.script.body or self.stack:
+                raise _LineError(st.col, "'loading' belongs in the header, before the first action")
+            if t is None or t.kind != "word" or t.text not in LOADING:
+                raise _LineError(t.col if t else cur.end_col(), "loading must be magnet (ramps by speed=, mm/s) or force "
+                                                                 "(ramps by rate=, pN/s)")
+            cur.done("the loading")
+            self.script.meta["loading"] = t.text
+            st.kind = "_header"
         elif kw in ("zero", "ramp", "hold", "move", "rotate", "focus", "loop"):
             _keyvals(cur, PROTOCOL_KEYS[kw], st, kw)
             if kw == "rotate" and st.args["from"].value == st.args["to"].value:
                 raise _LineError(st.args["to"].col, "'rotate' needs from= and to= to differ (use 'hold' to stay)")
+            if kw == "rotate" and sum(k in st.args for k in ("t", "speed", "spd")) != 1:
+                raise _LineError(cur.end_col(), "'rotate' needs exactly one of t= (seconds), speed= (turns/s) or spd= "
+                                                "(the rotor's SPD setting, turns/s = SPD x 10 / 500)")
             if kw == "ramp" and sum(k in st.args for k in ("t", "speed", "rate")) != 1:
                 raise _LineError(cur.end_col(), "'ramp' needs exactly one of t= (seconds), speed= (mm/s of the magnet) "
                                                 "or rate= (pN/s of the force)")
@@ -621,7 +651,7 @@ class _Parser:
                 raise _LineError(st.expr.col, "a rule is a comparison: metric op threshold, e.g. rule angle_deg <= 20")
         else:
             known = ("zero ramp hold move rotate focus record light mark wait loop if else on stop end repeat rule "
-                     "kind; 'end protocol' last")
+                     "kind loading; 'end protocol' last")
             raise _LineError(st.col, f"unknown statement '{kw}' (protocol statements: {known})")
 
     def _sequence(self, cur, st):

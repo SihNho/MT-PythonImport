@@ -27,7 +27,7 @@ import math
 from mtpy import api
 from mtpy.api.errors import ScriptError
 
-from .grammar import PROTOCOL_KEYS, Diagnostic, parse
+from .grammar import PROTOCOL_KEYS, Diagnostic, parse, rotor_speed
 
 # statement (or statement:form) -> [(api function, {grammar key: API parameter that carries the value})]
 API_MAP = {
@@ -231,8 +231,9 @@ def _profile_layer(rep, st, devices=False):
     elif st.kind == "rotate":
         for k in ("from", "to"):           # turns relative to the session-start position, as the profile window
             _profile(rep, st, k, "rotor_turns", a[k], origin=0.0, why=" from the session-start position")
-        speed = abs(a["to"] - a["from"]) / a["t"]
-        _profile(rep, st, "t", "rotor_speed_turns_s", speed, why=f" -> rotor speed {speed:g} turns/s")
+        speed = rotor_speed(st)
+        key = "speed" if "speed" in a else "spd" if "spd" in a else "t"
+        _profile(rep, st, key, "rotor_speed_turns_s", speed, why=f" -> rotor speed {speed:g} turns/s")
     elif st.kind == "focus":
         _profile(rep, st, "um", "focus_z_um", a["um"], origin=0.0, why=" from the focus position at the start")
 
@@ -290,9 +291,13 @@ def check(script, devices=False, run_focus_z0=_NO_RUN):
     elif devices and has_focus and _connected("focus"):
         z0 = api.focus.position() if run_focus_z0 is _NO_RUN else run_focus_z0
         focus_z0 = (z0, api.devices.info("focus")["origin"])
-    for st in list(walk(script.body)) + list(script.rules):
+    loading = script.meta.get("loading")             # owner 2026-11-06: the header says which loading rate the
+    for st in list(walk(script.body)) + list(script.rules):   # ramps are written in; a ramp that differs is flagged
         if not _api_layer(rep, st) or st.kind == "rule":
             continue
+        if st.kind == "ramp" and loading and ("rate" in st.args) != (loading == "force"):
+            rep.warn(st, st.col, f"'loading {loading}' in the header, but this ramp gives "
+                                 f"{'rate= (pN/s, a force loading rate)' if 'rate' in st.args else 'speed= / t= (a magnet loading rate)'}")
         _profile_layer(rep, st, devices)
         if devices:
             _state_layer(rep, st, focus_z0)
@@ -346,6 +351,8 @@ def duration(body):
             total += st.args["t"].value
         elif st.kind == "ramp" and "rate" in st.args:
             total += abs(st.args["to"].value - st.args["from"].value) / st.args["rate"].value
+        elif st.kind == "rotate":
+            total += abs(st.args["to"].value - st.args["from"].value) / rotor_speed(st)
     return total if math.isfinite(total) else float("inf")
 
 

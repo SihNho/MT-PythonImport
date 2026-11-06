@@ -23,11 +23,10 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from mtpy.devices.autonics import PULSES_PER_TURN
+from mtpy.protocol.grammar import SPD_TO_TURNS_S
 
 ROWS = ("Force (pN)", "Wait (s)", "Motor (mm/s)", "Rotor (degree)", "Rotor speed (SPD)")
 LOADING = ("Motor (mm/s)", "Force rate (pN/s)")   # owner 2026-11-06: magnet loading or force loading, one or the other
-SPD_TO_TURNS_S = 10.0 / PULSES_PER_TURN     # shortcut: the Autonics multiplier assumed 10 as in devices/autonics.py, upgrade when read
 EXAMPLE = [[1, 0, 0.1, -3600, 50], [1, 0, 0.1, 3600, 50], [1, 0, 0.1, 0, 0], [50, 0, 0.03, 0, 0], [1, 0, 0.1, 0, 0]]
 
 
@@ -39,7 +38,7 @@ def compile_table(columns, name="table", repeat=1, force_rate=False):
     A rotation column turns by the degrees at the SPD speed (the force set first, as `rotate` does); a column whose
     force differs from the previous one ramps to it at the loading value (`hold` when it is 0); a wait follows when
     given; an empty column is a comment. ValueError names the column of a bad value."""
-    lines = ["grammar 0.1", f'protocol "{name}"']
+    lines = ["grammar 0.1", f'protocol "{name}"', f"loading {'force' if force_rate else 'magnet'}"]
     repeat = int(repeat)
     if repeat < 1:
         raise ValueError("repeat must be >= 1")
@@ -57,8 +56,7 @@ def compile_table(columns, name="table", repeat=1, force_rate=False):
         if deg != 0:
             if spd <= 0:
                 raise ValueError(f"column {k}: a rotation of {deg:g} degrees needs a rotor speed (SPD > 0)")
-            dt = abs(deg / 360.0) / (spd * SPD_TO_TURNS_S)
-            done.append(f"rotate from={turns:g} to={turns + deg / 360.0:g} f={f:g} t={dt:g}")
+            done.append(f"rotate from={turns:g} to={turns + deg / 360.0:g} f={f:g} spd={spd:g}")
             turns += deg / 360.0
             prev_f = f
         elif prev_f is None:
@@ -103,7 +101,7 @@ class ExpTable(QWidget):
         self.loading.addItems(LOADING)
         self.loading.currentIndexChanged.connect(self._loading_changed)
         self.info = QLabel("columns = steps: a force change at the loading value (Motor mm/s, or Force rate pN/s: the "
-                           "true loading rate, 1 s pieces), or a rotation at the rotor speed; then the wait")
+                           "true loading rate), or a rotation at the rotor speed; then the wait")
         self.info.setWordWrap(True)
         for w in (self.btn_add, self.btn_del, self.btn_example, self.repeat, QLabel("Loading"), self.loading):
             row.addWidget(w)

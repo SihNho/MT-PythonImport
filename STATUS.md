@@ -264,7 +264,7 @@ Short and current. Details live in the linked documents; the history is in git a
   the 1-2 s step overhead (to measure), the rotor column of the .tra (absolute count vs LabVIEW's told position).
   2026-11-06, the owner's feedback after the first experiment (gui.md): reference subtraction on the plot, the
   autofocus through the piezo (sign to verify on the rig), the run-file page, the running step highlighted, the run
-  folder following the .cal, `ramp rate=` (pN/s, the true rate in 1 s pieces) and the table's Loading choice (magnet mm/s or force pN/s); the .meta.json without the .cal copy; one poll thread per motor (magnet ~30-40 readings/s) and the arrival poll's readings logged (~100/s while the magnet moves).
+  folder following the .cal, `ramp rate=` (pN/s, the true rate: VEL set from the position read back during one move; the C-863's VEL-during-motion to confirm on the rig), `rotate spd=` and the `loading` header in the script and the table's Loading choice (magnet mm/s or force pN/s); the .meta.json without the .cal copy; one poll thread per motor (magnet ~30-40 readings/s) and the arrival poll's readings logged (~100/s while the magnet moves).
 - **Next:** protocols on hardware (force ramps, rotation, 3-state clamp, autofocus), the stop / watchdog paths
   exercised on the rig, then the tethered-bead calibration.
 - **Queued (owner 2026-11-06):** which side of the focus to track on. The owner's first run had the beads below

@@ -110,7 +110,7 @@ def test_parse_errors_have_line_and_column():
         ("p.mtprot:3:8: 'f' is written with a unit ('7pN'); units are fixed per key and never written in the value: "
          "write f=7 (pN)"),
         ("p.mtprot:4:1: unknown statement 'jump' (protocol statements: zero ramp hold move rotate focus record light "
-         "mark wait loop if else on stop end repeat rule kind; 'end protocol' last)"),
+         "mark wait loop if else on stop end repeat rule kind loading; 'end protocol' last)"),
         "p.mtprot:6:16: 'f' is given twice",
         "p.mtprot:8:1: 'end' without an open block",
         "p.mtprot:9:20: 't' is 0.01 (s); the grammar allows 0.1-36000 (s)",
@@ -911,3 +911,26 @@ def test_ramp_with_a_force_rate_holds_the_rate_by_changing_the_speed_during_one_
     assert slope == pytest.approx(2.0, rel=0.15), slope
     with pytest.raises(ScriptError, match="exactly one of t="):
         parse(HEAD + "ramp from=1 to=5 rate=2 speed=2\n", "both.mtprot")
+
+
+def test_rotate_speed_in_the_script_and_the_loading_header(rig):
+    """Owner 2026-11-06: the script carries the rotor speed (`speed=` turns/s or `spd=`, the SPD setting) and the
+    `loading` header says whether the ramps are magnet (speed=) or force (rate=) loading; a ramp written the other
+    way is a check warning, not an error."""
+    api.magnet.use_force_table(WIDE_TABLE)
+    s = parse(HEAD + "loading magnet\nrotate from=0 to=0.5 f=1 spd=50\nrotate from=0.5 to=0 f=1 speed=2\n", "spd.mtprot")
+    assert s.meta["loading"] == "magnet"
+    n = len(events.events())
+    api.protocol.run(s)
+    st = api.protocol.wait(60)
+    assert st["state"] == "completed" and st["steps_done"] == 2, st
+    ends = [e for e in events.events()[n:] if e.kind == "protocol_step" and e.extra["phase"] == "end"]
+    assert ends[0].extra["speed_turns_s"] == pytest.approx(1.0) and ends[1].extra["speed_turns_s"] == 2.0   # SPD 50 = 1 turn/s
+    start = [e for e in events.events()[n:] if e.kind == "protocol" and e.extra.get("action") == "start"][0]
+    assert start.extra["loading"] == "magnet"
+    rep = api.protocol.check(parse(HEAD + "loading force\nhold f=1 t=0.1\nramp from=1 to=2 speed=1\n", "mix.mtprot"), devices=False)
+    assert rep["ok"] and any("loading force" in str(w) for w in rep["warnings"])
+    for bad in ("rotate from=0 to=1 f=1 t=1 spd=50\n", "rotate from=0 to=1 f=1\n", "loading sideways\n",
+                "hold f=1 t=0.1\nloading force\n"):
+        with pytest.raises(ScriptError):
+            parse(HEAD + bad, "bad.mtprot")

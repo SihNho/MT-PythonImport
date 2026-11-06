@@ -396,11 +396,11 @@ def test_experiment_table_compiles_the_owners_example_and_runs(window):
     from mtpy.gui.exptable import EXAMPLE, compile_table
 
     text = compile_table(EXAMPLE)
-    assert text.splitlines()[2:] == ["# column 1", "rotate from=0 to=-10 f=1 t=10", "# column 2", "rotate from=-10 to=0 f=1 t=10",
+    assert text.splitlines()[2:] == ["loading magnet", "# column 1", "rotate from=0 to=-10 f=1 spd=50", "# column 2", "rotate from=-10 to=0 f=1 spd=50",
                                      "# column 3: nothing to do", "# column 4", "ramp from=1 to=50 speed=0.03",
                                      "# column 5", "ramp from=50 to=1 speed=0.1", "end protocol"]
     rep = compile_table(EXAMPLE, repeat=3).splitlines()       # owner 2026-11-05: cycle repeat -> loop n=
-    assert rep[2] == "loop n=3" and rep[-2:] == ["end", "end protocol"]
+    assert rep[2] == "loading magnet" and rep[3] == "loop n=3" and rep[-2:] == ["end", "end protocol"]
     app, w = window
     w._connect()
     _until(app, lambda: "8 / 8" in w.dev_summary.text(), 15, "connect")
@@ -418,7 +418,7 @@ def test_experiment_table_compiles_the_owners_example_and_runs(window):
     _until(app, lambda: api.magnet.force_calibration()["ready"], 10, "touch position")
     w.exp_table.set_columns([[1, 0.2, 0, 0, 0], [2, 0.1, 1.0, 0, 0], [2, 0.1, 0, 36, 50]])
     w._start_from_table()
-    assert "ramp from=1 to=2 speed=1" in w.prot_edit.toPlainText() and "rotate from=0 to=0.1 f=2 t=0.1" in w.prot_edit.toPlainText()
+    assert "ramp from=1 to=2 speed=1" in w.prot_edit.toPlainText() and "rotate from=0 to=0.1 f=2 spd=50" in w.prot_edit.toPlainText()
     _until(app, lambda: api.protocol.status()["state"] == "completed", 60, "table protocol completed")
     assert api.protocol.status()["steps_done"] == 5                 # hold, ramp, wait, rotate, wait
 

@@ -109,9 +109,14 @@ The owner ran watch -> picks -> calibrate -> track -> protocol -> Save the trace
    the user browsed a run folder on the Save page.
 8. Loading, magnet or force, one or the other (owner: the LabVIEW experiments used the magnet loading rate; the
    force loading rate is wanted, and it must be the true rate, not a mean): the table's "Loading" choice names its
-   third row Motor (mm/s) or Force rate (pN/s); `ramp rate=` cuts the ramp into 1 s pieces of equal force, each
-   one magnet move at the speed that piece needs (engine `_ramp_at_rate`); the motor stops ~50 ms between pieces.
-   A VEL changed on the fly during one move would be smoother; to try on the rig if wanted.
+   third row Motor (mm/s) or Force rate (pN/s); `ramp rate=` is ONE magnet move whose VEL is set again every 0.1 s from the
+   position read back, rate / the calibration's slope there (engine `_ramp_at_rate`, `api.magnet.set_speed`), so
+   dF/dt stays at the rate (owner: 1 s pieces were not enough at 1-5 pN/s near 1 pN; the owner chose this).
+   **Not yet seen on the rig:** the C-863 taking a VEL during a move; a refusal fails the step with its ERR.
+   Owner, later the same day: the script itself says the speeds and the loading kind - `rotate ... spd=50` (the
+   rotor's SPD setting; `speed=` turns/s also allowed, `t=` stays) and the header line `loading magnet` /
+   `loading force` the table writes from its choice; a ramp written the other way is a Check warning
+   (grammar.py `rotor_speed`, `LOADING`).
 9. "How do I know the bead is near the calibration boundary?": within 10 slices of either LUT end the bead's box
    on the image and its chip above the plot turn orange; the chip reads the raw z against the LUT top
    ("b2 z 5.2/5.9", "b3 lost"); the Beads text gives the LUT's z range and middle. Grey box = the tracker's own

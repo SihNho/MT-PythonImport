@@ -29,10 +29,11 @@ end protocol
 | 줄 | 프로그램이 하는 일 |
 |---|---|
 | `hold f=F t=T` | 힘 보정(M270 v3, Setup에서 잡은 touch position 기준)으로 F pN에 해당하는 자석 위치를 구하고, 모션 게이트를 거쳐 자석을 그 위치로 보낸 뒤 T초 기다림 |
-| `ramp from=A to=B t=T` | 자석을 A의 위치로 보낸 뒤, B의 위치까지 T초가 걸리는 속도로 이동(`t=` 대신 `speed=` mm/s 또는 `rate=` pN/s도 가능. `rate=`는 진짜 loading rate: 램프를 힘이 같은 1초 조각으로 나눠 조각마다 그 조각에 필요한 속도로 한 번씩 이동하므로 touch 쪽으로 갈수록 모터가 빨라짐. 조각 사이에 모터가 약 50 ms 멈춤). 프로파일의 자석 속도 한계를 넘는 속도는 한계로 낮추고 `coerced` 이벤트로 기록 |
+| `ramp from=A to=B t=T` | 자석을 A의 위치로 보낸 뒤, B의 위치까지 T초가 걸리는 속도로 이동(`t=` 대신 `speed=` mm/s 또는 `rate=` pN/s도 가능. `rate=`는 진짜 loading rate: 한 번의 이동 중에 0.1초마다 읽은 위치에서 보정 곡선의 기울기로 속도를 다시 정하므로(rate / 기울기) touch 쪽으로 갈수록 빨라지고 멀어질수록 느려짐. 기울기가 너무 작아 rate를 못 지키는 곳에서는 프로파일 최대 속도로 묶이고 `coerced`로 기록). 프로파일의 자석 속도 한계를 넘는 속도는 한계로 낮추고 `coerced` 이벤트로 기록 |
 | `move mm=X t=T` | 자석을 힘과 무관하게 X mm로, 그 뒤 T초 |
 | `zero t=T` | 자석을 0 mm(맨 위, 힘 없음)로, T초. 추적의 영점은 잡지 않음 |
-| `rotate from=A to=B f=F t=T` | 힘 F로 두고, 로터를 원점 기준 A turn으로 보낸 뒤 B turn까지 (B-A)/T turn/s로 회전 |
+| `rotate from=A to=B f=F t=T` | 힘 F로 두고, 로터를 원점 기준 A turn으로 보낸 뒤 B turn까지 (B-A)/T turn/s로 회전. `t=` 대신 `speed=` turn/s 또는 `spd=`(로터의 SPD 설정값, turn/s = SPD x 10 / 500)도 가능 |
+| `loading magnet` / `loading force` | 머리말 줄(`protocol` 다음): 램프를 자석 속도(`speed=`)로 썼는지 힘 loading rate(`rate=`)로 썼는지. 반대로 쓴 램프는 Check에서 경고. 표는 Loading 선택대로 이 줄을 씀 |
 | `focus um=X` | 초점을 실행 시작점에서 X um만큼 |
 | `record on` / `record off` / `record t=T` | 런 파일에 기록을 켬 / 끔 / T초 동안 켬 |
 | `mark "글"` | 런 파일에 글 이벤트 |

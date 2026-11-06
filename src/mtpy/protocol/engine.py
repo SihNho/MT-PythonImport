@@ -42,6 +42,7 @@ import time
 from mtpy import api
 
 from .check import structure_diff, walk
+from .grammar import rotor_speed
 
 FINAL = ("completed", "stopped", "refused", "failed", "aborted")
 RATE_UPDATE_S = 0.1       # `ramp rate=`: the magnet speed is set again from the position read back this often
@@ -142,7 +143,8 @@ class Engine:
             s = self.script
             api.events.log("protocol", action="start", name=s.name, file=s.file, sha256=s.sha256, grammar=s.grammar,
                            type=s.meta.get("type"), text=s.text, rules=len(s.rules),
-                           rules_evaluated=False if s.rules else None, focus_z0=self.focus_z0)
+                           rules_evaluated=False if s.rules else None, focus_z0=self.focus_z0,
+                           loading=s.meta.get("loading"))
             state, reason = "completed", None
             try:
                 self._block(0, ())
@@ -417,8 +419,8 @@ class Engine:
         self._sleep(self._a(st, "t", 0.0))
 
     def _do_rotate(self, st):
-        f0, f1, t = self._a(st, "from"), self._a(st, "to"), self._a(st, "t")
-        speed = abs(f1 - f0) / t
+        f0, f1 = self._a(st, "from"), self._a(st, "to")
+        speed = rotor_speed(st)                      # t= / speed= / spd= (grammar)
         self._motion(lambda: api.magnet.set_force(self._a(st, "f")))
         origin = api.devices.info("rotor")["origin"]
         rel = api.rotor.position() - origin
