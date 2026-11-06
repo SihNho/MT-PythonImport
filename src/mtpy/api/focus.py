@@ -57,14 +57,15 @@ class _AutoFocus:
     move = clamp(slice index - n_slices / 2, +-0.2) relative). Runs on its own thread: each period it takes the
     display tap's newest result (never the frame path), and sends ONE relative focus move through api.focus.move_to
     (the profile window and the e-stop apply as to a manual move). A lost bead (-1) or a stale frame sends nothing.
-    The sign follows the z scan's direction (api.zscan.SCAN_DIR): slice s = focus start + SCAN_DIR * s * step, so a
-    bead reading above the middle means the focus is SCAN_DIR-wards of where it should be. Rig 2026-11-06 18:03:
-    with the upward scan and SIGN -1 bead 1 was held at 3.00 +- 0.03 um (the log's autofocus_move lines), so the
-    derivation holds (the scan and the correction share the device's sign, so devices/asi.py Z_SIGN cancels)."""
+    The sign: the LUT's z rises with the sample (api.zscan stores the slices in sample order, LUT index k = the
+    sample k x step above index 0), so a bead reading above the middle is too high and the sample must go DOWN:
+    SIGN = -1. Rig 2026-11-06 18:03: bead 1 was held at 3.00 +- 0.03 um with SIGN -1 and a LUT whose z rose with
+    the sample (the log's autofocus_move lines), so the derivation holds; devices/asi.py Z_SIGN cancels between
+    the scan and the correction."""
+
+    SIGN = -1.0
 
     def __init__(self, bead_id, z_center_um, period_s, max_step_um, dead_um):
-        from . import zscan
-        self.SIGN = -zscan.SCAN_DIR
         self.bead_id, self.z_center_um = int(bead_id), float(z_center_um)
         self.period_s, self.max_step_um, self.dead_um = float(period_s), float(max_step_um), float(dead_um)
         self.moves, self.last, self.error = 0, None, None
@@ -83,9 +84,10 @@ class _AutoFocus:
         ids = list(_acq._pipe.bead_ids) if _acq._pipe is not None else []
         if self.bead_id not in ids:
             return None
-        z = float(snap.result.xyz[ids.index(self.bead_id), 2])
-        if z == -1.0:                            # lost (the tracker reseeds it; F4.05)
+        row = snap.result.xyz[ids.index(self.bead_id)]
+        if row[0] == -1.0 and row[2] == -1.0:    # lost, the kernel's (-1, -1, -1) row (the tracker reseeds it; F4.05)
             return None
+        z = float(row[2])
         err = z - self.z_center_um
         if abs(err) < self.dead_um:
             return None

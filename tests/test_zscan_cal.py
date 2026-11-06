@@ -135,12 +135,15 @@ def test_radial_profile_reads_zero_outside_the_sub_image():
     assert np.allclose(before, track.radial_profile(np.pad(sub, 10), 82.3, 81.6, 60))
 
 
-def test_zscan_starts_at_the_current_focus_and_stacks_upwards(sim, tmp_path, monkeypatch):
+def test_zscan_goes_down_from_the_current_focus_and_stores_the_lut_in_sample_order(sim, tmp_path, monkeypatch):
     """Owner 2026-11-05: no jump first (drift); from the start position step by step, back at the LUT's middle at
-    the end. UP = the sample rises per slice (LabVIEW's +z; owner 2026-11-07: the reversed controller sign is the
-    driver's Z_SIGN, not the scan's). centred=True keeps the bench tools' LUT centred on the start."""
+    the end. Owner 2026-11-07: the beads sit below the focus and the sample goes DOWN per slice (the pattern grows);
+    the LUT is stored bottom-up, index 0 = the lowest sample position = the LAST slice scanned, so z = index x step
+    rises with the bead. centred=True keeps the bench tools' LUT centred on the start."""
     from mtpy.api import zscan
-    monkeypatch.setattr(api.acq, "average", lambda n, timeout_s=10.0: np.full((1024, 1280), 100.0))
+    calls = []
+    monkeypatch.setattr(api.acq, "average", lambda n, timeout_s=10.0: np.full((1024, 1280), 100.0 + 10 * len(calls))
+                        if not calls.append(1) else None)
     moves = []
 
     class _M:
@@ -148,9 +151,18 @@ def test_zscan_starts_at_the_current_focus_and_stacks_upwards(sim, tmp_path, mon
             return None
     monkeypatch.setattr(api.focus, "move_to", lambda z: (moves.append(round(z, 4)), _M())[1])
     z0 = api.focus.position()
-    zscan.run(tmp_path / "cal_up", [(640.0, 512.0)], slices=3, n_avg=1)
-    assert moves == [round(z0, 4), round(z0 + 0.1, 4), round(z0 + 0.2, 4), round(z0 + 0.1, 4)]   # ends mid-LUT
+    cal = zscan.run(tmp_path / "cal_down", [(640.0, 512.0)], slices=3, n_avg=1)
+    assert moves == [round(z0, 4), round(z0 - 0.1, 4), round(z0 - 0.2, 4), round(z0 - 0.1, 4)]   # ends mid-LUT
+    first, last = cal["stack"][0, 2].mean(), cal["stack"][0, 0].mean()      # index 2 = the start (image 100), 0 = the lowest (120)
+    assert first < last and np.isclose(last - first, 20.0, atol=1.0)
     assert zscan.last_profiles()["slice"] == 3 and len(zscan.last_profiles()["profiles"]) == 1
     moves.clear()
     zscan.run(tmp_path / "cal_mid", [(640.0, 512.0)], slices=3, n_avg=1, centred=True)
-    assert moves == [round(z0 - 0.1, 4), round(z0, 4), round(z0 + 0.1, 4), round(z0, 4)]
+    assert moves == [round(z0 + 0.1, 4), round(z0, 4), round(z0 - 0.1, 4), round(z0, 4)]
+    moves.clear()
+    calls.clear()           # the mirror test: a negative step goes UP, index 0 = the highest = the last slice, z <= 0
+    cal = zscan.run(tmp_path / "cal_neg", [(640.0, 512.0)], slices=3, step_nm=-100.0, n_avg=1)
+    assert moves == [round(z0, 4), round(z0 + 0.1, 4), round(z0 + 0.2, 4), round(z0 + 0.1, 4)]
+    assert cal["z_step"] < 0 and np.isclose(cal["stack"][0, 0].mean() - cal["stack"][0, 2].mean(), 20.0, atol=1.0)
+    with pytest.raises(ValueError, match="step must not be 0"):
+        zscan.run(tmp_path / "cal_zero", [(640.0, 512.0)], slices=3, step_nm=0.0, n_avg=1)

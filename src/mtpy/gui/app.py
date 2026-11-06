@@ -580,10 +580,10 @@ class MainWindow(QMainWindow):
         self.btn_rec.setCheckable(True)
         self.run_beads = QLabel("2. Left click the beads on the image (right click removes a pick): 0 picked")
         self.run_cal = QLabel("3. asks for the data folder once (the calibration cal001, cal002, ... and the run file "
-                              "tra001.h5, tra002.h5, ... go there), scans the picked beads UP from the current focus: "
-                              "start with the beads just ABOVE the focus (small pattern), the sample rises per slice "
-                              "and the pattern grows; the LUT's middle is 3 um above the start at 60 x 100 nm and "
-                              "the focus goes there after the scan. Then it tracks every bead of the .cal (bead 1 = "
+                              "tra001.h5, tra002.h5, ... go there), scans the picked beads DOWN from the current focus: "
+                              "start with the beads just BELOW the focus (small pattern), the sample goes down per slice "
+                              "and the pattern grows; the LUT is stored bottom-up so z rises with the bead; its middle is "
+                              "2.9 um below the start at 60 x 100 nm and the focus goes there after the scan. Then it tracks every bead of the .cal (bead 1 = "
                               "reference) from the next frame on; the camera never stops. Reset calibration drops the "
                               "beads so the image takes picks again.")
         self.run_track = QLabel("4. not tracking")
@@ -715,7 +715,7 @@ class MainWindow(QMainWindow):
         self.cal_slices = QSpinBox()
         self.cal_slices.setRange(3, 512)
         self.cal_slices.setValue(60)
-        self.cal_step = _spin(10.0, 1000.0, 10.0, 100.0, 0, " nm")
+        self.cal_step = _spin(-1000.0, 1000.0, 10.0, 100.0, 0, " nm")   # negative: the sample goes UP (bead above the focus; owner 2026-11-07)
         self.cal_avg = QSpinBox()
         self.cal_avg.setRange(1, 200)
         self.cal_avg.setValue(20)
@@ -1275,19 +1275,20 @@ class MainWindow(QMainWindow):
             return pos
         self._call(job, "select beads", done)
 
-    def _chip_texts(self, z):
+    def _chip_texts(self, xyz):
         """'b3 z 5.4/5.9': the raw z (never reference-subtracted) against the LUT's top (owner 2026-11-06: is the bead
-        near the calibration boundary?); orange when near, 'lost' at -1."""
+        near the calibration boundary?); orange when near, 'lost' when the row is the kernel's (-1, -1, -1) marker
+        (tested on x: with a negative z step, the mirror test, z <= 0 is a value)."""
         if self.lut is None:
             return
         top = (self.lut[0] - 1) * self.lut[1]
         for k, i in enumerate(self.bead_ids):
             c = self.chips.get(i)
-            if c is None or k >= len(z):
+            if c is None or k >= len(xyz):
                 continue
-            zk = float(z[k])
-            c.setText(f"b{i} lost" if zk < 0 else f"b{i} {zk:.1f}/{top:.1f}")
-            near = self._near_edge(zk)
+            lost, zk = xyz[k][0] < 0, float(xyz[k][2])
+            c.setText(f"b{i} lost" if lost else f"b{i} {zk:.1f}/{top:.1f}")
+            near = not lost and self._near_edge(zk)
             if getattr(c, "_near", None) != near:
                 c._near = near
                 c.setStyleSheet(f"color:{'#F97316' if near else COLORS[k % len(COLORS)]}")
@@ -1360,10 +1361,11 @@ class MainWindow(QMainWindow):
 
     def _near_edge(self, z):
         """Owner 2026-11-06: z within EDGE_SLICES of either LUT end (the tracker drops the bead 2-3 slices from it)."""
-        if self.lut is None or z is None or z < 0:
+        if self.lut is None or z is None:
             return False
         n, step = self.lut
-        return z < EDGE_SLICES * step or z > (n - 1 - EDGE_SLICES) * step
+        i = z / step                                  # the LUT index; a negative step (the mirror test) has z <= 0
+        return i < EDGE_SLICES or i > n - 1 - EDGE_SLICES
 
     def _draw_boxes(self, xy, good, z=None):
         for b in self.boxes:
@@ -1371,7 +1373,7 @@ class MainWindow(QMainWindow):
         self.boxes = []
         h = 36
         for k, ((x, y), g) in enumerate(zip(xy, good)):
-            if x < 0:
+            if x < 0:                                 # lost: the kernel's (-1, -1, -1) row
                 continue
             near = z is not None and self._near_edge(float(z[k]))
             pen = pg.mkPen("#9CA3AF" if not g else "#F97316" if near else COLORS[k % len(COLORS)], width=2)
@@ -1694,7 +1696,7 @@ class MainWindow(QMainWindow):
             if now >= self._next_plot:
                 self._next_plot = now + 1.0 / self.plot_hz.value()
                 self._update_plot()
-                self._chip_texts(res.xyz[:, 2])
+                self._chip_texts(res.xyz)
 
     _mag = _force = float("nan")
 
@@ -1858,7 +1860,7 @@ class MainWindow(QMainWindow):
         mag = np.array([r[1] for r in h])
         force = np.array([r[2] for r in h])
         xyz = np.array([r[3] for r in h])          # (n, nb, 3)
-        xyz = np.where(xyz == -1.0, np.nan, xyz)   # lost = -1 (the kernel's marker)
+        xyz = np.where((xyz == -1.0).all(axis=2, keepdims=True), np.nan, xyz)   # lost = the (-1, -1, -1) row
         refs = [k for k, i in enumerate(self.bead_ids) if self.roles.get(i) == "reference"]
         if self.sub_ref.isChecked() and refs:
             with warnings.catch_warnings():            # a frame with every reference lost: NaN, no warning

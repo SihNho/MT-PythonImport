@@ -81,8 +81,8 @@ The owner ran watch -> picks -> calibrate -> track -> protocol -> Save the trace
   towards the LUT's middle (`n_slices // 2 x z_step`), as the LabVIEW rule (spec F4.06: clamp +-0.2 per firing);
   nothing is sent while the bead is lost or the error is under 10 nm; every move is an `autofocus_move` event.
   Off by default, off again when the camera stops or at Reset calibration. The lost-bead reseed (F4.05) is the
-  tracker's own auto-reset. The sign of the correction follows the z scan's direction (`api.zscan.SCAN_DIR` = +1;
-  `_AutoFocus.SIGN` = -SCAN_DIR). **Rig 2026-11-06 18:03:** with the upward scan bead 1 was held at 3.00 +- 0.03 um
+  tracker's own auto-reset. The sign of the correction: the LUT's z rises with the sample (the scan stores the slices in
+  sample order), so `_AutoFocus.SIGN` = -1. **Rig 2026-11-06 18:03:** with the upward scan bead 1 was held at 3.00 +- 0.03 um
   (gui_events.log autofocus_move lines), so the derivation is right; the device sign (`asi.Z_SIGN`) cancels between
   the scan and the correction. The +-0.2 unit (um here) is still open (Q4.06).
 
@@ -135,13 +135,21 @@ The owner ran watch -> picks -> calibrate -> track -> protocol -> Save the trace
    sample UP per slice (LabVIEW's +z). On this rig a positive controller Z lowers the sample since the repair
    (owner: the oil contact grows; a "down" scan shrank the pattern of a bead below the focus; the knob turned so
    the pattern shrinks moves the lens away from the slide, so the bead sits below the focus). The fix is the
-   driver's sign, `asi.Z_SIGN = -1` (program +z = sample up; the SL/SU Z window stays in controller units), the
-   scan is UP again (`SCAN_DIR = +1`, not a choice; `direction=` and `scan_direction=` removed), and the autofocus
-   sign is -SCAN_DIR. The user starts the scan with the beads just ABOVE the focus (small pattern, as LabVIEW;
-   owner 2026-11-07: "small to large"): the sample rises per slice, the pattern grows, and a bead pulled up by
-   the force moves away from the focus, never across it; index 0 is the end nearest the focus (the orange edge
-   warning covers both ends). Rig checks: Explore focus +1 um grows the pattern of a bead above the focus; the up
-   scan grows it per slice; z rises with the force in a ramp. Earlier focus positions in .cal / run metadata are in the old sign; the two
+   driver's sign, `asi.Z_SIGN = -1` (program +z = sample up; the SL/SU Z window stays in controller units); the
+   direction choice (`direction=`, `scan_direction=`) is removed. The owner's practice (2026-11-07: "the beads
+   below the focus; the calibration moves the stage down and grows the pattern, small to large"): the scan goes
+   DOWN from the start (the beads just below the focus, small pattern) and the LUT is stored in SAMPLE order,
+   index 0 = the lowest sample position = the last slice scanned, index n-1 = the start nearest the focus, so
+   z = index x step rises with the bead whichever way the slices were visited; the focus ends at the LUT's middle,
+   (n - 1 - n // 2) x step below the start. The autofocus sign is -1 (a bead reading high -> the sample down). A
+   bead pulled up by the force moves towards the focus, i.e. towards the top of the LUT (the orange edge warning).
+   Rig checks: Explore focus +1 um shrinks the pattern of a bead below the focus; the scan grows it per slice; z
+   rises with the force in a ramp. **The mirror test** (owner 2026-11-07: "the bead above the focus and a negative
+   step size"): the Step spin box takes -1000..1000 nm (0 refused by `zscan.run`); a negative step sends the sample
+   UP per slice, index 0 is the highest position and z = index x z_step is <= 0, still rising with the bead, so
+   tethered minus reference gives the same extension on either side (the noise may differ: the open side
+   question). The kernel's lost marker is the (-1, -1, -1) row, so the GUI, the plot and the autofocus test the
+   row (x = -1), not z = -1, which is a value at a negative step. Earlier focus positions in .cal / run metadata are in the old sign; the two
    mirrored runs of 2026-11-06 keep their z.
 4. Found while testing it: `QSettings("KimLab", "MT Tracker")` used the Windows registry whatever the default
    format, so the tests' redirect to a temp ini (design critique #3) never took and every GUI test wrote the user's

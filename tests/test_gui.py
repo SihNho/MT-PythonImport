@@ -586,7 +586,7 @@ def test_owner_feedback_2026_11_06_plot_folder_rate_and_step_highlight(window, m
     w.t0 = time.time()
     for k in range(5):
         w.history.append((0.1 * k, 1.0, 2.0, np.array([[10.0, 20.0, 0.5 * k], [11.0, 21.0, 1.0 + 0.5 * k]])))
-    w.history.append((0.5, 1.0, 2.0, np.array([[10.0, 20.0, -1.0], [11.0, 21.0, 3.5]])))   # the reference lost once
+    w.history.append((0.5, 1.0, 2.0, np.array([[-1.0, -1.0, -1.0], [11.0, 21.0, 3.5]])))   # the reference lost once (the kernel's row)
     w.ax_y.setCurrentIndex(list(w.ax_y.itemData(i) for i in range(w.ax_y.count())).index("z"))
     w._update_plot()
     y2 = w.curves[2].yData
@@ -673,11 +673,15 @@ def test_bead_near_the_lut_edge_is_shown_orange_on_the_box_and_the_chip(window):
     w._draw_boxes(np.array([[100.0, 100.0], [200.0, 200.0], [300.0, 300.0]]), np.array([True, True, False]), z)
     colors = [b.pen().color().name().upper() for b in w.boxes if hasattr(b, "pen")]
     assert colors == [COLORS_[0].upper(), "#F97316", "#9CA3AF"]
-    w._chip_texts(z)
+    w._chip_texts(np.array([[100.0, 100.0, 3.0], [200.0, 200.0, 5.2], [-1.0, -1.0, -1.0]]))
     assert w.chips[1].text() == "b1 3.0/5.9" and w.chips[2].text() == "b2 5.2/5.9" and w.chips[3].text() == "b3 lost"
     assert all(c.width() == 104 for c in w.chips.values())      # Request1 item 2: a fixed width, no re-layout
     assert "#F97316" in w.chips[2].styleSheet() and "#F97316" not in w.chips[1].styleSheet()
     assert w._near_edge(0.9) and not w._near_edge(1.1) and w._near_edge(4.95) and not w._near_edge(4.8)
+    w.lut = (60, -0.1)                                  # the mirror test (a negative step): z <= 0, index = z / step
+    assert w._near_edge(-0.9) and not w._near_edge(-1.1) and w._near_edge(-4.95) and not w._near_edge(-4.8)
+    w._chip_texts(np.array([[100.0, 100.0, -1.0]]))     # z = -1.0 is a VALUE here (index 10), not the lost marker
+    assert w.chips[1].text() == "b1 -1.0/-5.9"
 
 
 from mtpy.gui.app import COLORS as COLORS_  # noqa: E402 - used by the test above only
