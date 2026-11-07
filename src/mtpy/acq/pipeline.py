@@ -50,12 +50,14 @@ class Beads:
         return bool(((x - h >= 0) & (x + h <= cols) & (y - h >= 0) & (y + h <= rows)).all())
 
 
-def make_kernel(beads, z_method="current", gpu=False):
+def make_kernel(beads, z_method="current_v1", gpu=False, precision=None):
     """The executor for the beads (imported here so `from mtpy import api` does not load numba): numba, or with the
-    Z stage on the GPU; z_method is one of track.Z_METHODS (current / spline / phase_spline, owner 2026-10-29)."""
+    Z stage on the GPU (precision: fp32 by default, "fp64" for the baseline kernel; decision 0030); z_method is a
+    versioned name of track.Z_METHODS (owner 2026-10-29 / 0030)."""
     if gpu:
-        from mtpy.gpu import GpuKernel
-        return GpuKernel(beads.cross, beads.win_rs, beads.win_h, beads.cals, z_method=z_method)
+        from mtpy.gpu import GpuKernel, GpuKernel32
+        cls = GpuKernel if precision == "fp64" else GpuKernel32     # decision 0030: the GPU is FP32 unless asked
+        return cls(beads.cross, beads.win_rs, beads.win_h, beads.cals, z_method=z_method)
     from mtpy.fast import FastKernel
     return FastKernel(beads.cross, beads.win_rs, beads.win_h, beads.cals, z_method=z_method)
 

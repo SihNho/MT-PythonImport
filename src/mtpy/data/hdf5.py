@@ -554,8 +554,11 @@ class HDF5Writer(ResultSink):
         _put_str(run, "start_utc", _utc(self.t0))
         _put_str(run, "software_name", "mtpy")
         _put_str(run, "software_version", f"api {api.VERSION}")
+        run_meta = self.metadata.get("run", {})
         _put_str(run, "tracking_stages", to_json({"pipeline": "mtpy.acq.BeadTracker", "kernel": "mtpy.fast.FastKernel"
-                                                  " (LabVIEW cross-correlation xy, radial-profile z)"}), json_=True)
+                                                  " (LabVIEW cross-correlation xy, radial-profile z)",
+                                                  **{k: run_meta[k] for k in ("z_method", "executor", "precision")
+                                                     if k in run_meta}}), json_=True)
         first = self.accepted[0].extra
         jai = meta.create_group("devices").create_group("jai")
         _put_str(jai, "readback", to_json(first.get("settings")), json_=True)

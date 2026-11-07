@@ -79,13 +79,14 @@ def stage_steps():
 
 
 def magnet_steps():
+    p0 = api.magnet.position()                 # back to where the run found it (owner 2026-11-07: the runs at Cal+)
     try:
         for p in MAGNET_MM:
             got = api.magnet.move_to(p).wait(30)
             api.acq.mark(f"magnet {p:+.1f} mm (read back {got})")
             SLEEP(HOLD_S)
     finally:
-        api.magnet.move_to(0.0).wait(30)
+        api.magnet.move_to(p0).wait(30)
         api.acq.mark("magnet back to start")
 
 

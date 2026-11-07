@@ -29,7 +29,7 @@ COUNT_CALS = Path(os.environ.get("COUNT_CALS", r"G:\l2s_rig_data\2026-11-01_bead
 RUN_S = float(os.environ.get("RUN_S", "10"))
 def _case(c):
     n, ex, *zm = c.split(":")
-    return int(n), ex == "gpu", (zm[0] if zm else "current")
+    return int(n), ex.startswith("gpu"), (zm[0] if zm else "current_v1")      # the GUI's GPU is the FP32 kernel
 
 
 CASES = [_case(c) for c in os.environ.get("CASES", "4:numba,256:numba,256:gpu").split(",")]   # n:exec[:z_method]
@@ -99,12 +99,12 @@ def main():
         w.gpu.setChecked(gpu)
         w.ed_name.setText(name)
         w._toggle_acq()
-        return until(lambda: w.btn_live.text() == "Stop acquisition" and api.acq.running(), 60, f"start {name}")
+        return until(lambda: w.btn_live.text().startswith("Stop") and api.acq.running(), 60, f"start {name}")
 
     def acq_stop():
         st = api.acq.status()
         w._toggle_acq()
-        until(lambda: not api.acq.running() and w.btn_live.text() == "Start acquisition", 60, "stop acquisition")
+        until(lambda: not api.acq.running() and w.btn_live.text().startswith("1. Start"), 60, "stop acquisition")
         return st
 
     def rec(on):

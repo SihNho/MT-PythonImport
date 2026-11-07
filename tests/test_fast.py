@@ -63,3 +63,14 @@ def test_fast_z_methods_match_reference(replay, z_method):
             n += 1
     print(f"{z_method}: {n} bead-frames, fast vs reference z {worst:.2e} um")
     assert n > 20 and worst < 1e-9
+
+
+def test_z_method_names_are_versioned_and_the_old_names_are_aliases(replay):
+    """Decision 0030: current_v1 / spline_v1 / phase_spline_v1; the executor and the precision are fields, not names."""
+    from mtpy.track import z_method_name
+    assert list(Z_METHODS) == ["current_v1", "spline_v1", "phase_spline_v1"]
+    assert z_method_name("current") == "current_v1" and z_method_name("phase_spline_v1") == "phase_spline_v1"
+    with pytest.raises(ValueError, match="unknown z method"):
+        z_method_name("spline_v9")
+    fk = FastKernel(CROSS, replay["win_rs"], replay["win_h"], replay["cals"], z_method="spline")
+    assert (fk.z_method_name, fk.z_method, fk.executor, fk.precision) == ("spline_v1", 1, "numba", "fp64")

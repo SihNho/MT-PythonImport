@@ -628,3 +628,14 @@ def test_retarget_tracks_new_beads_without_a_camera_stop(fixture_cam, tmp_path):
     assert run["beads"]["bead_id"].tolist() == [1, 2] and run["attrs"]["closed_cleanly"] == 1
     assert len(run["mt"]["buffer_number"]) >= 30 and run["mt"]["x_px"].shape[1] == 2
     assert np.isfinite(run["mt"]["x_px"]).all()
+
+
+def test_run_file_records_the_tracking_method_executor_and_precision(tmp_path):
+    """Decision 0030: /metadata/run/tracking_stages carries z_method, executor and precision from the start."""
+    import json
+    tracking = {"z_method": "spline_v1", "executor": "cuda", "precision": "fp64"}
+    _write(tmp_path / "r.h5", "frames first", metadata={"run": {"mode": "MT-TIRF", **tracking}})
+    with h5py.File(tmp_path / "r.h5", "r") as f:
+        st = json.loads(f["metadata/run/tracking_stages"][()])
+        assert {k: st[k] for k in tracking} == tracking and st["pipeline"] == "mtpy.acq.BeadTracker"
+        assert f["metadata/run/z_method"][()].decode() == "spline_v1"

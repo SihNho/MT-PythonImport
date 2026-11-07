@@ -91,12 +91,12 @@ def main():
         w.gpu.setChecked(gpu)
         w.ed_name.setText(name)
         w._toggle_acq()
-        return until(lambda: w.btn_live.text() == "Stop acquisition" and api.acq.running(), 60, f"start {name}")
+        return until(lambda: w.btn_live.text().startswith("Stop") and api.acq.running(), 60, f"start {name}")
 
     def acq_stop():
         st = api.acq.status()
         w._toggle_acq()
-        until(lambda: not api.acq.running() and w.btn_live.text() == "Start acquisition", 60, "stop acquisition")
+        until(lambda: not api.acq.running() and w.btn_live.text().startswith("1. Start"), 60, "stop acquisition")
         return st
 
     def rec(on):

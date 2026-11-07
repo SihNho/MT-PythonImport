@@ -150,6 +150,35 @@ Short and current. Details live in the linked documents; the history is in git a
   equals the script (0 drops to 100 beads). The sample drifted ~40 px/h in the stage-step blocks (the ASI stage
   returns 0.1-0.2 um off) and left focus at 23:19, so GUI 248 / 555 Hz and the 1 um/s blocks did not run (open
   cells in design/bench-matrix.md). 2026-11-02 12:35: rig state `experiment` on the owner's words ("곧 실험 시작").
+- **2026-11-07 ~02:30, decision 0030 (the owner's side chat pasted in):** methods chosen by measurement, the GPU
+  path FP32 and free of the LabVIEW numbers (`gpu.GpuKernel32`, one kernel source built for two precisions; the
+  3 x 3 solve stays float64; offline 0 index jumps, z within 0.002 nm of numba FP64 on 1250 frames; 100 beads
+  2.24 -> 1.18 ms, 200 beads 3.53 -> 1.49 ms, half ROI 0.84-0.90 ms), versioned method names (`current_v1`,
+  `spline_v1`, `phase_spline_v1`; `executor` / `precision` fields in the start event and the run file),
+  `api.acq.start(precision=)` (the GPU is fp32 unless "fp64"), `tools/offline_compare.py`, the bench in two
+  stages (`tools/rig_bench_1107.py`), the HTML user report. The first attempt's s90 / s150 blocks stay as the
+  cuda fp64 baseline. The double buffer is not built (measured as unneeded); CPU spline improvements wait for
+  the staircase's verdict.
+- **2026-11-07 (owner, before sleeping):** the GPU kernel's fixed cost cut (the Hilbert half-window's zero bins are
+  skipped in every DFT pass - bit-identical -, the radial profile's atomics go to per-warp bins, the per-bead input
+  and result arrays are mapped: 5 beads 1.83 -> 1.44 ms per frame, 100 beads 2.87 -> 2.25, the 555 Hz half ROI
+  1.37 -> 1.05-1.28; test_gpu agrees with numba to 6e-14), the bench's drift hold (`rig_accuracy.hold`: the stage and
+  the focus bring the tracked beads back to their LUT positions and the LUT's middle before each run's steps), the
+  LUT at Cal+ (`CAL_MAGNET_MM`), and the 11-07 bench on the owner's six picked beads (`tools/rig_bench_1107.py`;
+  results/2026-11-07-bench.md). The GPU rows of 11-01 are superseded.
+- **2026-11-07 02:40-06:30, the bench ran** ([results/2026-11-07-bench.md](docs/results/2026-11-07-bench.md), the user
+  report `docs/reports/2026-11-07-bench.html` / `.ko.html`): 147 script runs + 48 GUI runs. The FP32 GPU with
+  `current_v1` dropped no frame at any rate or bead count (200 beads at 248 Hz, 100 at 555 Hz) at 1-2 ms per frame and
+  matched numba FP64's reference-corrected step error (2-5 nm median); numba drops from 200 beads at 150 / 248 Hz and
+  50 at 555 Hz; `phase_spline_v1` equals `current_v1`; `spline_v1` is the quietest per frame but loses 2-6 x the
+  bead-frames and its step error grows with the rate. The drift hold kept the beads within 3 px for 3.5 h. The channel
+  dried: the owner's bead 3 answered the magnet by 0.7-0.9 um from the first run (tether-like; off at 04:00), bead 5 was
+  lost from 03:35; a pick search then locked onto the ring fringes 40 px off and one block's hold walked the stage 26 um
+  (n248, discarded). `rig_accuracy.find_picks` now refuses a bead that moved unlike three others (LooseBead) and any
+  position whose 61 x 61 crop correlates under 0.6 with the bead's template from the last frame (templates written
+  beside the picks file); `tools/rig_field_restore.py` puts the stage and focus back and checks the picks. The GUI
+  bench tools waited for the camera button's pre-11-05 label (12 "no start" runs, set aside); they test the label's
+  first word now. The report tools skip the set-aside folders.
 - **2026-11-02 13:30 (owner: "꺼진 것 같음"):** the PC died 2026-11-01 23:58, the first death under the heartbeat:
   10-s lines to the last one, idle (CPU 0.3 %), no WHEA - an instant stop, the power-delivery / board family
   ([rig/pc-stability.md](docs/rig/pc-stability.md)).

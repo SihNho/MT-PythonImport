@@ -545,7 +545,7 @@ class MainWindow(QMainWindow):
         g2f = QFormLayout(g2)
         self.z_method = QComboBox()
         self.z_method.addItems(list(Z_METHODS))
-        self.gpu = QCheckBox("Z, XY and radial on the GPU (fused CUDA kernel)")
+        self.gpu = QCheckBox("Z, XY and radial on the GPU (fused CUDA kernel, FP32; decision 0030)")
         g2f.addRow("Z method", self.z_method)
         g2f.addRow(self.gpu)
         f.addRow(g2)

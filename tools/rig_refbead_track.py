@@ -106,10 +106,10 @@ def calibrate(xy):
     return cal_path
 
 
-def one_run(name, zm, gpu, seconds, roles, during=None):
+def one_run(name, zm, gpu, seconds, roles, during=None, precision=None):
     t0 = time.monotonic()
     try:
-        api.acq.start(record=True, name=name, folder=OUT, roles=roles, z_method=zm, gpu=gpu)
+        api.acq.start(record=True, name=name, folder=OUT, roles=roles, z_method=zm, gpu=gpu, precision=precision)
     except Exception as e:  # noqa: BLE001 - a refused combination is a result
         say(f"RESULT run {name} ({zm}, gpu={gpu}) could not start: {type(e).__name__}: {e}")
         return {"name": name, "z_method": zm, "gpu": gpu, "error": f"{type(e).__name__}: {e}"}

@@ -161,10 +161,11 @@ def _seg_event(action, seg):
 
 
 def start(record=False, name=None, sink=None, ring_capacity=64, folder=None, roles=None,
-          motor_poll_s=MOTOR_POLL_S, z_method="current", gpu=False):
+          motor_poll_s=MOTOR_POLL_S, z_method="current_v1", gpu=False, precision=None):
     """Start acquisition (and tracking of the selected beads, if any). record=True also starts recording.
-    z_method / gpu (decision 0024): the Z estimator (track.Z_METHODS) and the executor (numba, or the fused CUDA
-    kernel) for this acquisition; both are logged with the start event.
+    z_method / gpu (decision 0024): the Z estimator (track.Z_METHODS, a versioned name; 0030) and the executor
+    (numba, or the fused CUDA kernel); precision (0030): None = fp64 on numba, fp32 on the GPU; "fp64" asks for
+    the GPU's FP64 baseline kernel. All three are logged with the start event and written to the run file.
 
     name: the run name. sink: a `mtpy.acq.ResultSink`. folder (WP4): with no sink given, the recorded data go to the
     HDF5 v1 file `<folder>/<name>.h5` (`mtpy.data.HDF5Writer`; name None -> `run_<local time>`; an existing file is
@@ -174,10 +175,10 @@ def start(record=False, name=None, sink=None, ring_capacity=64, folder=None, rol
     connected, the selected beads do not fit the camera ROI, or the camera ROI origin is not the one in force when
     the beads were selected (U23, WP6). Returns status()."""
     with _start_lock:                       # fault list G7 (2026-10-31): two starts at once built two pipelines
-        return _start(record, name, sink, ring_capacity, folder, roles, motor_poll_s, z_method, gpu)
+        return _start(record, name, sink, ring_capacity, folder, roles, motor_poll_s, z_method, gpu, precision)
 
 
-def _start(record, name, sink, ring_capacity, folder, roles, motor_poll_s, z_method, gpu):
+def _start(record, name, sink, ring_capacity, folder, roles, motor_poll_s, z_method, gpu, precision=None):
     global _pipe, _svc
     if _pipe is not None:
         raise NotReady("acquisition is already running")
@@ -198,14 +199,15 @@ def _start(record, name, sink, ring_capacity, folder, roles, motor_poll_s, z_met
                   "restore the ROI or select beads again")
         events.log("refused", request={"acquisition": "start", "name": name, "roi": tuple(s["roi"])}, reason=reason)
         raise NotReady(reason)
+    tracking = _tracking(z_method, gpu, precision)   # decision 0030: method version, executor, precision in the file
     if sink is None and folder is not None:
-        sink = _hdf5_sink(folder, name, beads, roles, svc, dev, s)
+        sink = _hdf5_sink(folder, name, beads, roles, svc, dev, s, tracking)
     kernel = None
     if beads is not None:
         _, _, w, h = s["roi"]
         if not beads.fit((h, w)):
             raise NotReady(f"the selected beads do not fit the camera ROI {tuple(s['roi'])}; select beads again")
-        kernel = _make_kernel(beads, z_method, gpu)
+        kernel = _make_kernel(beads, z_method, gpu, tracking["precision"])
         # warm-up: numba compilation / cache load and its thread pool start here, not on the first frame
         kernel.track(np.zeros((h, w), dtype=np.uint8), np.rint(beads.xy0[:, 0]).astype(np.int64),
                      np.rint(beads.xy0[:, 1]).astype(np.int64), np.ones(len(beads.ids), dtype=bool))
@@ -218,7 +220,7 @@ def _start(record, name, sink, ring_capacity, folder, roles, motor_poll_s, z_met
         seg = pipe.begin_segment(s)
         if record:
             set_recording(True, name, _settings=s)       # the read above is the snapshot: nothing ran in between
-        events.log("acquisition", action="start", name=name, record=bool(record), z_method=z_method, gpu=bool(gpu),
+        events.log("acquisition", action="start", name=name, record=bool(record), **tracking, gpu=bool(gpu),
                    beads=list(pipe.bead_ids), cal=beads.source if beads is not None else None)
         _seg_event("begin", seg)
         if pipe.motor_poll is not None:
@@ -232,7 +234,7 @@ def _start(record, name, sink, ring_capacity, folder, roles, motor_poll_s, z_met
     return status()
 
 
-def retarget(folder=None, name=None, roles=None, z_method="current", gpu=False):
+def retarget(folder=None, name=None, roles=None, z_method="current_v1", gpu=False, precision=None):
     """Track the beads selected now (api.beads.select / clear) from the next frame on, without stopping the camera
     (owner 2026-11-05: the JAI has no shutter, so a stop protects nothing; the user never restarts it). The results
     go to a new run file `<folder>/<name>.h5` (folder None: in memory); the file of the acquisition so far is closed.
@@ -251,12 +253,13 @@ def retarget(folder=None, name=None, roles=None, z_method="current", gpu=False):
         _, _, w, h = s["roi"]
         if not beads.fit((h, w)):
             raise NotReady(f"the selected beads do not fit the camera ROI {tuple(s['roi'])}; select beads again")
-        kernel = _make_kernel(beads, z_method, gpu)
+        kernel = _make_kernel(beads, z_method, gpu, _tracking(z_method, gpu, precision)["precision"])
         kernel.track(np.zeros((h, w), dtype=np.uint8), np.rint(beads.xy0[:, 0]).astype(np.int64),
                      np.rint(beads.xy0[:, 1]).astype(np.int64), np.ones(len(beads.ids), dtype=bool))
-    sink = _hdf5_sink(folder, name, beads, roles, svc, svc.device, s) if folder is not None else None
+    tracking = _tracking(z_method, gpu, precision)
+    sink = _hdf5_sink(folder, name, beads, roles, svc, svc.device, s, tracking) if folder is not None else None
     pipe.retarget(beads, kernel, sink)
-    events.log("acquisition", action="retarget", name=name, z_method=z_method, gpu=bool(gpu),
+    events.log("acquisition", action="retarget", name=name, **tracking, gpu=bool(gpu),
                beads=list(pipe.bead_ids), cal=beads.source if beads is not None else None)
     return status()
 
@@ -282,8 +285,19 @@ def _atexit():
 atexit.register(_atexit)
 
 
-def _hdf5_sink(folder, name, beads, roles, svc, dev, settings):
-    """The WP4 writer for start(folder=...): file name, beads and the camera's identity / settings at start."""
+def _tracking(z_method, gpu, precision=None):
+    """{"z_method", "executor", "precision"} of the kernel a start / retarget asks for (decision 0030: the GPU is
+    fp32 unless "fp64" is asked; numba is fp64, the LabVIEW reference)."""
+    from mtpy.track import z_method_name
+    if precision not in (None, "fp32", "fp64") or (precision == "fp32" and not gpu):
+        raise ValueError(f"precision {precision!r}: fp32 is the GPU's; None, 'fp32' (gpu) or 'fp64'")
+    return {"z_method": z_method_name(z_method), "executor": "cuda" if gpu else "numba",
+            "precision": precision or ("fp32" if gpu else "fp64")}
+
+
+def _hdf5_sink(folder, name, beads, roles, svc, dev, settings, tracking=None):
+    """The WP4 writer for start(folder=...): file name, beads, the camera's identity / settings at start and the
+    tracking method / executor / precision (decision 0030)."""
     import time
     from pathlib import Path
 
@@ -296,7 +310,8 @@ def _hdf5_sink(folder, name, beads, roles, svc, dev, settings):
         identity = svc.call(dev.identity, what="identity")
     except Exception as e:  # noqa: BLE001 - identity is metadata; its absence is recorded, acquisition goes on
         identity = {"error": f"{type(e).__name__}: {e}"}
-    meta = {"run": {"mode": _devices_api.mode()}, "devices": {"jai": {"identity": identity, "settings_at_start": settings}}}
+    meta = {"run": {"mode": _devices_api.mode(), **(tracking or {})},
+            "devices": {"jai": {"identity": identity, "settings_at_start": settings}}}
     if "magnet" in _services:          # decision 0010: the force calibration in use (name, equation, constants, touch)
         meta["devices"]["magnet"] = {"force_calibration_at_start": _magnet.force_calibration()}
     preset = getattr(svc, "preset", None)              # the last camera preset applied (U15 frame-rate triple)

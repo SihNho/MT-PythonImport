@@ -37,8 +37,9 @@ PICK_IDS = [int(i) for i in os.environ.get("PICK_IDS", "1,2,3,4").split(",")]   
 ACC_NB = int(os.environ.get("ACC_NB", "0"))          # reference beads at the front of the picks (0 = all); the next one
                                                      # is a magnetic bead tracked alongside (owner 2026-11-03: 5, 6, 7 + 1)
 COUNTS = [int(c) for c in os.environ.get("COUNTS", "5,10,20").split(",")]
-Z_METHODS = os.environ.get("ZMETHODS", "current,spline,phase_spline").split(",")
-EXECUTORS = [(e, e == "gpu") for e in os.environ.get("EXEC", "numba,gpu").split(",")]
+Z_METHODS = os.environ.get("ZMETHODS", "current_v1,spline_v1,phase_spline_v1").split(",")
+EXECUTORS = [(e, e.startswith("gpu"), "fp64" if e == "gpu64" else None)           # numba | gpu (fp32, 0030) | gpu64
+             for e in os.environ.get("EXEC", "numba,gpu").split(",")]
 SPEED_FACTOR = float(os.environ.get("SPEED_FACTOR", "1"))     # focus speed = opening speed x this (1/10 in the bench)
 SPEED_MM_S = float(os.environ["SPEED_MM_S"]) if os.environ.get("SPEED_MM_S") else None   # or an absolute speed (0.001 = 1 um/s)
 STEP_NM = float(os.environ["STEP_NM"]) if os.environ.get("STEP_NM") else None   # staircase of 5 steps up and down
@@ -49,40 +50,89 @@ M.FOCUS_UM = ([k * STEP_NM / 1000.0 for k in (0, 1, 2, 3, 4, 5, 4, 3, 2, 1, 0)] 
 M.STAGE_UM = [tuple(int(v) for v in p.split(":")) for p in
               os.environ.get("STAGE_UM", "0:0,1:0,2:0,5:0,0:0,0:1,0:2,0:5,0:0").split(",")]
 M.MAGNET_MM = [float(v) for v in os.environ.get("MAGNET_MM", "0,10,30,0").split(",")]
+CAL_MAGNET_MM = float(os.environ["CAL_MAGNET_MM"]) if os.environ.get("CAL_MAGNET_MM") else None   # owner 2026-11-07: the LUT at Cal+
+N_AVG = int(os.environ.get("N_AVG", "10"))           # frames averaged per LUT slice (bench-matrix.md: rate-matched counts)
+HOLD = os.environ.get("HOLD", "1") != "0"           # owner 2026-11-07: hold the field against thermal drift (hold())
+HOLD_PX, HOLD_Z_UM, HOLD_MAX_UM = 3.0, 0.1, 2.0        # act above these; at most this per move (5 um steps lost beads 11-01)
+PX_PER_UM = (4.71, -4.82)                              # image px per stage um, x and y (11-01 s90 runs' 1 / 2 um stage steps)
 RING_PX = float(os.environ.get("RING_PX") or 0) if "RING_PX" in os.environ else 12.2     # bright-ring radius of beads 2-4 at the owner's 11-01 focus; "" = no match
 RING_TOL, RING_PX_PER_UM = 0.15, 0.9                 # the 11-01 LUT: the ring grows 0.9 px per um of focus
 LATEST = r"G:\l2s_rig_data\bead_picks_latest.json"    # the owner's four beads where they were last found (full frame)
+TEMPLATES = LATEST.replace(".json", "_templates.npz")    # 61 x 61 crops of each pick (p<id>) from the last frame they were found on
+TEMPLATE_NCC = 0.6      # 04:00 the search locked 40 px left of every bead (ncc <= 0.08; consecutive blocks 0.87-0.98)
 say = T.say
 
 
-def find_picks(img, picks, cross=120):
+class LooseBead(RuntimeError):
+    """A majority of the beads moved alike and this one did not: it is loose, not mis-located; no search can fix it."""
+
+
+def ncc(a, b):
+    a, b = a - a.mean(), b - b.mean()
+    return float((a * b).sum() / np.sqrt((a * a).sum() * (b * b).sum() + 1e-12))
+
+
+def crop(img, x, y, r=30):
+    x, y = int(np.rint(x)), int(np.rint(y))
+    return np.asarray(img, dtype=float)[y - r:y + r + 1, x - r:x + r + 1]
+
+
+def find_picks(img, picks, cross=120, templates=None):
     """The owner's beads on today's frame: Croquette XY iterated from the last known positions (the beads drift a
     dozen px in hours; one pass leaves the radial window out of bounds). The stage drift is the same for every
     bead, so a bead whose shift disagrees with the others' median is retried from that median (20:32: bead 2 locked
-    onto a neighbour 31 px left while the others went 18 px right) and refused if it still disagrees."""
+    onto a neighbour 31 px left while the others went 18 px right) and refused if it still disagrees. `templates`
+    (crops from the last frame, one per pick or None) must correlate with the crop at the found position: 04:00 the
+    grid search accepted a symmetric point of the ring fringes 40 px left of every bead and the bench walked off."""
     h, (win_rs, win_h) = track.lv_round(cross * 0.6), calib.windows(cross)
+    templates = templates or [None] * len(picks)
 
-    def refine(x, y):
+    def refine(x, y, template=None):
         for _ in range(4):
             xi, yi = int(np.rint(x)), int(np.rint(y))
             xo, yo, sx, sy = track.xy_croquette(img[yi - h:yi + h, xi - h:xi + h], h, xi, yi, cross, win_rs, win_h, track.DEFAULT)
             x, y = float(xo), float(yo)
             if abs(sx) < 4 and abs(sy) < 4:
+                if template is not None and template.shape == crop(img, x, y).shape and ncc(template, crop(img, x, y)) < TEMPLATE_NCC:
+                    raise RuntimeError(f"the point near {x, y} is not the bead (template ncc {ncc(template, crop(img, x, y)):.2f})")
                 return x, y
         raise RuntimeError(f"bead near {x, y} not found (frame.npy saved)")
 
     def from_shift(shift):
-        out = np.array([refine(*(p + shift)) for p in picks])
-        median = np.median(out - picks, axis=0)
-        for i in np.flatnonzero(np.abs(out - picks - median).max(axis=1) > 5):
-            out[i] = refine(*(picks[i] + median))
-        if np.abs(out - picks - median).max() > 5:
-            raise RuntimeError(f"the beads did not move alike (shifts {(out - picks).round(1).tolist()}); frame.npy saved")
+        out, err = np.full((len(picks), 2), np.nan), None
+
+        def place(i, x, y):
+            try:
+                out[i] = refine(x, y, templates[i])
+            except RuntimeError as e:          # a vanished bead (04:15: the owner's bead 3 gone) stays NaN
+                nonlocal err
+                out[i], err = np.nan, e
+
+        for i, p in enumerate(picks):
+            place(i, *(p + shift))
+        if np.isnan(out).all():
+            raise err
+        median = np.nanmedian(out - picks, axis=0)
+
+        def off():
+            return [i for i in range(len(picks)) if np.isnan(out[i, 0]) or np.abs(out[i] - picks[i] - median).max() > 5]
+
+        for i in off():
+            place(i, *(picks[i] + median))
+        bad = off()
+        if bad and len(picks) - len(bad) >= 3:
+            raise LooseBead(f"beads {[i + 1 for i in bad]} (of the PICK_IDS order) moved unlike, or vanished while, the other "
+                            f"{len(picks) - len(bad)} (shifts {np.round(out - picks, 1).tolist()}): loose; drop them from "
+                            f"PICK_IDS. frame.npy saved")
+        if bad:
+            raise RuntimeError(f"the beads did not move alike or were not found (shifts {np.round(out - picks, 1).tolist()}); frame.npy saved")
         return out
 
     picks = np.array(picks, dtype=float)
     try:
         out = from_shift(np.zeros(2))
+    except LooseBead:
+        raise
     except (RuntimeError, IndexError, ValueError, TypeError) as e:
         # 23:19: the beads moved 27 px during one GUI block (~55 px/h), past what one Croquette start converges from:
         # search the common shift on a grid around the last positions, nearest first, until all beads agree
@@ -91,6 +141,8 @@ def find_picks(img, picks, cross=120):
             try:
                 out = from_shift(np.array(d, dtype=float))
                 break
+            except LooseBead:
+                raise
             except (RuntimeError, IndexError, ValueError, TypeError):
                 continue
         else:
@@ -137,7 +189,8 @@ def make_cal(path):
         if os.path.exists(LATEST):              # the beads drift ~15 px/h: start from where they were last found
             with open(LATEST, encoding="utf-8") as f:
                 picks = json.load(f)["picks"]
-        xy = find_picks(img, [np.array(picks[i - 1]) - origin for i in PICK_IDS])
+        templates = np.load(TEMPLATES) if os.path.exists(TEMPLATES) else {}
+        xy = find_picks(img, [np.array(picks[i - 1]) - origin for i in PICK_IDS], templates=[templates.get(f"p{i}") for i in PICK_IDS])
         if RING_PX:
             r, z = focus_match(xy[1:] if PICK_IDS == [1, 2, 3, 4] else xy)      # bead 1 reads 1.2 px larger: use 2-4
             say(f"RESULT focus matched: ring {r:.2f} px at focus {z:.3f} um")
@@ -146,14 +199,67 @@ def make_cal(path):
         if ROI is None:
             with open(LATEST, "w", encoding="utf-8") as f:
                 json.dump({"picks": (xy + origin).tolist(), "time": time.strftime("%Y-%m-%d %H:%M:%S")}, f)
-        zscan.run(path, xy, slices=60, step_nm=100.0, n_avg=10, cross=120, centred=True)
-        say(f"RESULT z scan done -> {path}; focus back at {api.focus.position():.3f} um")
+            np.savez(TEMPLATES, **{f"p{i}": crop(img, *p) for i, p in zip(PICK_IDS, xy)})
+        if CAL_MAGNET_MM is not None:               # the owner calibrates with the magnet at Cal+ (37.4 mm)
+            say(f"magnet to {CAL_MAGNET_MM} mm for the LUT: read back {api.magnet.move_to(CAL_MAGNET_MM).wait(30)}")
+        zscan.run(path, xy, slices=60, step_nm=100.0, n_avg=N_AVG, cross=120, centred=True)
+        say(f"RESULT z scan done -> {path} (n_avg {N_AVG}); focus back at {api.focus.position():.3f} um")
     finally:
         api.acq.stop()
     return xy
 
 
+def _tracked(samples=12, settle_s=0.05):
+    """Median tracked (x, y, z) per bead over `samples` display snapshots; lost beads (the -1 row) as NaN."""
+    out, seq = [], None
+    for _ in range(samples * 4):
+        snap = api.acq.display()
+        if snap is not None and snap.result is not None and snap.result.xyz is not None and snap.seq != seq:
+            seq = snap.seq
+            xyz = np.array(snap.result.xyz, dtype=float)
+            out.append(np.where((xyz == -1.0).all(axis=1, keepdims=True), np.nan, xyz))
+            if len(out) >= samples:
+                break
+        time.sleep(settle_s)
+    return np.nanmedian(np.array(out), axis=0) if out else None
+
+
+def hold():
+    """Owner 2026-11-07 ("keep a reference point and bring the stage, z included, back to it"): the stage returns
+    the beads to their LUT positions (xy) and the focus returns their z to the LUT's middle, so a bench on a drifting
+    sample keeps measuring until the channel dries. Up to three rounds; a move only above HOLD_PX / HOLD_Z_UM, at
+    most HOLD_MAX_UM per round. The marks start with "hold" and _holds skips them."""
+    b = api.beads.selected()
+    if b is None:
+        return
+    cal = read_cal(b.source)
+    ref, z_mid = np.asarray(cal["xy"], dtype=float)[:, :2], (cal["n_slices"] // 2) * float(cal["z_step"])
+    for _ in range(3):
+        xyz = _tracked()
+        if xyz is None or np.isnan(xyz[:, 0]).all():
+            say("hold: no tracked beads; nothing moved")
+            return
+        shift = np.nanmedian(xyz[:, :2] - ref[:len(xyz)], axis=0)       # px, the same for every bead (drift)
+        dz = float(np.nanmedian(xyz[:, 2])) - z_mid                       # um above the LUT's middle
+        say(f"hold: beads {shift[0]:+.1f}, {shift[1]:+.1f} px from the LUT, z {dz:+.3f} um from its middle")
+        if np.hypot(*shift) < HOLD_PX and abs(dz) < HOLD_Z_UM:
+            return
+        if np.hypot(*shift) >= HOLD_PX:
+            dx, dy = -shift[0] / PX_PER_UM[0], -shift[1] / PX_PER_UM[1]
+            dx, dy = (max(-HOLD_MAX_UM, min(HOLD_MAX_UM, v)) for v in (dx, dy))
+            x0, y0 = api.stage.position()
+            got = api.stage.move_to(x0 + dx / 1000.0, y0 + dy / 1000.0).wait(10)
+            api.acq.mark(f"hold stage {dx:+.2f} {dy:+.2f} um (read back {got})")
+        if abs(dz) >= HOLD_Z_UM:
+            step = max(-HOLD_MAX_UM, min(HOLD_MAX_UM, -dz))          # a bead reading high: the sample goes down
+            got = api.focus.move_to(api.focus.position() + step).wait(10)
+            api.acq.mark(f"hold focus {step:+.3f} um (read back {got})")
+        time.sleep(0.5)
+
+
 def steps():
+    if HOLD:
+        hold()
     M.focus_steps()
     if STAGE:
         M.stage_steps()
@@ -190,7 +296,7 @@ def _holds(run, nb):
     out = []
     for i, (t0, data) in enumerate(marks):
         text = (data if isinstance(data, dict) else json.loads(data)).get("text", "")
-        if text.endswith("back to start"):
+        if text.endswith("back to start") or text.startswith("hold"):
             continue
         t1 = marks[i + 1][0] if i + 1 < len(marks) else t[-1]
         m = (t > t0 + 0.5) & (t < t1 - 0.1)
@@ -285,7 +391,7 @@ def table(rows):
 def main():
     os.makedirs(OUT, exist_ok=True)
     report = {"date": time.strftime("%Y-%m-%d %H:%M:%S"), "cal": CAL or "per frame rate", "speed_factor": SPEED_FACTOR, "speed_mm_s": SPEED_MM_S,
-              "step_nm": STEP_NM, "stage": STAGE, "stage_um": M.STAGE_UM, "executors": [e for e, _ in EXECUTORS], "fps": FPS, "counts": COUNTS, "hold_s": M.HOLD_S,
+              "step_nm": STEP_NM, "stage": STAGE, "stage_um": M.STAGE_UM, "executors": [e for e, _, _ in EXECUTORS], "fps": FPS, "counts": COUNTS, "hold_s": M.HOLD_S,
               "focus_um": M.FOCUS_UM, "magnet_mm": M.MAGNET_MM, "runs": []}
     with events.as_caller("script:rig-accuracy@1"):
         report["connect"] = T.connect()
@@ -319,14 +425,14 @@ def main():
                     api.beads.select(ids, cal_path=cal_path)
                     roles = {i: "reference" for i in ids}
                     for zm in Z_METHODS:
-                        for ex, gpu in EXECUTORS:
+                        for ex, gpu, prec in EXECUTORS:
                             name = f"acc_{fps:.0f}_{n}_{zm}_{ex}"
-                            row = T.one_run(name, zm, gpu, 0, roles, during=steps)
+                            row = T.one_run(name, zm, gpu, 0, roles, during=steps, precision=prec)
                             if row.get("frames_tracked") == 0:      # IMAQdx gave no frame after a restart (seen at 248 Hz, 20:40)
                                 say(f"RESULT {name}: 0 frames (camera_error {row.get('camera_error')}); one retry")
                                 report.setdefault("zero_frame_runs", []).append(row)
                                 name += "_r"
-                                row = T.one_run(name, zm, gpu, 0, roles, during=steps)
+                                row = T.one_run(name, zm, gpu, 0, roles, during=steps, precision=prec)
                             row["fps"], row["beads"], row["z_method"] = fps, n, zm
                             if "error" not in row and row.get("frames_tracked"):
                                 row["accuracy"] = accuracy(os.path.join(OUT, name + ".h5"), min(ACC_NB or nb, n))

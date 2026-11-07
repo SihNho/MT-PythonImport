@@ -60,7 +60,7 @@ proposals; phase 5 may refine them, and every change after the first release fol
 ### 2.3 Acquisition and data
 | Function | Purpose |
 |---|---|
-| `api.acq.start(record=True, name=None)` / `stop()` | start / stop acquisition (and recording) |
+| `api.acq.start(record=True, name=None, z_method="current_v1", gpu=False, precision=None)` / `stop()` | start / stop acquisition (and recording); z_method is a versioned name of track.Z_METHODS (decision 0030; the old names are aliases), the start event and the run file carry `z_method`, `executor` (numba / cuda) and `precision` (fp64 / fp32; the GPU is fp32 unless precision="fp64" asks for the baseline kernel) |
 | `api.acq.retarget(folder, name, roles)` | track the beads selected now from the next frame on, into a new run file, without stopping the camera (owner 2026-11-05: the JAI has no shutter); refused while recording is on |
 | `api.acq.wait_frames(n, timeout_s)` | wait for n camera frames |
 | `api.acq.mark(text)` | free-text event in the data |

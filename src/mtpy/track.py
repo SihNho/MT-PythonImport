@@ -311,7 +311,17 @@ def z_phase_spline(rad, half, cal, p):
     return (lo + hi) / 2, idx
 
 
-Z_METHODS = {"current": z_phase, "spline": z_spline, "phase_spline": z_phase_spline}
+Z_METHODS = {"current_v1": z_phase, "spline_v1": z_spline, "phase_spline_v1": z_phase_spline}
+Z_ALIASES = {"current": "current_v1", "spline": "spline_v1", "phase_spline": "phase_spline_v1"}   # the names before 0030
+
+
+def z_method_name(name):
+    """The versioned name of a Z method (decision 0030: a change that alters the numbers raises the version; the
+    executor and the precision are separate fields, never part of the name); the old names are aliases."""
+    name = Z_ALIASES.get(name, name)
+    if name not in Z_METHODS:
+        raise ValueError(f"unknown z method {name!r}; one of {list(Z_METHODS)}")
+    return name
 
 
 def radial_current(sub, xc, yc, half, p):

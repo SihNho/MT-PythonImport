@@ -6,7 +6,7 @@ import numba
 import numpy as np
 import rocket_fft  # noqa: F401  (registers np.fft for numba)
 
-from mtpy.track import DEFAULT, GOLDEN, N_ITER, QUAD_WEIGHTS, Z_METHODS, lv_i32_div, lv_round
+from mtpy.track import DEFAULT, GOLDEN, N_ITER, QUAD_WEIGHTS, Z_METHODS, lv_i32_div, lv_round, z_method_name
 
 
 @numba.njit(cache=True, nogil=True)
@@ -293,10 +293,14 @@ def _track(image, xin, yin, good_in, cross, h, arm, n_end, n_pts, quirk, frame2_
 
 
 class FastKernel:
-    """All beads of a frame at once. The calibration clusters are packed once; `track` is then one numba call."""
+    """All beads of a frame at once. The calibration clusters are packed once; `track` is then one numba call.
+    `executor` and `precision` name the run's kernel in the run file and the bench tables (decision 0030)."""
 
-    def __init__(self, cross, win_rs, win_h, cals, p=DEFAULT, z_method="current"):
-        self.z_method = list(Z_METHODS).index(z_method)   # 0 current, 1 spline, 2 phase_spline (track.Z_METHODS)
+    executor, precision = "numba", "fp64"
+
+    def __init__(self, cross, win_rs, win_h, cals, p=DEFAULT, z_method="current_v1"):
+        self.z_method_name = z_method_name(z_method)
+        self.z_method = list(Z_METHODS).index(self.z_method_name)   # 0 current, 1 spline, 2 phase_spline (track.Z_METHODS)
         nb = len(cals)
         S = len(cals[0]["real"])
         L = max(c["real"].shape[1] for c in cals)
