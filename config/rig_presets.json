@@ -1,0 +1,26 @@
+{
+  "60x": {
+    "objective": "UPlanApo 60X/ 1.50 oil HR, TIRF, UIS 2, BFP1",
+    "magnification": 60,
+    "NA": 1.5,
+    "immersion": "oil",
+    "pixel_size_nm": null,
+    "pixel_size_source": "not measured for this lens",
+    "focal_shift_factor": 0.88,
+    "focal_shift_source": "assumed: 1.33 / 1.518 (paraxial), not measured for this lens; to be measured from the lambda DNA contour length (owner 2026-11-12)",
+    "focal_shift_applied_to_z": false,
+    "correction_collar": null
+  },
+  "50x": {
+    "objective": "50x oil (model not recorded)",
+    "magnification": 50,
+    "NA": null,
+    "immersion": "oil",
+    "pixel_size_nm": 203,
+    "pixel_size_source": "measured 2026-10-26 (X 204.6 / Y 200.5 at 35 um), docs/rig/core-parameters.md",
+    "focal_shift_factor": 0.88,
+    "focal_shift_source": "assumed: 1.33 / 1.518 (paraxial), source not recorded; the MATLAB analysis applies it on reading (zCorrFactor)",
+    "focal_shift_applied_to_z": false,
+    "correction_collar": null
+  }
+}

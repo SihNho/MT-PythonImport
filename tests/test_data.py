@@ -639,3 +639,19 @@ def test_run_file_records_the_tracking_method_executor_and_precision(tmp_path):
         st = json.loads(f["metadata/run/tracking_stages"][()])
         assert {k: st[k] for k in tracking} == tracking and st["pipeline"] == "mtpy.acq.BeadTracker"
         assert f["metadata/run/z_method"][()].decode() == "spline_v1"
+
+
+def test_rig_preset_in_run_file(cam, tmp_path, monkeypatch):
+    """Owner 2026-11-12: the objective and its focal-shift factor (with the source; z stays raw) are metadata of
+    every run file; an unknown preset name is refused at connect."""
+    presets = api.devices.rig_presets()
+    assert presets["60x"]["NA"] == 1.5 and presets["60x"]["focal_shift_applied_to_z"] is False
+    monkeypatch.setattr(api.devices, "_rig", ("60x", presets["60x"]))
+    api.acq.start(record=True, name="rig", folder=tmp_path)
+    api.acq.wait_frames(5, 5)
+    api.acq.stop()
+    pre = read_run(tmp_path / "rig.h5")["metadata"]["presets"]
+    assert pre["rig_name"] == "60x" and pre["rig"]["focal_shift_factor"] == 0.88 and "1.50" in pre["rig"]["objective"]
+    api.devices.disconnect()
+    with pytest.raises(api.NotReady, match="rig preset"):
+        api.devices.connect({"backend": "sim", "objective": "no such lens"})

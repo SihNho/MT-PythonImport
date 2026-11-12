@@ -596,6 +596,21 @@ def test_owner_feedback_2026_11_06_plot_folder_rate_and_step_highlight(window, m
     w.sub_ref.setChecked(False)
     w._update_plot()
     assert np.allclose(w.curves[2].yData[:5], [1.0, 1.5, 2.0, 2.5, 3.0]) and w.curves[2].name() == "b2"
+    # owner 2026-11-10: the Plot page's tall graph draws only while its page is shown, with its own axes
+    assert not w.curves2
+    w._set_step(w.panel.indexOf(w.plot2.parent()))
+    w.ax_x2.setCurrentIndex(w.ax_x2.findData("force"))
+    w._update_plot()
+    assert np.allclose(w.curves2[2].xData, 2.0) and np.allclose(w.curves2[2].yData[:5], [1.0, 1.5, 2.0, 2.5, 3.0])
+    # owner 2026-11-10: the span is the user's - the tall graph on any X axis, the wide one's Follow length
+    w.history.append((100.0, 1.0, 2.0, np.array([[10.0, 20.0, 1.0], [11.0, 21.0, 2.0]])))
+    w.last2_s.setValue(5)
+    w.follow_s.setValue(5)
+    w._update_plot()
+    assert len(w.curves2[2].xData) == 1 and len(w.curves[2].xData) == 1
+    w.last2.setChecked(False)
+    w._update_plot()
+    assert len(w.curves2[2].xData) == 7
     # (2) the run folder follows the calibration's folder
     cal_dir = tmp_path / "cells" / "A"
     cal_dir.mkdir(parents=True)
@@ -697,7 +712,7 @@ def test_request2_explore_on_the_run_page_and_the_cal_dialog_start(window, monke
 
     from mtpy.gui import app as appmod
     app, w = window
-    assert [k for k, _ in appmod.STEPS] == ["setup", "run", "exp", "beads", "cal", "save"]
+    assert [k for k, _ in appmod.STEPS] == ["setup", "run", "exp", "plot", "beads", "cal", "save"]
     assert w.mag_by.window() is w and w.panel.widget(1).isAncestorOf(w.mag_by)       # Explore inside Run (page 1)
     assert not hasattr(w, "scan_dir")
     seen = {}
@@ -718,3 +733,20 @@ def test_request2_explore_on_the_run_page_and_the_cal_dialog_start(window, monke
     assert asked and asked[0] == (str(appmod.CAL_ROOT) if appmod.CAL_ROOT.is_dir() else str(Path(w.cal_out.text()).parent))
     w._toggle_acq()
     _until(app, lambda: not api.acq.running(), 15, "stopped")
+
+
+def test_script_to_table_round_trip():
+    """Owner 2026-11-10: script -> table. A table's script parses back to a table that compiles to the same script;
+    a line the table cannot hold is refused by its line number."""
+    import pytest
+
+    from mtpy.gui.exptable import EXAMPLE, compile_table, parse_script
+    for cols, rep, rate in ((EXAMPLE, 1, False), ([[1, 0.2, 0, 0, 0], [2, 0.1, 1.0, 0, 0], [2, 3, 0, 36, 50]], 4, True),
+                            ([[5, 2, 0, 0, 0], [5, 1, 0, 0, 0], [7, 2, 0, 0, 0]], 1, False)):
+        text = compile_table(cols, "t", rep, rate)
+        back, rep2, rate2 = parse_script(text)
+        assert compile_table(back, "t", rep2, rate2) == text and rep2 == rep
+    with pytest.raises(ValueError, match="line 4"):
+        parse_script('grammar 0.1\nprotocol "x"\nhold f=1 t=0\nrecord on\nend protocol\n')
+    with pytest.raises(ValueError, match="previous force"):
+        parse_script("hold f=1 t=0\nramp from=3 to=5 speed=0.1\n")

@@ -82,6 +82,7 @@ only devices present in the run.
 | dataset | dtype | meaning |
 |---|---|---|
 | `rig` | string (JSON) | objective, pixel size (with source: nominal / measured), focal-shift factor **with its source** (assumed 0.88 = 1.33/1.515, or measured), correction-collar settings, camera settings, JAI camera position and TIRF-angle stage position (U31), magnet-position-to-force table id |
+| `rig_name` | string | the rig preset's name (`60x`, `50x`); written with `rig` since 2026-11-12: the entry of `config/rig_presets.json` chosen on the Setup page (Objective) at Connect - objective, NA, pixel size and its source, focal-shift factor and its source, `focal_shift_applied_to_z` = false (z in the file is raw). Collar, camera position and force table id are not in it yet |
 | `sample` | string (JSON) | bead type and diameter, DNA construct name and contour length, dye position (bp), sample type, buffer, temperature, surface coating type and batch (U33) |
 | `protocol` | string (JSON) | screening template and experiment protocol (0012, U19): the script text and its parsed steps |
 | `channel_layout` | string (JSON) | 1 / 2 / 3 fluorescence channels, each named and defined ([mapping.md](mapping.md), U22) |

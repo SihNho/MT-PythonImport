@@ -81,15 +81,16 @@ def use_inprocess():
 
 pg.setConfigOptions(imageAxisOrder="row-major", background="k", foreground="w")
 
-STEPS = [("setup", "Setup"), ("run", "Run"), ("exp", "Experiment"), ("beads", "Beads"),
+STEPS = [("setup", "Setup"), ("run", "Run"), ("exp", "Experiment"), ("plot", "Plot"), ("beads", "Beads"),
          ("cal", "Calibrate"), ("save", "Save")]       # Request2 (owner 2026-11-06): Explore lives inside the Run page
 DETAILS = ("beads", "cal", "save")              # owner 2026-11-05: the pages the Run page duplicates stay behind "More"
 DATA_ROOT = Path(r"G:\Data")                     # owner 2026-11-05: every data dialog starts here
-CAL_ROOT = Path(r"G:\Data\SiHyeong\Dropbox\Data")   # Request2: the calibration's folder dialog starts here
+CAL_ROOT = DATA_ROOT                             # owner 2026-11-11: "G:\Data" (Request2 had the Dropbox data folder)
 PROTOCOLS_DIR = DATA_ROOT / "protocols"          # the owner's own protocols (.mtprot), listed on the Experiment page
 TITLES = {"setup": "Setup: devices, camera, analysis", "explore": "Explore (no recording)",
           "run": "Run: camera -> beads -> calibrate -> track -> save, in that order",
           "beads": "Beads: select from a .cal", "cal": "Calibrate: z scan -> .cal", "exp": "Experiment: protocol",
+          "plot": "Plot: a second, tall graph with its own axes",
           "save": "Save and export"}
 AXES = {"t": "Time (s)", "mag": "Magnet (mm)", "force": "Force (pN)", "z": "z (um)", "x": "x (px)", "y": "y (px)"}
 COLORS = ["#60A5FA", "#F472B6", "#34D399", "#FBBF24", "#A78BFA", "#F87171", "#2DD4BF", "#FB923C"]
@@ -310,6 +311,15 @@ class MainWindow(QMainWindow):
         self.prot_badge = QLabel("no protocol")           # owner 2026-11-05: is a protocol running? visible everywhere
         self.prot_badge.setToolTip("The protocol's state (Experiment panel). Start replaces a running protocol.")
         h.addWidget(self.prot_badge)
+        self.rec_badge = QLabel("not recording")          # owner 2026-11-10: recording or not, seen at a glance
+        self.rec_badge.setToolTip("Whether the frames are being written to the run file now.")
+        h.addWidget(self.rec_badge)
+        # owner 2026-11-10: "are frames being dropped? show the count" - since the camera start, red when not 0
+        self.lost_label = QLabel("Lost frames: -")
+        self.lost_label.setToolTip("Since the camera start. camera = frames the camera never delivered (gaps in its "
+                                   "frame numbers); queue = frames received but not tracked because tracking fell "
+                                   "behind (the ring was full). p99 = the slowest 1 % of the tracking times per frame.")
+        h.addWidget(self.lost_label)
         self.btn_display = QPushButton("Pause display", clicked=self._toggle_display)
         self.btn_stop = QPushButton("EMERGENCY STOP  (Shift+Esc)", clicked=self._estop)
         self.btn_stop.setShortcut("Shift+Esc")
@@ -410,8 +420,9 @@ class MainWindow(QMainWindow):
             self.ax_y.addItem(label, k)
             self.ax_x.addItem(label, k)
         self.ax_y.setCurrentIndex(3)
-        self.follow = QCheckBox("Follow 30 s")
+        self.follow = QCheckBox("Follow last")     # owner 2026-11-10: the length is the user's, not a fixed 30 s
         self.follow.setChecked(True)
+        self.follow_s = _spin(1.0, 600.0, 10.0, 30.0, 0, " s")   # the history holds 20000 display frames (~11 min)
         self.auto_scale = QCheckBox("Auto scale")
         # owner 2026-11-06: the reference beads' mean x / y / z is subtracted from the tethered beads (thermal drift
         # out); the reference beads themselves stay raw, so their drift is seen
@@ -427,6 +438,7 @@ class MainWindow(QMainWindow):
             ctl.addWidget(QLabel(lab))
             ctl.addWidget(wdg)
         ctl.addWidget(self.follow)
+        ctl.addWidget(self.follow_s)
         ctl.addWidget(self.auto_scale)
         ctl.addWidget(self.sub_ref)
         ctl.addWidget(QLabel("Plot refresh"))
@@ -466,6 +478,14 @@ class MainWindow(QMainWindow):
         self.mode.setCurrentIndex(self.mode.findData(api.devices.default_mode()))
         self.mode.currentIndexChanged.connect(self._apply_mode)
         f.addRow("Mode", self.mode)
+        # owner 2026-11-12: the lens in use and its refractive-index (focal-shift) factor go into every run file
+        self.objective = QComboBox()
+        for name, p in api.devices.rig_presets().items():
+            self.objective.addItem(f"{name}: {p.get('objective')}  (focal shift {p.get('focal_shift_factor')}, z stored raw)", name)
+        self.objective.setCurrentIndex(max(0, self.objective.findData(self.settings.value("objective", ""))))
+        self.objective.setToolTip("Written into the run file (metadata/presets/rig) at the next Connect. z is stored "
+                                  "raw: the factor is recorded, never applied. The list is config/rig_presets.json.")
+        f.addRow("Objective", self.objective)
         self.cam_sdk = QComboBox()       # owner 2026-11-01: the JAI's SDK is chosen here; it must match the USB3 Vision driver bound
         self.cam_sdk.addItem("IMAQdx (NI driver - LabVIEW can share the camera)", "imaqdx")
         self.cam_sdk.addItem("eBUS (JAI / Pleora driver - LabVIEW cannot open the camera)", "ebus")
@@ -616,7 +636,7 @@ class MainWindow(QMainWindow):
         if not self.picks or not api.acq.running():
             self._fail("calibrate", "start the camera and left click the beads on the image first")
             return
-        start = CAL_ROOT if CAL_ROOT.is_dir() else Path(self.cal_out.text()).parent     # Request2: the Dropbox data folder
+        start = CAL_ROOT if CAL_ROOT.is_dir() else Path(self.cal_out.text()).parent     # the data root (owner 2026-11-11)
         d = QFileDialog.getExistingDirectory(self, "Data folder: the calibration (cal001, ...) and the run file "
                                              "(tra001.h5, ...) are written here", str(start))
         if not d:
@@ -744,12 +764,34 @@ class MainWindow(QMainWindow):
         f.addRow(self.calview)
         return w
 
+    def _panel_plot(self):
+        """Owner 2026-11-10: a second graph, tall, on its own page; its own axes, the wide graph's beads and options."""
+        w = QWidget()
+        v = QVBoxLayout(w)
+        self.ax_y2, self.ax_x2 = QComboBox(), QComboBox()
+        for k, label in AXES.items():
+            self.ax_y2.addItem(label, k)
+            self.ax_x2.addItem(label, k)
+        self.ax_y2.setCurrentIndex(3)
+        self.last2 = QCheckBox("Only the last")    # owner 2026-11-10: a chosen span, on any X axis (z against force)
+        self.last2.setChecked(True)
+        self.last2_s = _spin(1.0, 600.0, 10.0, 30.0, 0, " s")
+        v.addWidget(_row(QLabel("Y"), self.ax_y2, QLabel("X"), self.ax_x2, self.last2, self.last2_s))
+        v.addWidget(QLabel("Beads, Auto scale, Subtract reference and the refresh rate: the bar above the wide graph."))
+        self.plot2 = pg.PlotWidget()
+        self.plot2.showGrid(x=True, y=True, alpha=0.3)
+        self.plot2.addLegend(offset=(10, 10))
+        self.plot2.setMinimumHeight(500)
+        self.curves2 = {}
+        v.addWidget(self.plot2, 1)
+        return w
+
     def _panel_exp(self):
         w = QWidget()
         v = QVBoxLayout(w)
         # owner 2026-11-04: the experiment as a table (rows = parameters, columns = iterations) that compiles to the
         # script below; the text stays the advanced view
-        self.exp_table = ExpTable(self._table_to_script, self._start_from_table)
+        self.exp_table = ExpTable(self._table_to_script, self._start_from_table, self._script_to_table)
         v.addWidget(self.exp_table)
         self.prot_edit = QPlainTextEdit()        # design critique 2026-11-05 #1: opens empty, never a runnable example
         self.prot_edit.setPlaceholderText("The protocol script (the table above compiles to it; pick one of your saved "
@@ -845,6 +887,9 @@ class MainWindow(QMainWindow):
     def _connect(self):
         preset = {"backend": self.backend.currentData(), "mode": self.mode.currentData(),
                   "camera_sdk": self.cam_sdk.currentData()}
+        if self.objective.currentData():
+            preset["objective"] = self.objective.currentData()
+            self.settings.setValue("objective", preset["objective"])
         fx = Path(self.ed_fixture.text())
         if preset["backend"] == "sim" and fx.is_dir():
             preset["fixture"] = str(fx)
@@ -1306,9 +1351,10 @@ class MainWindow(QMainWindow):
             c.setStyleSheet(f"color:{COLORS[k % len(COLORS)]}")
             self.bead_chips.addWidget(c, k // CHIPS_PER_ROW, k % CHIPS_PER_ROW)
             self.chips[i] = c
-        self.plot.clear()
-        self.plot.addLegend(offset=(10, 10))
-        self.curves = {}
+        for plot in (self.plot, self.plot2):
+            plot.clear()
+            plot.addLegend(offset=(10, 10))
+        self.curves, self.curves2 = {}, {}
 
     def _on_view_click(self, ev):
         """Pick beads on the JAI image (owner 2026-10-30: tracking before the TIRF set-up): left click adds a bead
@@ -1606,6 +1652,13 @@ class MainWindow(QMainWindow):
             self._fail("table", str(e))
             return False
 
+    def _script_to_table(self):
+        try:
+            self.exp_table.from_script(self.prot_edit.toPlainText())
+            self.prot_status.setText("table from the script")
+        except ValueError as e:
+            self._fail("script -> table", str(e))
+
     def _start_from_table(self):
         if self._table_to_script():
             self._run_protocol()
@@ -1763,10 +1816,14 @@ class MainWindow(QMainWindow):
                 d["em"] = f"emccd read: {type(ex).__name__}: {ex}"
         parts = []
         d["acq_running"] = api.acq.running()
+        d["rec"] = False
         if d["acq_running"]:
             a = api.acq.status()
             parts.append(f"acq: {a.get('frames_received', 0)} frames, {a.get('fps_measured', a.get('fps', 0)) or 0:.1f} fps"
                          f"{', REC' if a.get('recording') else ''}")
+            d["rec"] = bool(a.get("recording"))
+            d["lost"] = (a.get("camera_gaps", 0), a.get("pipeline_drops", 0), a.get("frames_not_written") or 0,
+                         a.get("track_ms_p99"))
         else:
             parts.append("acq: stopped")
         try:
@@ -1788,6 +1845,15 @@ class MainWindow(QMainWindow):
                 if d.get(key):
                     label.setText(d[key])
             self._acq_running = d["acq_running"]
+            self.rec_badge.setText("\u25cf RECORDING" if d["rec"] else "not recording")
+            self.rec_badge.setStyleSheet("background:#B91C1C;color:white;font-weight:bold;padding:2px 8px" if d["rec"] else "")
+            if "lost" in d:                       # stopped: the last count stays
+                gaps, drops, unwritten, p99 = d["lost"]
+                self.lost_label.setText(f"Lost frames: {gaps + drops} (camera {gaps}, queue {drops})"
+                                        + (f", NOT WRITTEN {unwritten}" if unwritten else "")
+                                        + (f"   track p99 {p99:.1f} ms" if p99 is not None else ""))
+                self.lost_label.setStyleSheet("background:#B91C1C;color:white;font-weight:bold;padding:2px 8px"
+                                              if gaps + drops + unwritten else "")
             p, parts = d["protocol"], d["parts"]
             parts.append(f"protocol: {p['state']}" + (f" ({p['reason']})" if p.get("reason") else ""))
             self.btn_run.setText("Resume" if p["state"] == "paused" else "Start")
@@ -1851,11 +1917,20 @@ class MainWindow(QMainWindow):
     def _update_plot(self):
         if not self.history or not self.bead_ids:
             return
-        kx, ky = self.ax_x.currentData(), self.ax_y.currentData()
+        kx = self.ax_x.currentData()
+        self._draw(self.plot, self.curves, kx, self.ax_y.currentData(),
+                   self.follow_s.value() if self.follow.isChecked() and kx == "t" else None)
+        if self.panel.currentWidget() is self.plot2.parent():     # the tall graph costs nothing while its page is hidden
+            # shortcut: the history is turned into arrays once per graph, share them if two graphs cost too much
+            self._draw(self.plot2, self.curves2, self.ax_x2.currentData(), self.ax_y2.currentData(),
+                       self.last2_s.value() if self.last2.isChecked() else None)
+
+    def _draw(self, plot, curves, kx, ky, last_s):
+        """One graph from the history; last_s = only the rows of the last so many seconds (None: all of it)."""
         h = list(self.history)
-        if self.follow.isChecked() and kx == "t":
+        if last_s is not None:
             tmax = h[-1][0]
-            h = [r for r in h if r[0] >= tmax - 30]
+            h = [r for r in h if r[0] >= tmax - last_s]
         t = np.array([r[0] for r in h])
         mag = np.array([r[1] for r in h])
         force = np.array([r[2] for r in h])
@@ -1871,29 +1946,29 @@ class MainWindow(QMainWindow):
         cols = {"x": 0, "y": 1, "z": 2}
         sub = self.sub_ref.isChecked() and bool(refs)
         for side, key in (("bottom", kx), ("left", ky)):
-            self.plot.setLabel(side, AXES[key] + (" - reference" if sub and key in cols else ""))
-        if getattr(self, "_plot_ky", None) != (kx, ky, sub):   # rig 2026-11-05: the legend kept the old axis's name
-            for c in self.curves.values():
-                self.plot.removeItem(c)
-            self.curves.clear()
-            self._plot_ky = (kx, ky, sub)
+            plot.setLabel(side, AXES[key] + (" - reference" if sub and key in cols else ""))
+        if getattr(plot, "_ky", None) != (kx, ky, sub):   # rig 2026-11-05: the legend kept the old axis's name
+            for c in curves.values():
+                plot.removeItem(c)
+            curves.clear()
+            plot._ky = (kx, ky, sub)
         if kx in base and ky in base:
             series = {None: (base[kx], base[ky])}
         else:                                   # Request1 item 3: a per-bead axis is each bead's own x / y / z
             series = {i: (base[kx] if kx in base else xyz[:, k, cols[kx]], base[ky] if ky in base else xyz[:, k, cols[ky]])
                       for k, i in enumerate(self.bead_ids) if self.chips.get(i) and self.chips[i].isChecked()}
-        for key in list(self.curves):
+        for key in list(curves):
             if key not in series:
-                self.plot.removeItem(self.curves.pop(key))
+                plot.removeItem(curves.pop(key))
         for key, (x, y) in series.items():
-            if key not in self.curves:
+            if key not in curves:
                 k = self.bead_ids.index(key) if key is not None else 0
                 name = AXES[ky] if key is None else f"b{key}" + (" (ref, raw)" if sub and self.roles.get(key) == "reference"
                                                                   else " - ref" if sub else "")
-                self.curves[key] = self.plot.plot(pen=pg.mkPen(COLORS[k % len(COLORS)], width=1.5), name=name)
-            self.curves[key].setData(x, y, connect="finite")
+                curves[key] = plot.plot(pen=pg.mkPen(COLORS[k % len(COLORS)], width=1.5), name=name)
+            curves[key].setData(x, y, connect="finite")
         if self.auto_scale.isChecked():
-            self.plot.enableAutoRange()
+            plot.enableAutoRange()
 
     # ------------------------------------------------------------------ events
     def _on_event(self, ev):

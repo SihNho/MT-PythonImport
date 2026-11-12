@@ -314,9 +314,13 @@ def _hdf5_sink(folder, name, beads, roles, svc, dev, settings, tracking=None):
             "devices": {"jai": {"identity": identity, "settings_at_start": settings}}}
     if "magnet" in _services:          # decision 0010: the force calibration in use (name, equation, constants, touch)
         meta["devices"]["magnet"] = {"force_calibration_at_start": _magnet.force_calibration()}
+    meta["presets"] = {}
     preset = getattr(svc, "preset", None)              # the last camera preset applied (U15 frame-rate triple)
     if preset is not None:
-        meta["presets"] = {"camera": preset}
+        meta["presets"]["camera"] = preset
+    rig = _devices_api.rig_preset()                    # owner 2026-11-12: the lens and its focal-shift factor (z is raw)
+    if rig is not None:
+        meta["presets"]["rig_name"], meta["presets"]["rig"] = rig
     return HDF5Writer(path, beads=beads, roles=roles, metadata=meta)
 
 

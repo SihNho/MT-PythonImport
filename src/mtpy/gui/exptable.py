@@ -74,10 +74,68 @@ def compile_table(columns, name="table", repeat=1, force_rate=False):
     return "\n".join(lines) + "\n"
 
 
+def parse_script(text):
+    """The reverse of compile_table (owner 2026-11-10: "script -> table"): the script text -> (columns, repeat,
+    force_rate). Only a script of the table's shape fits: hold / ramp / rotate / wait lines, at most one loop around
+    all of them. ValueError names the first line the table cannot hold. A value the script does not carry (the
+    loading of a hold or rotate column) is 0."""
+    cols, repeat, rate, prev_f, turns, in_loop, closed = [], 1, None, None, 0.0, False, False
+    for n, raw in enumerate(text.splitlines(), 1):
+        line = raw.strip()
+        word, _, rest = line.partition(" ")
+        bad = f"line {n} ({line})"
+        if line.startswith("#"):
+            if "nothing to do" in line and prev_f is not None:
+                cols.append([prev_f, 0.0, 0.0, 0.0, 0.0])
+            continue
+        if not line or word in ("grammar", "protocol") or line == "end protocol":
+            continue
+        if word == "loading":
+            rate = rest.strip() == "force"
+            continue
+        if closed:
+            raise ValueError(f"{bad}: the table holds one loop around every step, nothing after it")
+        if line == "end" and in_loop:
+            closed = True
+            continue
+        try:
+            a = {k: float(v) for k, v in (tok.split("=", 1) for tok in rest.split())}
+        except ValueError:
+            raise ValueError(f"{bad}: the table holds plain numbers only") from None
+        if word == "loop" and not cols and not in_loop and set(a) == {"n"}:
+            in_loop, repeat = True, int(a["n"])
+        elif word == "hold" and set(a) == {"f", "t"}:
+            cols.append([a["f"], a["t"], 0.0, 0.0, 0.0])
+            prev_f = a["f"]
+        elif word == "ramp" and set(a) in ({"from", "to", "speed"}, {"from", "to", "rate"}):
+            if a["from"] != prev_f:
+                raise ValueError(f"{bad}: a table ramp starts at the previous force ({prev_f})")
+            if rate is not None and rate != ("rate" in a):
+                raise ValueError(f"{bad}: the table has one loading kind (speed= or rate=) for every ramp")
+            rate = "rate" in a
+            cols.append([a["to"], 0.0, a.get("speed", a.get("rate")), 0.0, 0.0])
+            prev_f = a["to"]
+        elif word == "rotate" and set(a) == {"from", "to", "f", "spd"}:
+            if a["from"] != turns:
+                raise ValueError(f"{bad}: a table rotation starts where the last one ended ({turns:g} turns)")
+            cols.append([a["f"], 0.0, 0.0, (a["to"] - a["from"]) * 360.0, a["spd"]])
+            prev_f, turns = a["f"], a["to"]
+        elif word == "wait" and set(a) == {"t"} and cols:
+            if cols[-1][1]:
+                cols.append([prev_f, a["t"], 0.0, 0.0, 0.0])
+            else:
+                cols[-1][1] = a["t"]
+        else:
+            raise ValueError(f"{bad}: the table cannot hold this line")
+    if not cols:
+        raise ValueError("no hold / ramp / rotate / wait line in the script")
+    return cols, repeat, bool(rate)
+
+
 class ExpTable(QWidget):
     """The table with add / remove column buttons; `columns()` reads it, `to_script()` compiles it."""
 
-    def __init__(self, on_script, on_start):
+    def __init__(self, on_script, on_start, on_table):
         super().__init__()
         lay = QVBoxLayout(self)
         lay.setContentsMargins(0, 0, 0, 0)
@@ -89,6 +147,9 @@ class ExpTable(QWidget):
         self.btn_add = QPushButton("+ column", clicked=lambda: self.add_column())
         self.btn_del = QPushButton("- column", clicked=self.remove_column)
         self.btn_script = QPushButton("Table -> script", clicked=on_script)
+        self.btn_table = QPushButton("Script -> table", clicked=on_table)
+        self.btn_table.setToolTip("Fill the table from the script below (replaces the table). Only a script of the "
+                                  "table's shape fits: hold / ramp / rotate / wait, one loop around them at most.")
         self.btn_start = QPushButton("Start from table", clicked=on_start)
         self.btn_example = QPushButton("Load example", clicked=lambda: self.set_columns(EXAMPLE))
         self.repeat = QSpinBox()              # owner 2026-11-05: cycle repeat -> loop n=
@@ -105,7 +166,7 @@ class ExpTable(QWidget):
             row.addWidget(w)
         lay.addLayout(row)
         row2 = QHBoxLayout()               # design critique review 2026-11-05: one row cut the button texts off
-        for w in (self.btn_script, self.btn_start):
+        for w in (self.btn_script, self.btn_table, self.btn_start):
             row2.addWidget(w)
         lay.addLayout(row2)
         lay.addWidget(self.info)
@@ -133,6 +194,12 @@ class ExpTable(QWidget):
             self.table.removeColumn(0)
         for col in columns:
             self.add_column(col)
+
+    def from_script(self, text):
+        columns, repeat, force_rate = parse_script(text)       # raises before the table is touched
+        self.set_columns(columns)
+        self.repeat.setValue(repeat)
+        self.loading.setCurrentIndex(int(force_rate))
 
     def highlight(self, col):
         """Colour the running column (owner 2026-11-06); None clears."""

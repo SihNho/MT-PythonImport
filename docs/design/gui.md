@@ -127,7 +127,7 @@ The owner ran watch -> picks -> calibrate -> track -> protocol -> Save the trace
 
 ## Requests/Request2.md (owner 2026-11-06 19:36; the answers are in the file)
 1. Explore lives inside the Run page (a group at its bottom); the More... pages are Beads, Calibrate, Save.
-2. The calibration's folder dialog starts at `G:\Data\SiHyeong\Dropbox\Data` (`CAL_ROOT`) when that folder exists;
+2. The calibration's folder dialog starts at `G:\Data` (`CAL_ROOT`; owner 2026-11-11, before that `G:\Data\SiHyeong\Dropbox\Data`) when that folder exists;
    the Calibrate page's "Write .cal to" starts there too.
 3. First answer (2026-11-06): the scan direction as a remembered choice on the Calibrate page. **Settled
    2026-11-07** (owner's knob test and "Yes, flip it"): the piezo moves the SAMPLE stage, not the objective, so a

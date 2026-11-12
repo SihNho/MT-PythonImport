@@ -35,6 +35,22 @@ MODES = {"MT": ("camera", "magnet", "rotor", "stage", "focus"),
 DEFAULT_MODE = "MT-TIRF"
 _connect_lock = threading.Lock()
 _mode = None
+_rig = None            # (name, content) of the rig preset chosen at connect, for the run file
+
+
+def rig_presets():
+    """config/rig_presets.json: {name: {objective, pixel size, focal-shift factor with its source, ...}} (owner
+    2026-11-12: the lens and its refractive-index factor belong in the run file's metadata). {} without the file."""
+    import json
+
+    from .safety import CONFIG
+    p = CONFIG / "rig_presets.json"
+    return json.loads(p.read_text(encoding="utf-8")) if p.exists() else {}
+
+
+def rig_preset():
+    """(name, content) of the rig preset of the current connection, or None (none chosen, or disconnected)."""
+    return _rig if _services else None
 
 
 def connect(rig_preset):
@@ -45,9 +61,12 @@ def connect(rig_preset):
 
 
 def _connect(rig_preset):
-    global _mode
+    global _mode, _rig
     if _services:
         raise NotReady("devices are already connected; api.devices.disconnect() first")
+    objective = rig_preset.get("objective")
+    if objective is not None and objective not in rig_presets():
+        raise NotReady(f"rig preset {objective!r} is not in config/rig_presets.json ({sorted(rig_presets())})")
     backend = rig_preset.get("backend")
     mode = rig_preset.get("mode", DEFAULT_MODE)
     if mode not in MODES:
@@ -60,6 +79,7 @@ def _connect(rig_preset):
         rig.release()
         raise
     _mode = mode
+    _rig = None if objective is None else (objective, rig_presets()[objective])
     for name, dev in built.items():
         if name not in MODES[mode]:
             continue                                # not part of this mode: never opened
