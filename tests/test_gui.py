@@ -151,18 +151,25 @@ def test_gui_pick_flow_on_simulators(window, tmp_path):
 
 
 def test_camera_settings_and_device_info_open_in_panels(window):
-    """Owner 2026-10-31: the camera settings are not crammed into the step column but open in their own panel; a
-    click on a device row opens that device's information, like the mock-up's device list."""
+    """Owner 2026-10-31: a click on a device row opens that device's information, like the mock-up's device list.
+    Owner 2026-11-13: the camera settings have no panel of their own - the camera / emccd row opens them."""
     app, w = window
-    assert not w.cam_panel.isVisible() and w.em_group.parent() is not None
+    assert not w.dev_panel.isVisible() and w.em_group.parent() is not None and not hasattr(w, "cam_panel")
     w._connect()
     _until(app, lambda: "8 / 8" in w.dev_summary.text(), 15, "connect")
     w.dev_table.cellClicked.emit(0, 0)
     _until(app, lambda: w.dev_panel.isVisible() and "model" in w.dev_info.text(), 10, "device info panel")
     assert w.dev_panel.windowTitle() == "Device: " + w.dev_table.item(0, 0).text()
     assert w.dev_form is not None and w.dev_form.layout().rowCount() > 2       # rows, not a raw dump
-    w.cam_panel.open_()
-    assert w.cam_panel.isVisible() and w.em_group.isVisible() and w.em_exp.isVisible()
+    rows = {w.dev_table.item(r, 0).text(): r for r in range(w.dev_table.rowCount())}
+    assert not w.cam_box.isVisible() and not w.em_box.isVisible()               # row 0 is not a camera
+    w.dev_table.cellClicked.emit(rows["camera"], 0)
+    _until(app, lambda: w.cam_box.isVisible(), 10, "the camera row opens the camera settings")
+    assert w.cam_attrs.isVisible() and w.cam_rate.isVisible() and not w.em_box.isVisible()
+    assert "rate_Hz" not in w.dev_controls                                      # one place per setting
+    w.dev_table.cellClicked.emit(rows["emccd"], 0)
+    _until(app, lambda: w.em_box.isVisible(), 10, "the emccd row opens the EMCCD settings")
+    assert w.em_group.isVisible() and w.em_exp.isVisible() and not w.cam_box.isVisible()
 
 
 def test_touch_position_is_kept_locked_and_applied_at_connect(window, monkeypatch, tmp_path):

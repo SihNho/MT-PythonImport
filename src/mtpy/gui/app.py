@@ -507,10 +507,14 @@ class MainWindow(QMainWindow):
         self.dev_form, self.dev_controls = None, {}
         self.dev_panel = _Panel(self, "Device", self.dev_info)
         self.dev_panel.resize(640, 520)
-        cams = QWidget()
-        cams_lay = QVBoxLayout(cams)
-        self.cam_panel = _Panel(self, "Camera settings", cams)
-        f.addRow(QPushButton("Camera settings...", clicked=self.cam_panel.open_))
+        # owner 2026-11-13: no separate "Camera settings..." panel - a click on the camera / emccd row of the device
+        # table opens that camera's settings inside the device panel (one place per setting)
+        self.cam_box, self.em_box = QWidget(), QWidget()
+        cams_lay, em_lay = QVBoxLayout(self.cam_box), QVBoxLayout(self.em_box)
+        for box, lay in ((self.cam_box, cams_lay), (self.em_box, em_lay)):
+            lay.setContentsMargins(0, 0, 0, 0)
+            self.dev_panel.layout().addWidget(box, 1)
+            box.hide()
         g = QGroupBox("Camera preset")
         gf = QFormLayout(g)
         self.cam_rate = QComboBox()
@@ -555,12 +559,11 @@ class MainWindow(QMainWindow):
         self.em_readback = QLabel("emccd: not connected")
         self.em_readback.setWordWrap(True)
         g4f.addRow(self.em_readback)
-        cams_lay.addWidget(g4)
+        em_lay.addWidget(g4)
         self.em_attrs = AttrPanel("EMCCD", lambda: api.emccd.catalogue(), lambda n: api.emccd.get_attribute(n),
                                   lambda n, v: api.emccd.set_attribute(n, v), self._call,
                                   TOUCH_FILE.with_name("emccd_favourites.json"))
-        cams_lay.addWidget(self.em_attrs, 1)
-        self.cam_panel.resize(900, 820)
+        em_lay.addWidget(self.em_attrs, 1)
         g2 = QGroupBox("Tracking")
         g2f = QFormLayout(g2)
         self.z_method = QComboBox()
@@ -1024,7 +1027,10 @@ class MainWindow(QMainWindow):
             lay.removeWidget(self.dev_form)
             self.dev_form.deleteLater()
         self.dev_form = w
-        lay.addWidget(w)
+        lay.insertWidget(1, w)                           # under the identity line, above the camera boxes
+        self.cam_box.setVisible(name == "camera")
+        self.em_box.setVisible(name == "emccd")
+        self.dev_panel.resize(*((900, 900) if name in ("camera", "emccd") else (640, 520)))
         self.dev_panel.open_()
 
     def _dev_act(self, name, what, fn):
@@ -1037,19 +1043,6 @@ class MainWindow(QMainWindow):
         if e.get("relative_to") and origin is not None and lo is not None and hi is not None:
             lo, hi = origin + lo, origin + hi
         return (lo_default if lo is None else lo), (hi_default if hi is None else hi)
-
-    def _controls_camera(self, f, d, c):
-        s = d["settings"]
-        c["exposure_ms"] = _spin(0.001, 1000.0, 0.1, float(s["exposure_ms"]), 3, " ms")
-        c["gain_dB"] = _spin(0.0, 48.0, 0.5, float(s["gain_dB"]), 1, " dB")
-        c["rate_Hz"] = _spin(0.1, 1000.0, 1.0, float(s["rate_Hz"]), 3, " Hz")
-        for key, label, fn in (("exposure_ms", "Exposure", api.camera.set_exposure),
-                               ("gain_dB", "Gain", api.camera.set_gain), ("rate_Hz", "Frame rate", api.camera.set_rate)):
-            f.addRow(label, _row(c[key], QPushButton("Set", clicked=lambda _=False, k=key, fn=fn, lb=label: self._dev_act(
-                "camera", f"camera {lb.lower()}", lambda: fn(c[k].value())))))
-
-    def _controls_emccd(self, f, d, c):
-        f.addRow(QPushButton("Camera settings... (EMCCD parameters)", clicked=self.cam_panel.open_))
 
     def _controls_magnet(self, f, d, c):
         pl, s = d.get("profile_limits") or {}, d["settings"]

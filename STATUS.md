@@ -312,6 +312,8 @@ Short and current. Details live in the linked documents; the history is in git a
   runs, `program_running.py`); the run file names its code (`/metadata/run/code_version`, `git_commit`,
   `git_branch`, `git_remote`, `git_dirty`). The numba kernel uses no more threads than beads (rig: 3 beads at
   500 Hz held ~9.4 of 12 cores and lost frames); the effect on the CPU load is to measure on the rig.
+  0.1.1 (owner 2026-11-13): the "Camera settings..." button and panel are gone; a click on the camera / emccd
+  row of the device table opens that camera's preset, parameters and attributes in the device panel.
 - **Next:** protocols on hardware (force ramps, rotation, 3-state clamp, autofocus), the stop / watchdog paths
   exercised on the rig, then the tethered-bead calibration.
 - **Queued (owner 2026-11-06):** which side of the focus to track on. The owner's first run had the beads below

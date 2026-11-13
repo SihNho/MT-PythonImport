@@ -192,7 +192,7 @@ the next Connect. Default MT-TIRF (today's behaviour).
 
 | Step | Does | API |
 |---|---|---|
-| Setup | connect / disconnect the rig, self-check, device table (a click on a row opens that device's panel: identity, read-back, limits and the profile window as rows, and what the device can be told as numeric fields with Move / Set - owner 2026-10-31: a control panel, not a raw dump; the EMCCD row opens the camera-settings panel), "Camera settings..." opens the JAI preset and the EMCCD parameters in their own panel (owner 2026-10-31: not crammed into the step column), Z method and executor (0024), touch position for the force equation (0018: starts at 40.94 mm = the magnet's travel end, locked, Change... / Set only, kept in `config/touch_position.json` across restarts, applied at every Connect) | `devices`, `camera`, `magnet.set_touch_position` |
+| Setup | connect / disconnect the rig, self-check, device table (a click on a row opens that device's panel: identity, read-back, limits and the profile window as rows, and what the device can be told as numeric fields with Move / Set - owner 2026-10-31: a control panel, not a raw dump; the camera row also holds the JAI preset and every camera attribute, the emccd row the EMCCD parameters and attributes - owner 2026-11-13: no separate "Camera settings..." button, one place per setting; the device panel's own exposure / gain / rate fields are gone, the rate is `AcquisitionFrameRate` in the attributes), Z method and executor (0024), touch position for the force equation (0018: starts at 40.94 mm = the magnet's travel end, locked, Change... / Set only, kept in `config/touch_position.json` across restarts, applied at every Connect) | `devices`, `camera`, `magnet.set_touch_position` |
 | Explore | magnet position and force, rotor, focus, exposure and gain, read-backs | `magnet`, `rotor`, `focus`, `camera` |
 | Beads | list the beads of a `.cal`, check, reference ids, select | `beads.select` |
 | Calibrate | z scan of the selected beads from the display frames -> `.cal` (`api.zscan`, run in the engine since 0029); "Settle after each move" 0.2 s default (owner 2026-11-01: the 10-31 scan without it gave LUT slopes 1.04-1.06) | `focus`, `acq.display`, `lvfiles.write_cal` |
@@ -223,7 +223,7 @@ zero / bridge / exclude (U12, U14), troubleshooting guide (U9), MT-TIRF mode (10
    connect; the simulator a slice of them), `api.emccd.catalogue()` from its settings, and the generic panel
    `gui/attrs.py` (category tree, search, beginner / expert / guru level, favourites per device in
    `config/camera_favourites.json` / `emccd_favourites.json`, a control per type, every write read back) inside
-   Setup -> Camera settings. Guards: reset / stored defaults / factory / a pixel format other than Mono8 are refused
+   the device panel of the camera / emccd row (Setup -> device table). Guards: reset / stored defaults / factory / a pixel format other than Mono8 are refused
    by the device; ImageFormatControl, AcquisitionControl, TransportLayerControl, UserSetControl and DeviceControl
    writes pause the acquisition and need the panel's confirm checkbox while recording; each write is a `setting`
    event in the run file. The driver's catalogue: [manuals/camera-jai-attributes.md](../manuals/camera-jai-attributes.md).
