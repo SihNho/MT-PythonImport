@@ -121,6 +121,10 @@ class SimCamera(Device):
         return {"model": f"simulator of {self.model}", "serial": "SIM", "firmware": "sim", "port": "sim",
                 "driver": "mtpy.devices.sim", "frames": self.source}
 
+    def binning(self):
+        self._io()
+        return {"horizontal": 1, "vertical": 1}
+
     def settings(self):
         self._io()
         with self._lock:

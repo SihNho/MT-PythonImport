@@ -69,7 +69,10 @@ def test_motor_poller_gives_every_frame_a_reading_off_the_frame_path(cam, tmp_pa
     assert len(np.unique(np.round(mt["magnet_mm"], 3))) > 4       # intermediate positions, not only read-backs
     rd = run["events"]["motor_reading"]
     assert len(rd["event_id"]) >= 10 and (rd["buffer_number"] >= -1).all()
-    assert {d["device"] for d in rd["data"]} == {"magnet", "rotor"}
+    assert {d["device"] for d in rd["data"]} == {"magnet", "rotor", "focus", "stage"}
+    assert np.isfinite(mt["focus_um"]).all() and np.isfinite(mt["focus_t"]).all()     # owner 2026-11-12
+    assert np.isfinite(mt["stage_x_mm"]).all() and np.isfinite(mt["stage_y_mm"]).all()   # owner 2026-11-13
+    assert np.isfinite(mt["stage_t"]).all()
     n_rotor = sum(d["device"] == "rotor" for d in rd["data"])    # 2026-11-06: one thread per motor; the rotor's own
     assert n_rotor >= 5 and sum(d["device"] == "magnet" for d in rd["data"]) > n_rotor   # thread must stay alive
     arrival = [d for d in rd["data"] if d["device"] == "magnet" and d.get("source") == "arrival"]

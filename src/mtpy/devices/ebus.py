@@ -114,6 +114,12 @@ class EbusCamera(Device):
                 "exposure_auto": str(P.GetEnumValueAsString("ExposureAuto")), "acquiring": self.acquiring(),
                 "frame_thread_error": self.error}
 
+    def binning(self):
+        """{"horizontal", "vertical"} read back (owner 2026-11-13: the run file had no binning, and the pixel size
+        depends on it)."""
+        P = self._io().Parameters
+        return {"horizontal": int(P.GetIntegerValue("BinningHorizontal")), "vertical": int(P.GetIntegerValue("BinningVertical"))}
+
     def set(self, name, value):
         P = self._io().Parameters
         if self.settings_kinds[name][0] == NEEDS_PAUSE and self.acquiring():

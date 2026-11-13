@@ -23,7 +23,7 @@ end protocol
 ```
 
 Units are fixed per key and never written: `f`, `from`, `to` in pN (on `hold` / `ramp`), `t` in s, turns in turns,
-`mm` in mm, `um` in um. `7pN` is an error, so units are never mixed up silently.
+`mm` in mm, `um` in um, the `x` / `y` of `stage` in um. `7pN` is an error, so units are never mixed up silently.
 
 ## 2. What each statement does on the rig
 
@@ -35,7 +35,9 @@ Units are fixed per key and never written: `f`, `from`, `to` in pN (on `hold` / 
 | `zero t=T` | the magnet to 0 mm (the top, no force), T seconds. It does NOT set the tracking zero |
 | `rotate from=A to=B f=F t=T` | force F, the rotor to A turns (from its origin), then to B turns at (B-A)/T turns/s; `speed=` turns/s or `spd=` (the rotor's SPD setting, turns/s = SPD x 10 / 500) instead of `t=` is allowed |
 | `loading magnet` / `loading force` | a header line (after `protocol`): the ramps are written by magnet speed (`speed=`) or by force rate (`rate=`); a ramp written the other way is a Check warning. The table writes it from its Loading choice |
-| `focus um=X` | the focus by X um from the run's start |
+| `focus um=X` | the focus to X um from its position at the protocol's start (not from the last step); `t=T` adds a wait of T seconds after the move. The position is recorded per frame (`/mt/focus_um`) |
+| `stage x=X y=Y` | the sample stage to (X, Y) um from its position at the protocol's start (not from the last step; each within +-1000); `t=T` adds a wait. Every move's read-back is an `act` event (`stage_xy_mm`, mm) in the run file; the stage position is recorded per frame (`/mt/stage_x_mm`, `/mt/stage_y_mm`, read at 5 Hz) |
+| `autofocus on` / `autofocus off` | the autofocus on or off (no value: the reference bead and the target, a percent of the LUT, are set in the program). Write `autofocus off` before `focus` steps: with the autofocus on, it pulls the focus back (a warning event says so) |
 | `record on` / `record off` / `record t=T` | recording into the run file on, off, or on for T seconds |
 | `mark "text"` | a text event in the run file |
 | `wait t=T` | T seconds, nothing moves |
@@ -68,8 +70,51 @@ the top bar badge shows `PROTOCOL running (name)`.
 
 ## 5. The table
 
-Each column is one step: Force (pN), Wait (s), Loading, Rotor (degree), Rotor speed (SPD). **Loading** (the
+Each column is one step: Force (pN), Wait (s), Loading, Rotor (degree), Rotor speed (SPD), Focus (um). **Focus** (owner 2026-11-12) is the offset from the protocol's start, as `focus um=`: a column whose value differs from the previous one moves the focus after the force change and before the wait. **Loading** (the
 choice above the table) is either Motor (mm/s), the magnet loading rate of the LabVIEW experiments, or Force rate
 (pN/s), the force loading rate: one or the other for the whole table. A column compiles to: a `ramp` to the force
 at the loading value (`speed=` or `rate=`; `hold` when it is 0), a `rotate` by the degrees at the SPD
 (turns/s = SPD x 10 / 500), then a `hold` for the wait. Start from table compiles and starts.
+
+## 6. Examples: the piezo and the stage (2026-11-12 / 13)
+
+**Piezo steps at a fixed force** (the bead calibration's accuracy). `focus um=` counts from the position at the
+protocol's start; the focus position is recorded per frame in the run file (`/mt/focus_um`). A piezo move changes the
+z of the reference bead and of the tethered bead together, so compare each bead's z change with the piezo's.
+
+```
+grammar 0.1
+protocol "piezo steps at 10 pN"
+loading force
+autofocus off          # otherwise the autofocus pulls the focus back
+record on
+hold f=10 t=30
+focus um=0.1 t=10      # 100 nm above the start, then 10 s
+focus um=0.2 t=10
+focus um=0.3 t=10
+focus um=0 t=10        # back to the start
+record off
+autofocus on
+end protocol
+```
+
+`autofocus on` uses the target set on the Run page (percent of the LUT, default 30) and the tracked reference bead;
+without a reference bead the protocol fails at that line.
+
+**Stage x / y moves** (e.g. a known step under a tracked reference bead gives the pixel size). `stage x= y=` also
+counts from the position at the protocol's start, each within +-1000 um; every move's read-back is an `act` event
+(`stage_xy_mm`, mm). Keep the step to a few um so the bead stays inside its tracking ROI. The table has no `stage`,
+`autofocus` or `record` row: write them in the script.
+
+```
+grammar 0.1
+protocol "pixel size"
+record on
+wait t=5
+stage x=5 y=0 t=5      # 5 um in x from the start, then 5 s
+stage x=0 y=0 t=5
+stage x=0 y=5 t=5
+stage x=0 y=0 t=5
+record off
+end protocol
+```

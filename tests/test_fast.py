@@ -1,4 +1,5 @@
 """The numba executor must agree with the reference port (track.py) and with LabVIEW."""
+import numba
 import numpy as np
 import pytest
 from conftest import read_image
@@ -22,6 +23,8 @@ def test_fast_matches_reference_and_labview(replay):
         xin = [lv_round(v) for v in st[:, 0]]
         yin = [lv_round(v) for v in st[:, 1]]
         xyz, idx, good = fk.track(img, xin, yin, prev["good"])
+        # owner 2026-11-13: no more worker threads than beads
+        assert numba.get_num_threads() == min(len(xin), numba.config.NUMBA_NUM_THREADS)
         ref_lv = np.array(row["ff"]).reshape(-1, 3)
         for b, cal in enumerate(cals):
             if not prev["good"][b]:
@@ -68,7 +71,7 @@ def test_fast_z_methods_match_reference(replay, z_method):
 def test_z_method_names_are_versioned_and_the_old_names_are_aliases(replay):
     """Decision 0030: current_v1 / spline_v1 / phase_spline_v1; the executor and the precision are fields, not names."""
     from mtpy.track import z_method_name
-    assert list(Z_METHODS) == ["current_v1", "spline_v1", "phase_spline_v1"]
+    assert list(Z_METHODS) == ["current_v1", "spline_v1", "phase_spline_v1", "spline_v2", "phase_spline_v2"]
     assert z_method_name("current") == "current_v1" and z_method_name("phase_spline_v1") == "phase_spline_v1"
     with pytest.raises(ValueError, match="unknown z method"):
         z_method_name("spline_v9")

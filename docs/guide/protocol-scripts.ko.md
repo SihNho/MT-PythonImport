@@ -22,7 +22,7 @@ end protocol
 ```
 
 단위는 키마다 정해져 있고 값에 쓰지 않습니다. `f`, `from`, `to`는 pN(`hold` / `ramp`), `t`는 초, 회전은 turn,
-`mm`는 mm, `um`은 um. `7pN`처럼 쓰면 오류이므로 단위가 조용히 섞이는 일이 없습니다.
+`mm`는 mm, `um`은 um, `stage`의 `x` / `y`는 um. `7pN`처럼 쓰면 오류이므로 단위가 조용히 섞이는 일이 없습니다.
 
 ## 2. 각 문장이 리그에서 하는 일
 
@@ -34,7 +34,9 @@ end protocol
 | `zero t=T` | 자석을 0 mm(맨 위, 힘 없음)로, T초. 추적의 영점은 잡지 않음 |
 | `rotate from=A to=B f=F t=T` | 힘 F로 두고, 로터를 원점 기준 A turn으로 보낸 뒤 B turn까지 (B-A)/T turn/s로 회전. `t=` 대신 `speed=` turn/s 또는 `spd=`(로터의 SPD 설정값, turn/s = SPD x 10 / 500)도 가능 |
 | `loading magnet` / `loading force` | 머리말 줄(`protocol` 다음): 램프를 자석 속도(`speed=`)로 썼는지 힘 loading rate(`rate=`)로 썼는지. 반대로 쓴 램프는 Check에서 경고. 표는 Loading 선택대로 이 줄을 씀 |
-| `focus um=X` | 초점을 실행 시작점에서 X um만큼 |
+| `focus um=X` | 초점을 프로토콜 시작 위치에서 X um 떨어진 곳으로 (직전 단계 기준이 아님); `t=T`를 붙이면 이동 후 T초 대기. 위치는 프레임마다 기록됨 (`/mt/focus_um`) |
+| `stage x=X y=Y` | 샘플 스테이지를 프로토콜 시작 위치에서 (X, Y) um 떨어진 곳으로 (직전 단계 기준이 아님; 각각 ±1000 이내); `t=T`를 붙이면 이동 후 대기. 이동마다 리드백이 run 파일의 `act` 이벤트(`stage_xy_mm`, mm)로 남음; 스테이지 위치는 프레임마다 기록됨 (`/mt/stage_x_mm`, `/mt/stage_y_mm`, 5 Hz로 읽은 값) |
+| `autofocus on` / `autofocus off` | 오토포커스 켜기 / 끄기 (값 없음: 기준 비드와 목표(LUT의 %)는 프로그램에서 설정). `focus` 단계 앞에는 `autofocus off`를 쓸 것: 켜져 있으면 오토포커스가 초점을 되돌림 (경고 이벤트가 남음) |
 | `record on` / `record off` / `record t=T` | 런 파일에 기록을 켬 / 끔 / T초 동안 켬 |
 | `mark "글"` | 런 파일에 글 이벤트 |
 | `wait t=T` | T초, 아무것도 움직이지 않음 |
@@ -66,8 +68,50 @@ end protocol
 
 ## 5. 표
 
-열 하나가 한 단계: Force (pN), Wait (s), Loading, Rotor (degree), Rotor speed (SPD). **Loading**(표 위의 선택)은
+열 하나가 한 단계: Force (pN), Wait (s), Loading, Rotor (degree), Rotor speed (SPD), Focus (um). **Focus**는 프로토콜 시작 위치 기준의 초점 오프셋(`focus um=`과 같음)이며, 값이 앞 열과 다르면 힘 변경 뒤, Wait 앞에 초점을 옮깁니다. 표에는 `stage`, `autofocus`, `record` 행이 없으므로 이들은 스크립트에 직접 씁니다. **Loading**(표 위의 선택)은
 Motor (mm/s) = LabVIEW 실험에서 쓰던 자석 loading rate, 또는 Force rate (pN/s) = 힘 loading rate이며 표 전체에
 하나만 적용됩니다. 한 열은 그 loading 값으로 그 힘까지 `ramp`(`speed=` 또는 `rate=`; 0이면 `hold`), 그 각도만큼
 SPD로 `rotate`(turn/s = SPD x 10 / 500), 그 뒤 Wait만큼 `hold`로 변환됩니다. Start from table은 변환하고 바로
 시작합니다.
+
+## 6. 예: 피에조와 스테이지 (2026-11-12 / 13)
+
+**힘을 고정하고 피에조 계단** (bead calibration 정밀도 측정). `focus um=`은 프로토콜 시작 위치 기준이고, 초점 위치는
+프레임마다 run 파일의 `/mt/focus_um`에 기록됩니다. 피에조를 움직이면 기준 비드와 측정 비드의 z가 같이 변하므로,
+비드별 z 변화량을 피에조 이동량과 비교합니다.
+
+```
+grammar 0.1
+protocol "piezo steps at 10 pN"
+loading force
+autofocus off          # 켜 두면 오토포커스가 초점을 되돌림
+record on
+hold f=10 t=30
+focus um=0.1 t=10      # 시작 위치 + 100 nm, 그 뒤 10 s
+focus um=0.2 t=10
+focus um=0.3 t=10
+focus um=0 t=10        # 시작 위치로 복귀
+record off
+autofocus on
+end protocol
+```
+
+`autofocus on`은 Run 페이지에서 정한 목표(LUT의 %, 기본 30)와 추적 중인 기준 비드를 씁니다. 기준 비드가 없으면 그
+줄에서 프로토콜이 실패로 끝납니다.
+
+**스테이지 xy 이동** (예: 기준 비드를 추적하면서 알려진 거리만큼 움직여 픽셀 크기 측정). `stage x= y=`도 프로토콜
+시작 위치 기준이며 각각 ±1000 um 이내입니다. 이동마다 리드백이 `act` 이벤트(`stage_xy_mm`, mm)로 남습니다. 비드가
+추적 ROI 밖으로 나가지 않도록 수 um 이내로 움직입니다.
+
+```
+grammar 0.1
+protocol "pixel size"
+record on
+wait t=5
+stage x=5 y=0 t=5      # 시작 위치에서 x로 5 um, 그 뒤 5 s
+stage x=0 y=0 t=5
+stage x=0 y=5 t=5
+stage x=0 y=0 t=5
+record off
+end protocol
+```

@@ -524,8 +524,14 @@ def test_camera_catalogue_and_generic_attributes_on_the_simulator(cam):
         api.camera.set_attribute("DeviceReset", None)
     with pytest.raises(DeviceError, match="read-only"):
         api.camera.set_attribute("SensorWidth", 1)
-    with pytest.raises(SafetyRefused, match="outside"):
-        api.camera.set_attribute("Gain", 99.0)
+    n = len(events.events())                       # owner 2026-11-13: outside the range = the nearest end, not a refusal
+    assert api.camera.set_attribute("Gain", 99.0) == 24.0
+    exp = api.devices.info("camera")["settings"]["exposure_ms"]
+    assert api.camera.set_rate(5000.0) == pytest.approx(min(247.9544, 1000.0 / exp), rel=1e-3)
+    assert api.camera.set_exposure(1e6) == pytest.approx(1000.0 / 247.9544, rel=1e-3)   # the frame period
+    co = [e for e in events.events()[n:] if e.kind == "coerced"]
+    assert [e.request["quantity"] for e in co] == ["camera_Gain", "camera_rate_Hz", "camera_exposure_ms"]
+    assert co[0].request["value"] == 99.0 and co[0].extra["applied"] == 24.0
     api.acq.start()
     try:
         assert api.acq.wait_frames(5, 10)

@@ -78,7 +78,12 @@ The owner ran watch -> picks -> calibrate -> track -> protocol -> Save the trace
 - **Autofocus** (owner 2026-11-06: "autofocus through the piezo stage is not built - fix it"): the Run page's
   check box switches `api.focus.autofocus(on, bead_id=<the first reference bead>)`: a thread off the frame path
   (RULES 6) takes the display tap's newest result every 0.3 s and sends ONE relative focus move of at most 0.2 um
-  towards the LUT's middle (`n_slices // 2 x z_step`), as the LabVIEW rule (spec F4.06: clamp +-0.2 per firing);
+  towards the target, as the LabVIEW rule (spec F4.06: clamp +-0.2 per firing). The target (owner 2026-11-12:
+  "%로 주도록 하고, 초기화 값은 30% (패턴 큰 방향으로)"; it was the LUT's middle, `n_slices // 2 x z_step`) is the
+  spin box next to the check box, in percent of the LUT: z = percent / 100 x (n_slices - 1) x z_step, 0 % = LUT
+  index 0 = the largest pattern (the last slice scanned), default 30, remembered, applied at once also while on
+  (`api.focus.set_autofocus_target`). A protocol switches it with `autofocus on` / `autofocus off` (a boolean; the
+  target stays the program's) and the check box follows while a protocol runs;
   nothing is sent while the bead is lost or the error is under 10 nm; every move is an `autofocus_move` event.
   Off by default, off again when the camera stops or at Reset calibration. The lost-bead reseed (F4.05) is the
   tracker's own auto-reset. The sign of the correction: the LUT's z rises with the sample (the scan stores the slices in

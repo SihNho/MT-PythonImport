@@ -62,7 +62,7 @@ def test_gpu_fp32_within_the_0030_limits(replay, z_method):
         worst_xy = max(worst_xy, float(np.abs(a[0][:, :2] - b[0][:, :2]).max()))
         n += 1
     print(f"{z_method}: {n} frames, fp32 vs numba z {worst_z:.2e} nm, xy {worst_xy:.2e} px")
-    z_limit = 0.5 if z_method == "spline_v1" else 0.01     # the SSD minimum's position is FP32-limited (0.13 nm seen)
+    z_limit = 0.5 if z_method.startswith("spline") else 0.01     # the SSD / NCC minimum's position is FP32-limited (0.13 nm seen)
     assert n > 20 and worst_z < z_limit and worst_xy < 1e-4
 
 

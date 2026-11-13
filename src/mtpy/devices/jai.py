@@ -110,8 +110,10 @@ class JaiCamera(Device):
     _cat = None
 
     def catalogue(self):
-        """Every camera attribute the driver lists (NI MAX's tree), read once per session: name = the short GenICam
-        name, category = the tree node it sits in. Attributes of IMAQdx itself (AcquisitionAttributes::) are left out."""
+        """Every camera attribute the driver lists (NI MAX's tree): name = the short GenICam name, category = the
+        tree node it sits in. Attributes of IMAQdx itself (AcquisitionAttributes::) are left out. The list is read
+        once per session; the numeric ranges are read at every call, since they follow the other settings (owner
+        2026-11-13: the frame-rate maximum stayed at the full frame's 248 Hz after the ROI was halved)."""
         if self._cat is None:
             c = self._io()
             simple = {n for n, *_ in c.attributes("CameraAttributes", VIS_SIMPLE)}
@@ -127,10 +129,6 @@ class JaiCamera(Device):
                      "description": ""}
                 with contextlib.suppress(Exception):                 # a tooltip is a nicety
                     e["description"] = c.text("IMAQdxGetAttributeTooltip", full)
-                if t in (U32, I64, F64):
-                    with contextlib.suppress(Exception):             # some read-only numbers have no range
-                        e["min"], e["max"] = c.limit("IMAQdxGetAttributeMinimum", full, t), c.limit("IMAQdxGetAttributeMaximum", full, t)
-                        e["step"] = c.limit("IMAQdxGetAttributeIncrement", full, t)
                 if t == ENUM:
                     try:
                         e["values"] = c.enum_values(full)
@@ -138,6 +136,13 @@ class JaiCamera(Device):
                         e["values"] = []
                 rows.append(e)
             self._cat = rows
+        c, types = self._io(), {v: k for k, v in _TYPES.items()}
+        for e in self._cat:
+            t = types[e["type"]]
+            if t in (U32, I64, F64):
+                with contextlib.suppress(Exception):                 # some read-only numbers have no range
+                    e["min"], e["max"] = c.limit("IMAQdxGetAttributeMinimum", e["full"], t), c.limit("IMAQdxGetAttributeMaximum", e["full"], t)
+                    e["step"] = c.limit("IMAQdxGetAttributeIncrement", e["full"], t)
         return self._cat
 
     def _entry(self, name):
@@ -179,6 +184,12 @@ class JaiCamera(Device):
                 "roi": tuple(int(c.get(IMG + k, I64)) for k in ("OffsetX", "OffsetY", "Width", "Height")),
                 "exposure_auto": c.get(ACQ + "ExposureAuto", STR), "acquiring": self.acquiring(),
                 "frame_thread_error": self.error}
+
+    def binning(self):
+        """{"horizontal", "vertical"} read back (owner 2026-11-13: the run file had no binning, and the pixel size
+        depends on it)."""
+        c = self._io()
+        return {"horizontal": int(c.get(IMG + "BinningHorizontal", I64)), "vertical": int(c.get(IMG + "BinningVertical", I64))}
 
     def set(self, name, value):
         c = self._io()

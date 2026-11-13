@@ -20,7 +20,7 @@ that follows it.
 |---|---|---|
 | frame rate / ROI | 90, 150, 248 Hz (full frame; 248 = the camera's cap), 555 Hz (640 x 512 at (344, 376): the cap at that ROI) | a LUT per rate, made at that rate (a 90-Hz LUT at 150 Hz read z 0.9 um low) |
 | bead count | 5, 10, 20, 50, 100 | copies of the owner's beads (1, 13, 11, 8 of the 15:02 frame); the half ROI holds beads 2-4 only |
-| z method | `current_v1` (LabVIEW's, the reference), `spline_v1`, `phase_spline_v1`; improved versions raise the number (decision 0030) | the old names are aliases |
+| z method | `current_v1` (LabVIEW's, the reference), `spline_v1`, `phase_spline_v1`, `spline_v2`, `phase_spline_v2` (decision 0031); improved versions raise the number (decision 0030) | the old names are aliases |
 | executor x precision | numba fp64 (the reference), cuda fp64 (the 0024 kernel, the baseline), cuda fp32 (the production candidate, 0030) | the bench tools' `EXEC`: numba, gpu (fp32), gpu64 |
 | focus (piezo) speed | the opening speed, 1/10 of it | `api.focus.set_speed`; a slower move may leave less to correct after arrival |
 | focus step size | 20, 50, 100 nm (staircase of five up, five down) and the +-1 um pattern (0, +0.5, +1, 0, -1, 0) | 20 nm is the size of the per-hold noise: compare hold means, hold 3 s |
@@ -73,8 +73,8 @@ at 150 / 248 Hz and 50 at 555 Hz; `spline_v1` loses 2-6 x the bead-frames. User 
   per frame in the half ROI at 1-40 beads and 1.1-1.5 ms full frame at 5-200 beads (offline), inside every
   camera rate's budget (555 Hz: 1.8 ms; 248 Hz: 4 ms); the copy it would hide is 0.17 / 0.39 ms. It costs a
   frame of latency; to revisit if a faster camera or a larger ROI needs it.
-- **Deferred**: CPU `spline` / `phase_spline` improvements wait for the piezo staircase's verdict (stage 1 / 2),
-  which is the only ground truth offline comparison cannot give; the next versions are `spline_v2` etc.
+- **Done the same day (decision 0031)**: `spline_v2` / `phase_spline_v2` and the fair comparison from recorded bead
+  windows (`rig_accuracy.py WINDOWS=1` -> `tools/offline_windows.py`, `tools/rig_bench_v2.py`).
 
 ## Open cells (for the full bench later)
 - **bandpass against a ceiling bead's pattern** (owner 2026-11-03: a bead that flew to the ceiling lays a wide

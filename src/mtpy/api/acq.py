@@ -40,8 +40,10 @@ from mtpy.devices.base import passive_reads
 from . import beads as _beads
 from . import devices as _devices_api
 from . import events
+from . import focus as _focus
 from . import magnet as _magnet
 from . import rotor as _rotor
+from . import stage as _stage
 from .devices import _services, service
 from .errors import MtpyError, NotReady, Timeout
 
@@ -54,7 +56,11 @@ _start_lock = threading.Lock()
 # owner 2026-11-06 ("can the reading be faster?"): one thread per motor, each at its own period. The rotor's POS
 # takes ~40 ms, the magnet's ERR? + POS? ~5-10 ms (rig 2026-11-05/06); read in one loop with a 50 ms wait they gave
 # ~10 Hz each, and the force curve of a slow ramp drew as stairs. LabVIEW reads them every frame (0005).
-MOTOR_POLL_S = {"magnet": 0.02, "rotor": 0.05}
+# owner 2026-11-12: the focus (piezo z) is recorded too, 10 Hz (the piezo as the ruler; a focus step in a protocol)
+# owner 2026-11-13: the sample stage x / y per frame too (with the focus: the stage's x, y, z); 5 Hz, as its two
+# WHERE reads share the ASI line with the focus read and the autofocus
+MOTOR_POLL_S = {"magnet": 0.02, "rotor": 0.05, "focus": 0.1, "stage": 0.2}
+_roles = {}            # {bead_id: role} of the last start / retarget (api.focus.autofocus finds the reference bead)
 
 
 class _MotorPoller:
@@ -65,7 +71,9 @@ class _MotorPoller:
     again after `retry_s` (one `motor_reading_error` event per new error text, not one per poll)."""
 
     _READ = (("magnet", "magnet_position_mm", lambda: _magnet.poll_position()),     # + stall check (0019)
-             ("rotor", "rotor_turns", lambda: _rotor.position()))
+             ("rotor", "rotor_turns", lambda: _rotor.position()),
+             ("focus", "focus_z_um", lambda: _focus.position()),
+             ("stage", "stage_xy_mm", lambda: _stage.position()))      # readback = (x, y)
 
     def __init__(self, pipe, period_s, retry_s=1.0):
         if not isinstance(period_s, dict):             # one number: the same period for every motor
@@ -179,7 +187,7 @@ def start(record=False, name=None, sink=None, ring_capacity=64, folder=None, rol
 
 
 def _start(record, name, sink, ring_capacity, folder, roles, motor_poll_s, z_method, gpu, precision=None):
-    global _pipe, _svc
+    global _pipe, _svc, _roles
     if _pipe is not None:
         raise NotReady("acquisition is already running")
     svc = service("camera")
@@ -215,7 +223,7 @@ def _start(record, name, sink, ring_capacity, folder, roles, motor_poll_s, z_met
     pipe.on_fault = _fault
     pipe.start(events.subscribe)
     pipe.motor_poll = _MotorPoller(pipe, motor_poll_s) if motor_poll_s else None
-    _pipe, _svc = pipe, svc
+    _pipe, _svc, _roles = pipe, svc, dict(roles or {})
     try:
         seg = pipe.begin_segment(s)
         if record:
@@ -239,6 +247,7 @@ def retarget(folder=None, name=None, roles=None, z_method="current_v1", gpu=Fals
     (owner 2026-11-05: the JAI has no shutter, so a stop protects nothing; the user never restarts it). The results
     go to a new run file `<folder>/<name>.h5` (folder None: in memory); the file of the acquisition so far is closed.
     The same checks as start (ROI origin, fit); refused while recording is on. Returns status()."""
+    global _roles
     pipe = _require()
     if pipe.recording:
         raise NotReady("recording is on; switch it off before the beads change")
@@ -259,6 +268,7 @@ def retarget(folder=None, name=None, roles=None, z_method="current_v1", gpu=Fals
     tracking = _tracking(z_method, gpu, precision)
     sink = _hdf5_sink(folder, name, beads, roles, svc, svc.device, s, tracking) if folder is not None else None
     pipe.retarget(beads, kernel, sink)
+    _roles = dict(roles or {})
     events.log("acquisition", action="retarget", name=name, **tracking, gpu=bool(gpu),
                beads=list(pipe.bead_ids), cal=beads.source if beads is not None else None)
     return status()
@@ -310,8 +320,12 @@ def _hdf5_sink(folder, name, beads, roles, svc, dev, settings, tracking=None):
         identity = svc.call(dev.identity, what="identity")
     except Exception as e:  # noqa: BLE001 - identity is metadata; its absence is recorded, acquisition goes on
         identity = {"error": f"{type(e).__name__}: {e}"}
+    try:                                # owner 2026-11-13: the binning was not in the file (the pixel size needs it)
+        binning = svc.call(dev.binning, what="binning")
+    except Exception as e:  # noqa: BLE001 - metadata, as the identity: its absence is recorded, acquisition goes on
+        binning = {"error": f"{type(e).__name__}: {e}"}
     meta = {"run": {"mode": _devices_api.mode(), **(tracking or {})},
-            "devices": {"jai": {"identity": identity, "settings_at_start": settings}}}
+            "devices": {"jai": {"identity": identity, "settings_at_start": settings, "binning_at_start": binning}}}
     if "magnet" in _services:          # decision 0010: the force calibration in use (name, equation, constants, touch)
         meta["devices"]["magnet"] = {"force_calibration_at_start": _magnet.force_calibration()}
     meta["presets"] = {}

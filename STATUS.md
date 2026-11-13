@@ -166,6 +166,8 @@ Short and current. Details live in the linked documents; the history is in git a
   the focus bring the tracked beads back to their LUT positions and the LUT's middle before each run's steps), the
   LUT at Cal+ (`CAL_MAGNET_MM`), and the 11-07 bench on the owner's six picked beads (`tools/rig_bench_1107.py`;
   results/2026-11-07-bench.md). The GPU rows of 11-01 are superseded.
+- **2026-11-07 09:30-10:05, spline_v2 / phase_spline_v2 and the fair comparison (decision 0031)**: `spline_v2` (a scale-free normalised correlation in place of the SSD, whose minimum moved 7 nm with the fixture's intensity; the search to a 1e-3 slice bracket; float64 sums on the GPU) and `phase_spline_v2` (the angle of the amplitude-weighted sum, no per-element atan2 or wrap: `phase_spline_v1`'s numbers at `current_v1`'s speed) on numpy, numba and CUDA; `track.Z_METHODS` holds five names. The fair comparison: `rig_accuracy.py WINDOWS=1` keeps every frame's bead windows, `tools/offline_windows.py` tracks them with every method on numba and the FP32 GPU (checked on the 11-01 windows: online = offline to 0.000 nm). Offline gates passed (results/2026-11-07-v2-bench.md). The rig bench (`tools/rig_bench_v2.py`) stopped at the pick check: at 09:59 the field was not the night's (stage +8.5 um x, intensity 40 %, no beads found), nothing in the program had moved it, so no restore was attempted; the blocks wait for the owner.
+- **2026-11-10, the mainboard was replaced: the COM ports moved** (read from Windows only, no port opened; results/2026-11-10-com-ports-after-mainboard.md): the SUNIX card is in a new slot, so PI is on COM6 (was COM3) and the ASI Tiger on COM7 (was COM4); the rotor FTDI keeps COM5; the unknown FTDI `FTY0W18RA` also claims COM6 (a clash). The program still says COM3 / COM4 / COM5 and cannot connect to the magnet or the stage until the owner either sets the SUNIX ports back to COM3 / COM4 in Device Manager (recommended, no code or LabVIEW change) or decides on the new numbers. **Reset by the owner the same day**: PORT0 = COM3, PORT1 = COM4 again, no clash, no code change; the controller behind each port and the camera rate on the new USB port wait for the first connect; the Intel chipset driver of the new board is missing (three devices in Error, not on the signal path).
 - **2026-11-07 02:40-06:30, the bench ran** ([results/2026-11-07-bench.md](docs/results/2026-11-07-bench.md), the user
   report `docs/reports/2026-11-07-bench.html` / `.ko.html`): 147 script runs + 48 GUI runs. The FP32 GPU with
   `current_v1` dropped no frame at any rate or bead count (200 beads at 248 Hz, 100 at 555 Hz) at 1-2 ms per frame and
@@ -294,6 +296,22 @@ Short and current. Details live in the linked documents; the history is in git a
   2026-11-06, the owner's feedback after the first experiment (gui.md): reference subtraction on the plot, the
   autofocus through the piezo (sign to verify on the rig), the run-file page, the running step highlighted, the run
   folder following the .cal, `ramp rate=` (pN/s, the true rate: VEL set from the position read back during one move; the C-863's VEL-during-motion to confirm on the rig), `rotate spd=` and the `loading` header in the script and the table's Loading choice (magnet mm/s or force pN/s); the .meta.json without the .cal copy; one poll thread per motor (magnet ~30-40 readings/s) and the arrival poll's readings logged (~100/s while the magnet moves).
+  2026-11-12 (owner, for the bead-calibration accuracy measurement: hold the force, step the piezo): the focus
+  position per frame in the run file (`/mt/focus_um`, the poller at 10 Hz), `focus um= t=`, `autofocus on / off`
+  in protocols, a Focus (um) row in the table, the autofocus target as a percent of the LUT (default 30, was the
+  middle). Simulator-tested only: the 10 Hz focus read next to the autofocus on the ASI line is to check on the rig.
+  2026-11-13 (owner): `stage x= y= t=` in protocols (um from the start), the camera binning in the run metadata, and
+  the stage x / y per frame (`/mt/stage_x_mm`, `/mt/stage_y_mm`, the poller at 5 Hz). Simulator-tested only.
+  2026-11-13 (owner: 500 Hz could not be set after halving the ROI; "coerce, not refuse"): the camera attribute
+  ranges are read from the driver at every catalogue call and the settings panel reads everything again after a
+  write (the rate maximum was the one cached at connect, 248 Hz); a camera number outside its range now (rate,
+  exposure, gain, a numeric attribute) is set to the nearest end with a `coerced` event. To check on the rig. The
+  eBUS driver still uses the fixed 247.95 Hz cap for every ROI (open).
+  2026-11-13 (owner): code version 0.1.0, the first numbered release: every code change bumps `pyproject.toml`
+  and is pushed (the `release` skill, the Stop hook `release_pending.py`; no code edit or test while the program
+  runs, `program_running.py`); the run file names its code (`/metadata/run/code_version`, `git_commit`,
+  `git_branch`, `git_remote`, `git_dirty`). The numba kernel uses no more threads than beads (rig: 3 beads at
+  500 Hz held ~9.4 of 12 cores and lost frames); the effect on the CPU load is to measure on the rig.
 - **Next:** protocols on hardware (force ramps, rotation, 3-state clamp, autofocus), the stop / watchdog paths
   exercised on the rig, then the tethered-bead calibration.
 - **Queued (owner 2026-11-06):** which side of the focus to track on. The owner's first run had the beads below

@@ -1,6 +1,29 @@
 {
   "hooks": {
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "if command -v py >/dev/null 2>&1; then py -I \"$CLAUDE_PROJECT_DIR/.claude/hooks/release_pending.py\"; else python3 \"$CLAUDE_PROJECT_DIR/.claude/hooks/release_pending.py\"; fi",
+            "timeout": 30,
+            "statusMessage": "Checking for unreleased code changes"
+          }
+        ]
+      }
+    ],
     "PreToolUse": [
+      {
+        "matcher": "Write|Edit|MultiEdit|NotebookEdit|Bash|PowerShell",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "if command -v py >/dev/null 2>&1; then py -I \"$CLAUDE_PROJECT_DIR/.claude/hooks/program_running.py\"; else python3 \"$CLAUDE_PROJECT_DIR/.claude/hooks/program_running.py\"; fi",
+            "timeout": 20,
+            "statusMessage": "Checking that the program is not running"
+          }
+        ]
+      },
       {
         "matcher": "Write|Edit|MultiEdit|NotebookEdit",
         "hooks": [

@@ -77,6 +77,7 @@ class Engine:
         self.state, self.reason, self.current = "ready", None, None
         self.steps_done, self.edits = 0, []
         self._read_focus, self.focus_z0 = focus_z0 is _READ, None if focus_z0 is _READ else focus_z0
+        self.stage_xy0 = None
         self.t_start = self.t_end = None
 
     @staticmethod
@@ -91,6 +92,8 @@ class Engine:
             # `focus um=` is relative to this; read before the thread starts, so a mid-run edit is always checked
             # against the same reference the engine uses (review l2s-wp5-r1). None = this run has no reference.
             self.focus_z0 = api.focus.position()
+        if any(x.kind == "stage" for x in walk(self.script.body)):
+            self.stage_xy0 = api.stage.position()    # `stage x= y=` is relative to this (owner 2026-11-13)
         self.state, self.t_start = "running", time.time()
         threading.Thread(target=self._main, name="protocol-engine", daemon=True).start()
 
@@ -432,7 +435,24 @@ class Engine:
         return {"speed_turns_s": speed}
 
     def _do_focus(self, st):
+        if api.focus.autofocus_status()["on"]:       # the autofocus would pull the focus back within a period
+            api.events.log("protocol", action="warning", line=st.line, name=self.script.name, level="warning",
+                           reason="'focus' while the autofocus is on: the autofocus moves the focus back; write "
+                                  "'autofocus off' before the focus steps")
         self._motion(lambda: api.focus.move_to(self.focus_z0 + self._a(st, "um")))
+        self._sleep(self._a(st, "t", 0.0))
+
+    def _do_stage(self, st):
+        if self.stage_xy0 is None:                   # the step came with a mid-run edit: relative to the stage now
+            self.stage_xy0 = api.stage.position()
+        x0, y0 = self.stage_xy0
+        self._motion(lambda: api.stage.move_to(x0 + self._a(st, "x") / 1000.0, y0 + self._a(st, "y") / 1000.0))
+        self._sleep(self._a(st, "t", 0.0))
+
+    def _do_autofocus(self, st):
+        """owner 2026-11-12: a boolean; the bead (the reference) and the target (percent of the LUT) are the
+        program's (api.focus.set_autofocus_target, the Run page)."""
+        return {"autofocus": api.focus.autofocus(st.form == "on")}
 
     def _do_record(self, st):
         if st.form in ("on", "timed"):

@@ -21,7 +21,7 @@ import numpy as np
 from numba import cuda
 
 from mtpy import fast
-from mtpy.track import DEFAULT, GOLDEN, N_ITER, QUAD_WEIGHTS, Z_METHODS
+from mtpy.track import DEFAULT, GOLDEN, N_ITER, QUAD_WEIGHTS, TOL, Z_METHODS
 
 TPB = 128
 MAX_N, MAX_L, MAX_S = 128, 128, 512
@@ -62,6 +62,7 @@ def _build(FT, CT):
     """The device functions and the kernel for the real type FT and the complex type CT (numba types)."""
     ZERO, HALF_, ONE, TWO, THREE, FOUR, FIVE = FT(0), FT(0.5), FT(1), FT(2), FT(3), FT(4), FT(5)
     GOLD = FT(GOLDEN)
+    TOL_ = FT(TOL)
     NAN = FT(math.nan)
 
     @cuda.jit(device=True)
@@ -186,6 +187,69 @@ def _build(FT, CT):
         return numba.float64((lo + hi) / TWO)
 
     @cuda.jit(device=True)
+    def _ncc_at(prep, real, L, z, red64):
+        """fast._ncc_at: minus the normalised correlation (spline_v2). The sums are float64 in every build: the
+        maximum is flat (1 - O(dz^2)), an FP32 sum of 119 terms cannot place it better than ~1 nm (0030: mixed
+        precision where a stage needs it)."""
+        num = numba.float64(0.0)
+        den = numba.float64(0.0)
+        for r in range(cuda.threadIdx.x, L, TPB):
+            c = _catmull(real, z, r)
+            num += numba.float64(c * prep[r])
+            den += numba.float64(c * c)
+        return -_block_sum(red64, num) / math.sqrt(_block_sum(red64, den))
+
+    @cuda.jit(device=True)
+    def _z_spline2(prep, L, idx, real, red64):
+        top = FT(real.shape[0] - 1)
+        lo = _clamp(FT(idx) - ONE, ZERO, top)
+        hi = _clamp(FT(idx) + ONE, ZERO, top)
+        c, d = hi - GOLD * (hi - lo), lo + GOLD * (hi - lo)
+        fc, fd = _ncc_at(prep, real, L, c, red64), _ncc_at(prep, real, L, d, red64)
+        while hi - lo > TOL_:
+            if fc < fd:
+                hi, d, fd = d, c, fc
+                c = hi - GOLD * (hi - lo)
+                fc = _ncc_at(prep, real, L, c, red64)
+            else:
+                lo, c, fc = c, d, fd
+                d = lo + GOLD * (hi - lo)
+                fd = _ncc_at(prep, real, L, d, red64)
+        return (lo + hi) / TWO
+
+    @cuda.jit(device=True)
+    def _theta2_at(cork, cork_cal, L, z, red):
+        """fast._theta2_at: the angle of sum(c_live conj(c_lut(z))) (phase_spline_v2)."""
+        sr = ZERO
+        si = ZERO
+        for r in range(cuda.threadIdx.x, L, TPB):
+            c = _catmull(cork_cal, z, r)
+            sr += cork[r].real * c.real + cork[r].imag * c.imag
+            si += cork[r].imag * c.real - cork[r].real * c.imag
+        return math.atan2(_block_sum(red, si), _block_sum(red, sr))
+
+    @cuda.jit(device=True)
+    def _z_phase_spline2(cork, L, idx, ampl, cork_cal, qw, red):
+        top = FT(cork_cal.shape[0] - 1)
+        lo = _clamp(FT(idx) - ONE, ZERO, top)
+        hi = _clamp(FT(idx) + ONE, ZERO, top)
+        tlo, thi = _theta2_at(cork, cork_cal, L, lo, red), _theta2_at(cork, cork_cal, L, hi, red)
+        if tlo * thi > ZERO:
+            lo = _clamp(FT(idx) - TWO, ZERO, top)
+            hi = _clamp(FT(idx) + TWO, ZERO, top)
+            tlo, thi = _theta2_at(cork, cork_cal, L, lo, red), _theta2_at(cork, cork_cal, L, hi, red)
+            if tlo * thi > ZERO:
+                return numba.float64(_z_quad(cork, L, idx, ampl, cork_cal, qw, red))
+        while hi - lo > TOL_:
+            mid = (lo + hi) / TWO
+            tm = _theta2_at(cork, cork_cal, L, mid, red)
+            if tm * tlo > ZERO:
+                lo, tlo = mid, tm
+            else:
+                hi, thi = mid, tm
+        return numba.float64((lo + hi) / TWO)
+
+    @cuda.jit(device=True)
     def _parabola(c, n, n_pts):
         """fast._parabola on the rolled magnitude c[0:n]."""
         k, best = 0, c[0]
@@ -253,6 +317,7 @@ def _build(FT, CT):
         prep = cuda.shared.array(MAX_L, FT)
         d = cuda.shared.array(MAX_S, FT)
         red = cuda.shared.array(TPB, FT)
+        red64 = cuda.shared.array(TPB, numba.float64)   # spline_v2's sums
         xb, yb = inp[b, 0], inp[b, 1]
         if inp[b, 2] == 0:
             if t == 0:
@@ -424,6 +489,10 @@ def _build(FT, CT):
             zi = numba.float64(_z_spline(prep, L, idx, real[b], red))
         elif method == 2:
             zi = _z_phase_spline(cork, L, idx, ampl[b], cork_cal[b], qw, red)
+        elif method == 3:
+            zi = numba.float64(_z_spline2(prep, L, idx, real[b], red64))
+        elif method == 4:
+            zi = _z_phase_spline2(cork, L, idx, ampl[b], cork_cal[b], qw, red)
         else:
             zi = _z_quad(cork, L, idx, ampl[b], cork_cal[b], qw, red)
         if t == 0:

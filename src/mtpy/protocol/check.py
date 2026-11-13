@@ -38,6 +38,8 @@ API_MAP = {
     "rotate": [("magnet.set_force", {"f": "force_pN"}), ("rotor.rotate", {"from": "turns", "to": "turns"}),
                ("rotor.position", {}), ("devices.info", {})],
     "focus": [("focus.move_to", {"um": "z_um"}), ("focus.position", {})],     # um relative -> absolute z_um
+    "autofocus": [("focus.autofocus", {})],
+    "stage": [("stage.move_to", {}), ("stage.position", {})],                 # um relative -> absolute mm
     "record": [("acq.set_recording", {})],
     "light:seq": [("light.load_sequence", {}), ("light.start_sequence", {})],
     "light:off": [("light.stop_sequence", {})],
@@ -246,7 +248,7 @@ def _connected(name):
 def _state_layer(rep, st, focus_z0):
     a = {k: v.value for k, v in st.args.items()}
     needs = {"zero": "magnet", "ramp": "magnet", "hold": "magnet", "move": "magnet", "rotate": "magnet",
-             "focus": "focus"}.get(st.kind)
+             "focus": "focus", "autofocus": "focus", "stage": "stage"}.get(st.kind)
     for dev in ([needs] if needs else []) + (["rotor"] if st.kind == "rotate" else []):
         if not _connected(dev):
             rep.err(st, st.col, f"'{st.kind}' needs the {dev}, which is not connected (api.devices.status())")
@@ -260,6 +262,11 @@ def _state_layer(rep, st, focus_z0):
         z0, origin = focus_z0
         _profile(rep, st, "um", "focus_z_um", z0 + a["um"], origin=origin,
                  why=f" from the focus now at {z0:g} um")
+    if st.kind == "stage":                          # the target from the position now, inside the profile's window
+        pos, origin = api.stage.position(), api.devices.info("stage")["origin"]
+        for i, k in enumerate("xy"):
+            _profile(rep, st, k, f"stage_{k}_mm", pos[i] + a[k] / 1000.0, origin=origin[i],
+                     why=f" um from the stage now at {pos[i]:g} mm")
     if st.kind == "record" and not api.acq.running():
         rep.err(st, st.col, "'record' needs acquisition running: api.acq.start() before the protocol")
 
@@ -347,7 +354,7 @@ def duration(body):
     for st in body:
         if st.kind == "loop":
             total += st.args["n"].value * duration(st.body)
-        elif st.kind in ("zero", "ramp", "hold", "move", "rotate", "wait", "record") and "t" in st.args:
+        elif st.kind in ("zero", "ramp", "hold", "move", "rotate", "focus", "stage", "wait", "record") and "t" in st.args:
             total += st.args["t"].value
         elif st.kind == "ramp" and "rate" in st.args:
             total += abs(st.args["to"].value - st.args["from"].value) / st.args["rate"].value

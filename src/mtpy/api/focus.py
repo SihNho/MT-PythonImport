@@ -49,7 +49,29 @@ def set_speed(mm_s):
 AUTOFOCUS_PERIOD_S = 0.3        # LabVIEW fires every 25 frames (~3.6 /s at 90 Hz); here on its own thread (RULES 6)
 AUTOFOCUS_MAX_STEP_UM = 0.2     # LabVIEW's +-0.2 clamp per firing (units open, Q4.06: taken as um)
 AUTOFOCUS_DEAD_UM = 0.01        # below this error nothing is sent (LabVIEW had none; spares the serial line)
+AUTOFOCUS_TARGET_PCT = 30.0     # owner 2026-11-12: "초기화 값은 30% (패턴 큰 방향으로)"; it was the LUT's middle
 _af = None
+_target_pct = AUTOFOCUS_TARGET_PCT
+
+
+def _target_z(cal, pct):
+    """The reference bead's target z (um) at pct % of the LUT: 0 % = LUT index 0, the last slice scanned = the
+    largest pattern for either sign of the step (api.zscan), 100 % = index n - 1, the scan's start."""
+    return pct / 100.0 * (cal["n_slices"] - 1) * float(cal["z_step"])
+
+
+def set_autofocus_target(percent):
+    """Where the autofocus holds the reference bead, in percent of the LUT (0 = index 0, the largest pattern;
+    100 = the scan's start; default 30). Takes effect at once when the autofocus is on. Returns autofocus_status().
+    Example: `api.focus.set_autofocus_target(30)`."""
+    global _target_pct
+    if not (isinstance(percent, (int, float)) and not isinstance(percent, bool) and 0 <= percent <= 100):
+        raise ValueError(f"autofocus target {percent!r} must be a number in 0..100 (percent of the LUT)")
+    _target_pct = float(percent)
+    if _af is not None and _af.cal is not None:
+        _af.z_center_um = _target_z(_af.cal, _target_pct)
+    events.log("autofocus_target", request={"percent": _target_pct}, z_center_um=None if _af is None else _af.z_center_um)
+    return autofocus_status()
 
 
 class _AutoFocus:
@@ -69,6 +91,7 @@ class _AutoFocus:
         self.bead_id, self.z_center_um = int(bead_id), float(z_center_um)
         self.period_s, self.max_step_um, self.dead_um = float(period_s), float(max_step_um), float(dead_um)
         self.moves, self.last, self.error = 0, None, None
+        self.cal = None                          # {n_slices, z_step} when the target is a percent (set_autofocus_target)
         self._seq = None
         self._stop = threading.Event()
         self._thread = None
@@ -118,15 +141,17 @@ class _AutoFocus:
 
     def status(self):
         return {"on": not self._stop.is_set(), "bead": self.bead_id, "z_center_um": self.z_center_um, "sign": self.SIGN,
+                "target_percent": _target_pct if self.cal is not None else None,
                 "moves": self.moves, "last": self.last, "error": self.error, "period_s": self.period_s,
                 "max_step_um": self.max_step_um}
 
 
 def autofocus(on, bead_id=None, z_center_um=None, period_s=AUTOFOCUS_PERIOD_S, max_step_um=AUTOFOCUS_MAX_STEP_UM,
               dead_um=AUTOFOCUS_DEAD_UM):
-    """Switch the autofocus on (hold bead `bead_id`'s tracked z at `z_center_um` by moving the focus; z_center None =
-    the middle of the selected beads' calibration, n_slices // 2 * z_step) or off. Returns autofocus_status().
-    Example: `api.focus.autofocus(True, bead_id=1)`."""
+    """Switch the autofocus on (hold bead `bead_id`'s tracked z at `z_center_um` by moving the focus) or off.
+    bead_id None = the first selected bead with the role reference (the roles of api.acq.start / retarget);
+    z_center None = the target set by set_autofocus_target (percent of the LUT, default 30). Returns
+    autofocus_status(). Example: `api.focus.autofocus(True, bead_id=1)`."""
     global _af
     if _af is not None:
         _af.stop()
@@ -136,14 +161,23 @@ def autofocus(on, bead_id=None, z_center_um=None, period_s=AUTOFOCUS_PERIOD_S, m
         b = _beads.selected()
         if b is None:
             raise NotReady("no beads selected: the autofocus follows a tracked bead")
-        if bead_id is None or bead_id not in b.ids:
+        if bead_id is None:                      # a protocol's `autofocus on`: the reference bead being tracked
+            from . import acq as _acq
+            refs = [i for i in b.ids if _acq._roles.get(i, _acq._roles.get(str(i))) == "reference"]
+            if not refs:
+                raise NotReady("the autofocus needs a reference bead: none of the tracked beads has that role")
+            bead_id = refs[0]
+        if bead_id not in b.ids:
             raise ValueError(f"bead_id must be one of the selected beads {list(b.ids)}; got {bead_id!r}")
+        cal = None
         if z_center_um is None:
             from mtpy.lvfiles import read_cal
-            cal = read_cal(b.source)
-            z_center_um = (cal["n_slices"] // 2) * float(cal["z_step"])
+            c = read_cal(b.source)
+            cal = {"n_slices": c["n_slices"], "z_step": float(c["z_step"])}
+            z_center_um = _target_z(cal, _target_pct)
         service("focus").require()
         _af = _AutoFocus(bead_id, z_center_um, period_s, max_step_um, dead_um)
+        _af.cal = cal
         _af.start()
     events.log("autofocus", request={"on": bool(on)}, bead=bead_id, z_center_um=z_center_um)
     return autofocus_status()
@@ -151,4 +185,4 @@ def autofocus(on, bead_id=None, z_center_um=None, period_s=AUTOFOCUS_PERIOD_S, m
 
 def autofocus_status():
     """{"on", "bead", "z_center_um", "moves", "last", "error", ...}; {"on": False} when never switched on."""
-    return {"on": False} if _af is None else _af.status()
+    return {"on": False, "target_percent": _target_pct} if _af is None else _af.status()

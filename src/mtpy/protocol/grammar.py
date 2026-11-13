@@ -129,7 +129,11 @@ PROTOCOL_KEYS = {
     "rotate": {"from": Key("num", "turns"), "to": Key("num", "turns"), "f": PN, "t": _t(0.1, required=False),
                "speed": Key("num", "turns/s", 0.0, None, False, True),     # one of t= / speed= / spd= (owner 2026-11-06:
                "spd": Key("num", "SPD", 0.0, None, False, True)},          # the rotor speed written in the script)
-    "focus": {"um": Key("num", "um")},
+    "focus": {"um": Key("num", "um"), "t": _t(required=False)},     # owner 2026-11-12: a wait after the step
+    # owner 2026-11-13: the sample stage x/y by (x, y) um from its position at the protocol's start (e.g. a known
+    # step under a tracked reference bead gives the pixel size). The profile's stage window is the hardware travel,
+    # so this range is the guard against a typo: shortcut: +-1000 um, widen when a protocol needs another field.
+    "stage": {"x": Key("num", "um", -1000.0, 1000.0), "y": Key("num", "um", -1000.0, 1000.0), "t": _t(required=False)},
     "record": {"t": _t(0.1)},
     "light": {"seq": Key("str")},
     "wait": {"t": _t()},
@@ -573,7 +577,7 @@ class _Parser:
             cur.done("the loading")
             self.script.meta["loading"] = t.text
             st.kind = "_header"
-        elif kw in ("zero", "ramp", "hold", "move", "rotate", "focus", "loop"):
+        elif kw in ("zero", "ramp", "hold", "move", "rotate", "focus", "stage", "loop"):
             _keyvals(cur, PROTOCOL_KEYS[kw], st, kw)
             if kw == "rotate" and st.args["from"].value == st.args["to"].value:
                 raise _LineError(st.args["to"].col, "'rotate' needs from= and to= to differ (use 'hold' to stay)")
@@ -583,6 +587,12 @@ class _Parser:
             if kw == "ramp" and sum(k in st.args for k in ("t", "speed", "rate")) != 1:
                 raise _LineError(cur.end_col(), "'ramp' needs exactly one of t= (seconds), speed= (mm/s of the magnet) "
                                                 "or rate= (pN/s of the force)")
+        elif kw == "autofocus":               # owner 2026-11-12: a boolean only; the target is the GUI's
+            if not (cur.is_word("on") or cur.is_word("off")):
+                raise _LineError(cur.end_col(), "'autofocus' is 'autofocus on' or 'autofocus off' (the target is set "
+                                                "in the program, not in the script)")
+            st.form = cur.next().text
+            cur.done(f"'autofocus {st.form}'")
         elif kw == "record":
             if cur.is_word("on") or cur.is_word("off"):
                 st.form = cur.next().text
@@ -650,7 +660,8 @@ class _Parser:
             if st.expr.op != "cmp":
                 raise _LineError(st.expr.col, "a rule is a comparison: metric op threshold, e.g. rule angle_deg <= 20")
         else:
-            known = ("zero ramp hold move rotate focus record light mark wait loop if else on stop end repeat rule "
+            known = ("zero ramp hold move rotate focus autofocus stage record light mark wait loop if else on stop end "
+                     "repeat rule "
                      "kind loading; 'end protocol' last")
             raise _LineError(st.col, f"unknown statement '{kw}' (protocol statements: {known})")
 

@@ -51,6 +51,7 @@ import numpy as np
 
 from mtpy.acq.sink import ResultSink
 from mtpy.api.errors import NotReady
+from mtpy.version import code_version
 
 SCHEMA_VERSION = "1.0"
 FILE_KIND = "mtpy-run"
@@ -142,6 +143,10 @@ class _Table:
         self.n = self._write(0, {k: [r[k] for r in rows] for k in self.cols})
 
 
+_MOTOR_COLUMNS = (("magnet", "magnet_mm", "magnet_t"), ("rotor", "rotor_deg", "rotor_t"), ("focus", "focus_um", "focus_t"),
+                  ("stage_x", "stage_x_mm", "stage_t"), ("stage_y", "stage_y_mm", "stage_t"))   # x, y: one reading
+
+
 def _event_columns():
     return {
         "event_id": (np.int64, None, "1", "unique within the run (order of arrival at the writer, not event order)"),
@@ -175,6 +180,12 @@ def _mt_columns(n_beads):
         "magnet_t": (np.float64, None, "s", "host time of that magnet reading from the run start"),
         "rotor_deg": (np.float64, None, "deg", "last rotor position read back before this frame, turns x 360"),
         "rotor_t": (np.float64, None, "s", "host time of that rotor reading from the run start"),
+        "focus_um": (np.float64, None, "um", ("last focus (piezo z) position read back before this frame, the "
+                                              "program's z (sample up positive); NaN without a reading")),
+        "focus_t": (np.float64, None, "s", "host time of that focus reading from the run start"),
+        "stage_x_mm": (np.float64, None, "mm", "last sample stage x read back before this frame; NaN without a reading"),
+        "stage_y_mm": (np.float64, None, "mm", "last sample stage y read back before this frame; NaN without a reading"),
+        "stage_t": (np.float64, None, "s", "host time of that stage reading (x and y together) from the run start"),
         "track_ms": (np.float64, None, "ms", "tracking time of this frame in the worker, NaN if not tracked"),
     }
     if n_beads:
@@ -273,7 +284,7 @@ class HDF5Writer(ResultSink):
         self._seg_info = {}           # number -> dict of what is known about the segment (merged from all sources)
         self._seg_rows = {}           # number -> stats from the recorded frames
         self._hist = []               # (t, key, value, source): camera settings history from events
-        self._motor = {"magnet": ([], []), "rotor": ([], [])}    # (times, values), sorted by time
+        self._motor = {n: ([], []) for n, _, _ in _MOTOR_COLUMNS}     # (times, values), sorted by time
         self.sink_errors = []         # storage failures the pipeline noted (WP6), written to /events/sink_error
         self._sink_errors_written = 0
         self._mt_rows = []            # waiting /mt rows (filled with motor positions at flush)
@@ -472,8 +483,16 @@ class HDF5Writer(ResultSink):
             self.cal_path = x.get("cal")            # applied at the next flush, whenever it arrives
         elif ev.kind in ("act", "motor_reading") and isinstance(ev.request, dict):
             q = ev.request.get("quantity")
-            motor = {"magnet_position_mm": ("magnet", 1.0), "rotor_turns": ("rotor", 360.0)}.get(q)
-            if motor is not None and _num(ev.readback) == _num(ev.readback):
+            motor = {"magnet_position_mm": ("magnet", 1.0), "rotor_turns": ("rotor", 360.0),
+                     "focus_z_um": ("focus", 1.0)}.get(q)
+            xy = ev.readback if q == "stage_xy_mm" else None       # the stage reads (x, y) at once (owner 2026-11-13)
+            if isinstance(xy, (list, tuple)) and len(xy) == 2 and all(_num(v) == _num(v) for v in xy):
+                t = _num(x.get("t_read"), ev.t)
+                self._insert(self._motor["stage_x"], t, float(xy[0]))
+                self._insert(self._motor["stage_y"], t, float(xy[1]))
+                if self._mt is not None and self._mt.n:
+                    self._motor_dirty = t if self._motor_dirty is None else min(self._motor_dirty, t)
+            elif motor is not None and _num(ev.readback) == _num(ev.readback):
                 t = _num(x.get("t_read"), ev.t)            # a poller reading carries the time it was read (WP6)
                 self._insert(self._motor[motor[0]], t, float(ev.readback) * motor[1])
                 if self._mt is not None and self._mt.n:      # rows already on disk may need it: back-fill at flush
@@ -554,6 +573,12 @@ class HDF5Writer(ResultSink):
         _put_str(run, "start_utc", _utc(self.t0))
         _put_str(run, "software_name", "mtpy")
         _put_str(run, "software_version", f"api {api.VERSION}")
+        cv = code_version()                        # owner 2026-11-13: the code that wrote this file
+        _put_str(run, "code_version", cv["version"] or "")
+        _put_str(run, "git_commit", cv["commit"] or "")
+        _put_str(run, "git_branch", cv["branch"] or "")
+        _put_str(run, "git_remote", cv["remote"] or "")
+        _put_str(run, "git_dirty", "" if cv["dirty"] is None else str(cv["dirty"]).lower())
         run_meta = self.metadata.get("run", {})
         _put_str(run, "tracking_stages", to_json({"pipeline": "mtpy.acq.BeadTracker", "kernel": "mtpy.fast.FastKernel"
                                                   " (LabVIEW cross-correlation xy, radial-profile z)",
@@ -717,7 +742,7 @@ class HDF5Writer(ResultSink):
         if first is None:
             return
         t_pc = g["t_host"][first:n] + self.t0
-        for name, col, tcol in (("magnet", "magnet_mm", "magnet_t"), ("rotor", "rotor_deg", "rotor_t")):
+        for name, col, tcol in _MOTOR_COLUMNS:
             v, t = self._motor_at(name, t_pc)
             g[col][first:n] = v
             g[tcol][first:n] = t
@@ -756,10 +781,10 @@ class HDF5Writer(ResultSink):
         if self._mt_rows:
             src = {r["_t_source"] for r in self._mt_rows}
             t_pc = [r["_t_pc"] for r in self._mt_rows]
-            mag, mag_t = self._motor_at("magnet", t_pc)
-            rot, rot_t = self._motor_at("rotor", t_pc)
+            at = [(col, tcol, *self._motor_at(name, t_pc)) for name, col, tcol in _MOTOR_COLUMNS]
             for i, r in enumerate(self._mt_rows):
-                r["magnet_mm"], r["magnet_t"], r["rotor_deg"], r["rotor_t"] = mag[i], mag_t[i], rot[i], rot_t[i]
+                for col, tcol, v, t in at:
+                    r[col], r[tcol] = v[i], t[i]
                 self._mt.append(r)
             self._mt.g["t_camera"].attrs["source"] = "; ".join(sorted(src))
             self._mt_rows = []

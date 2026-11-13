@@ -53,6 +53,8 @@ M.MAGNET_MM = [float(v) for v in os.environ.get("MAGNET_MM", "0,10,30,0").split(
 CAL_MAGNET_MM = float(os.environ["CAL_MAGNET_MM"]) if os.environ.get("CAL_MAGNET_MM") else None   # owner 2026-11-07: the LUT at Cal+
 N_AVG = int(os.environ.get("N_AVG", "10"))           # frames averaged per LUT slice (bench-matrix.md: rate-matched counts)
 HOLD = os.environ.get("HOLD", "1") != "0"           # owner 2026-11-07: hold the field against thermal drift (hold())
+WINDOWS = os.environ.get("WINDOWS", "0") != "0"     # decision 0031: keep every frame's bead windows for offline_windows.py
+WIN = 208                                            # per bead: the kernel's 2 x 72 px sub-image + the 5 um stage step (24 px) + margin
 HOLD_PX, HOLD_Z_UM, HOLD_MAX_UM = 3.0, 0.1, 2.0        # act above these; at most this per move (5 um steps lost beads 11-01)
 PX_PER_UM = (4.71, -4.82)                              # image px per stage um, x and y (11-01 s90 runs' 1 / 2 um stage steps)
 RING_PX = float(os.environ.get("RING_PX") or 0) if "RING_PX" in os.environ else 12.2     # bright-ring radius of beads 2-4 at the owner's 11-01 focus; "" = no match
@@ -303,6 +305,7 @@ def _holds(run, nb):
         if m.sum() < 10:
             continue
         kind, value = text.split()[:2]
+        kind = {"piezo": "focus"}.get(kind, kind)           # the 11-01 runs' marks (rig_refbead_track)
         mean = np.nanmean(z[m], axis=0)
         after = (t >= t0) & (t < t1)
         near = np.abs(np.nanmedian(z[after] - mean, axis=1)) < FOLLOW_NM
@@ -313,13 +316,34 @@ def _holds(run, nb):
     return out
 
 
+class Tap:
+    """The pipeline's frame tap (tools only): the WIN x WIN window of every real bead for every frame the worker
+    tracks, with the buffer number; offline_windows.py tracks them again with every method and executor."""
+    def __init__(self, xy, n_max):
+        self.org = [(int(np.rint(x)) - WIN // 2, int(np.rint(y)) - WIN // 2) for x, y in xy]
+        self.win = np.zeros((n_max, len(xy), WIN, WIN), dtype=np.uint8)
+        self.buf, self.n = np.zeros(n_max, np.int64), 0
+
+    def __call__(self, rec, image, res):
+        if self.n >= len(self.buf):
+            return
+        for b, (ox, oy) in enumerate(self.org):
+            self.win[self.n, b] = image[oy:oy + WIN, ox:ox + WIN]
+        self.buf[self.n] = rec.buffer_number
+        self.n += 1
+
+
 def accuracy(path, nb=4):
+    """z accuracy of the first nb beads of the run file (accuracy_of)."""
+    return accuracy_of(read_run(path), nb)
+
+
+def accuracy_of(run, nb=4):
     """z accuracy of the first nb beads over the piezo and magnet holds, in nm.
     raw: each bead's z change from the first hold of its kind against the commanded piezo step (focus holds) or
     against zero (magnet holds; stuck beads must not move). ref: the same after subtracting bead 1 (the reference) -
     for the focus holds the corrected change must be zero (all beads move together), so the error is the change itself.
     Each as median |error| / max |error| over beads 2..nb and holds; noise = median per-hold std of a bead's z."""
-    run = read_run(path)
     n_total = run["mt"]["z_um"].shape[1]
     holds = _holds(run, min(nb + 1, n_total))          # one more column: the magnetic bead, when there is one
     mag = {"raw": [], "ref": []}
@@ -424,16 +448,28 @@ def main():
                     ids = list(range(1, n + 1))
                     api.beads.select(ids, cal_path=cal_path)
                     roles = {i: "reference" for i in ids}
+                    tap = Tap(base["xy"], int(fps * 70)) if WINDOWS else None
+
+                    def during(tap=tap):
+                        if tap is not None:                      # every frame's windows, from the first step on
+                            tap.n = 0
+                            api.acq._pipe.frame_tap = tap
+                        steps()
                     for zm in Z_METHODS:
                         for ex, gpu, prec in EXECUTORS:
                             name = f"acc_{fps:.0f}_{n}_{zm}_{ex}"
-                            row = T.one_run(name, zm, gpu, 0, roles, during=steps, precision=prec)
+                            row = T.one_run(name, zm, gpu, 0, roles, during=during, precision=prec)
                             if row.get("frames_tracked") == 0:      # IMAQdx gave no frame after a restart (seen at 248 Hz, 20:40)
                                 say(f"RESULT {name}: 0 frames (camera_error {row.get('camera_error')}); one retry")
                                 report.setdefault("zero_frame_runs", []).append(row)
                                 name += "_r"
-                                row = T.one_run(name, zm, gpu, 0, roles, during=steps, precision=prec)
+                                row = T.one_run(name, zm, gpu, 0, roles, during=during, precision=prec)
                             row["fps"], row["beads"], row["z_method"] = fps, n, zm
+                            if tap is not None and tap.n:
+                                np.savez(os.path.join(OUT, f"windows_{name}.npz"), win=tap.win[:tap.n], buf=tap.buf[:tap.n],
+                                         org=np.array(tap.org), xy=base["xy"], cal=cal_src, run=os.path.join(OUT, name + ".h5"))
+                                row["windows"] = int(tap.n)
+                                say(f"   windows kept: {tap.n} frames x {len(tap.org)} beads x {WIN} px")
                             if "error" not in row and row.get("frames_tracked"):
                                 row["accuracy"] = accuracy(os.path.join(OUT, name + ".h5"), min(ACC_NB or nb, n))
                                 say("   accuracy:", fmt(row["accuracy"]), " mag bead over magnet holds raw/ref nm:",

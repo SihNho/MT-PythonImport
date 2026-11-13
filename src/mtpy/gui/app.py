@@ -618,11 +618,17 @@ class MainWindow(QMainWindow):
         f.addRow(_row(self.run_track, self.btn_rec))
         # owner 2026-11-06: autofocus through the piezo (spec F4.06): the focus holds the reference bead's tracked z at
         # the LUT's middle; off by default, off again at Reset calibration and when the camera stops
-        self.autofocus = QCheckBox("Autofocus: the piezo holds the reference bead's z at the LUT's middle "
-                                   "(+-0.2 um steps; verify on the rig that z converges)")
+        self.autofocus = QCheckBox("Autofocus: the piezo holds the reference bead's z at")
         self.autofocus.toggled.connect(self._toggle_autofocus)
+        # owner 2026-11-12: the target is the user's, in percent of the LUT (0 = the largest pattern), default 30;
+        # a protocol's `autofocus on` uses this value
+        self.af_target = _spin(0.0, 100.0, 5.0, float(self.settings.value("af_target", 30.0)),
+                               0, " % of the LUT")
+        self.af_target.setToolTip("0 % = LUT index 0, the largest pattern (the last slice scanned); 100 % = the scan's "
+                                  "start. Applied at once, also while the autofocus is on (+-0.2 um steps).")
+        self.af_target.valueChanged.connect(self._set_af_target)
         self.af_status = QLabel("")
-        f.addRow(_row(self.autofocus, self.af_status))
+        f.addRow(_row(self.autofocus, self.af_target, self.af_status))
         f.addRow(QPushButton("5. Save the traces (.tra)", clicked=lambda: self._export("tra")))
         f.addRow(self.run_save)
         explore = QGroupBox("Explore: move by hand (no recording)")     # Request2: on the Run page itself
@@ -1513,9 +1519,24 @@ class MainWindow(QMainWindow):
             self.autofocus.setChecked(False)
             self._fail("autofocus", "no reference bead is tracked: calibrate and select beads with a reference first")
             return
-        self._call(lambda: api.focus.autofocus(on, bead_id=refs[0] if on else None), "autofocus",
-                   lambda st: self.af_status.setText(f"holding bead {st['bead']} at z {st['z_center_um']:.2f} um"
-                                                     if st["on"] else "off"))
+        pct = self.af_target.value()
+
+        def switch():
+            if on:
+                api.focus.set_autofocus_target(pct)
+            return api.focus.autofocus(on, bead_id=refs[0] if on else None)
+        self._call(switch, "autofocus", self._af_text)
+
+    def _set_af_target(self, pct):
+        self.settings.setValue("af_target", pct)
+        self._call(lambda: api.focus.set_autofocus_target(pct), "autofocus target", self._af_text)
+
+    def _af_text(self, st):
+        self.af_status.setText(f"holding bead {st['bead']} at z {st['z_center_um']:.2f} um" if st["on"] else "off")
+        if self.autofocus.isChecked() != st["on"]:     # a protocol's `autofocus on / off` (owner 2026-11-12)
+            self.autofocus.blockSignals(True)
+            self.autofocus.setChecked(st["on"])
+            self.autofocus.blockSignals(False)
 
     def _live_text(self, on):
         self.btn_run_cam.setText("Stop the camera" if on else "1. Start the camera")
@@ -1833,6 +1854,8 @@ class MainWindow(QMainWindow):
         except Exception:  # noqa: BLE001
             parts.append("magnet: not connected")
         d["protocol"], d["parts"] = api.protocol.status(), parts
+        with contextlib.suppress(Exception):
+            d["af"] = api.focus.autofocus_status()
         return d
 
     def _slow_apply(self, d):
@@ -1845,6 +1868,8 @@ class MainWindow(QMainWindow):
                 if d.get(key):
                     label.setText(d[key])
             self._acq_running = d["acq_running"]
+            if d.get("af") is not None and d.get("protocol", {}).get("state") in ("running", "paused"):
+                self._af_text(d["af"])            # only a protocol switches it behind the checkbox
             self.rec_badge.setText("\u25cf RECORDING" if d["rec"] else "not recording")
             self.rec_badge.setStyleSheet("background:#B91C1C;color:white;font-weight:bold;padding:2px 8px" if d["rec"] else "")
             if "lost" in d:                       # stopped: the last count stays

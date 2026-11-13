@@ -562,7 +562,7 @@ def test_experiment_opens_empty_and_the_estop_banner_shows_only_while_engaged(wi
     """Design critique 2026-11-05 #1 and #4: no runnable example on the Experiment page at start; the red banner
     with Acknowledge appears with the emergency stop and goes with it."""
     app, w = window
-    assert w.prot_edit.toPlainText() == "" and w.exp_table.columns() == [["0"] * 5]
+    assert w.prot_edit.toPlainText() == "" and w.exp_table.columns() == [["0"] * 6]
     w.exp_table.btn_example.click()
     assert len(w.exp_table.columns()) == 5
     assert not w.estop_banner.isVisible()
@@ -666,12 +666,22 @@ def test_autofocus_holds_the_reference_bead_through_the_focus(window):
     _until(app, lambda: api.focus.autofocus_status()["on"] and api.focus.autofocus_status()["moves"] >= 2, 15, "autofocus moves")
     st = api.focus.autofocus_status()
     assert st["bead"] == 1 and st["error"] is None and "holding bead 1" in w.af_status.text()
-    assert abs(api.focus.position() - z0) <= 0.2 * (st["moves"] + 1) + 1e-6
+    # owner 2026-11-12: the target is a percent of the LUT, default 30
+    from mtpy.lvfiles import read_cal
+
+    cal = read_cal(FIXTURE / "cal002")
+    span = (cal["n_slices"] - 1) * float(cal["z_step"])
+    assert st["target_percent"] == w.af_target.value() == 30 and abs(st["z_center_um"] - 0.3 * span) < 1e-9
+    w.af_target.setValue(50)
+    _until(app, lambda: abs(api.focus.autofocus_status()["z_center_um"] - 0.5 * span) < 1e-9, 10, "target 50 %")
+    w.af_target.setValue(30)
+    _until(app, lambda: abs(api.focus.autofocus_status()["z_center_um"] - 0.3 * span) < 1e-9, 10, "target 30 %")
+    assert abs(api.focus.position() - z0) <= 0.2 * (api.focus.autofocus_status()["moves"] + 1) + 1e-6
     af = [e for e in events.events() if e.kind == "autofocus_move"]
     assert af and abs(af[-1].extra["step_um"]) <= 0.2 and af[-1].extra["bead"] == 1
     w._toggle_acq()
     _until(app, lambda: not api.acq.running() and not w.autofocus.isChecked(), 15, "stopped, autofocus off")
-    assert not api.focus.autofocus_status()["on"]
+    _until(app, lambda: not api.focus.autofocus_status()["on"], 10, "autofocus thread off")   # switched off on a worker
 
 
 def test_bead_near_the_lut_edge_is_shown_orange_on_the_box_and_the_chip(window):
@@ -742,10 +752,15 @@ def test_script_to_table_round_trip():
 
     from mtpy.gui.exptable import EXAMPLE, compile_table, parse_script
     for cols, rep, rate in ((EXAMPLE, 1, False), ([[1, 0.2, 0, 0, 0], [2, 0.1, 1.0, 0, 0], [2, 3, 0, 36, 50]], 4, True),
-                            ([[5, 2, 0, 0, 0], [5, 1, 0, 0, 0], [7, 2, 0, 0, 0]], 1, False)):
+                            ([[5, 2, 0, 0, 0], [5, 1, 0, 0, 0], [7, 2, 0, 0, 0]], 1, False),
+                            # owner 2026-11-12: the Focus (um) row, piezo steps at a fixed force
+                            ([[10, 30, 0, 0, 0, 0], [10, 10, 0, 0, 0, 0.1], [10, 10, 0, 0, 0, 0.2], [10, 5, 0, 0, 0, 0]], 1, True),
+                            ([[1, 2, 0, 0, 0, 0.5], [3, 0, 1, 0, 0, -0.5]], 2, True)):
         text = compile_table(cols, "t", rep, rate)
         back, rep2, rate2 = parse_script(text)
         assert compile_table(back, "t", rep2, rate2) == text and rep2 == rep
+    assert "hold f=10 t=30\n# column 2\nfocus um=0.1\nwait t=10\n" in compile_table(
+        [[10, 30, 0, 0, 0, 0], [10, 10, 0, 0, 0, 0.1]])
     with pytest.raises(ValueError, match="line 4"):
         parse_script('grammar 0.1\nprotocol "x"\nhold f=1 t=0\nrecord on\nend protocol\n')
     with pytest.raises(ValueError, match="previous force"):

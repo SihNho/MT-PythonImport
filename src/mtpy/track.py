@@ -311,7 +311,67 @@ def z_phase_spline(rad, half, cal, p):
     return (lo + hi) / 2, idx
 
 
-Z_METHODS = {"current_v1": z_phase, "spline_v1": z_spline, "phase_spline_v1": z_phase_spline}
+TOL = 1e-3                                             # v2: the search ends when the bracket is under TOL slices (0.1 nm at 100 nm)
+
+
+def z_spline_v2(rad, half, cal, p):
+    """Z stage 'spline_v2' (decision 0031): spline_v1's SSD replaced by the normalised correlation of the live prepped
+    profile with the interpolated LUT - scale-free, so an intensity change between the LUT and the frame moves no
+    minimum - and the golden section ends at a TOL bracket instead of after N_ITER steps."""
+    prep, _ = prep_i_of_r(rad, half, int(cal["forget_radius"]), cal["cosband"])
+    R = cal["real"]
+    idx = fit_prep_to_cal(prep, R)
+
+    def cost(z):
+        c = catmull(R, z)
+        return -float((c * prep).sum() / np.sqrt((c * c).sum()))
+
+    lo, hi = max(idx - 1.0, 0.0), min(idx + 1.0, len(R) - 1.0)
+    c, d = hi - GOLDEN * (hi - lo), lo + GOLDEN * (hi - lo)
+    fc, fd = cost(c), cost(d)
+    while hi - lo > TOL:
+        if fc < fd:
+            hi, d, fd = d, c, fc
+            c = hi - GOLDEN * (hi - lo)
+            fc = cost(c)
+        else:
+            lo, c, fc = c, d, fd
+            d = lo + GOLDEN * (hi - lo)
+            fd = cost(d)
+    return (lo + hi) / 2, idx
+
+
+def z_phase_spline_v2(rad, half, cal, p):
+    """Z stage 'phase_spline_v2' (decision 0031): theta(z) = arg(sum(c_live conj(c_lut(z)))), the angle of the
+    amplitude-weighted sum instead of phase_spline_v1's weighted mean of per-element angles (no per-element wrap at
+    low signal, no per-element atan2); the bracket widens from +-1 to +-2 slices before the quadratic fallback;
+    bisection to a TOL bracket."""
+    prep, cork = prep_i_of_r(rad, half, int(cal["forget_radius"]), cal["cosband"])
+    C = cal["cork"]
+    idx = fit_prep_to_cal(prep, cal["real"])
+
+    def theta(z):
+        return float(np.angle((cork * np.conj(catmull(C, z))).sum()))
+
+    for w in (1.0, 2.0):
+        lo, hi = max(idx - w, 0.0), min(idx + w, len(C) - 1.0)
+        tlo, thi = theta(lo), theta(hi)
+        if tlo * thi <= 0:
+            break
+    else:
+        return z_phase(rad, half, cal, p)
+    while hi - lo > TOL:
+        mid = (lo + hi) / 2
+        tm = theta(mid)
+        if tm * tlo > 0:
+            lo, tlo = mid, tm
+        else:
+            hi, thi = mid, tm
+    return (lo + hi) / 2, idx
+
+
+Z_METHODS = {"current_v1": z_phase, "spline_v1": z_spline, "phase_spline_v1": z_phase_spline,
+             "spline_v2": z_spline_v2, "phase_spline_v2": z_phase_spline_v2}
 Z_ALIASES = {"current": "current_v1", "spline": "spline_v1", "phase_spline": "phase_spline_v1"}   # the names before 0030
 
 

@@ -9,6 +9,9 @@ Owner's example (five columns):
     Motor (mm/s)        0.1    0.1    0.1    0.03   0.1
     Rotor (degree)   -3600   3600      0      0      0
     Rotor speed (SPD)   50     50      0      0      0
+A sixth row, Focus (um) (owner 2026-11-12: piezo steps at a fixed force, to measure the bead calibration's accuracy),
+is the focus offset from the protocol's start, as `focus um=`; a column whose value differs from the previous one
+moves the focus after the force change and before the wait.
 """
 from PySide6.QtGui import QBrush, QColor
 from PySide6.QtWidgets import (
@@ -23,13 +26,14 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-ROWS = ("Force (pN)", "Wait (s)", "Motor (mm/s)", "Rotor (degree)", "Rotor speed (SPD)")
+ROWS = ("Force (pN)", "Wait (s)", "Motor (mm/s)", "Rotor (degree)", "Rotor speed (SPD)", "Focus (um)")
 LOADING = ("Motor (mm/s)", "Force rate (pN/s)")   # owner 2026-11-06: magnet loading or force loading, one or the other
 EXAMPLE = [[1, 0, 0.1, -3600, 50], [1, 0, 0.1, 3600, 50], [1, 0, 0.1, 0, 0], [50, 0, 0.03, 0, 0], [1, 0, 0.1, 0, 0]]
 
 
 def compile_table(columns, name="table", repeat=1, force_rate=False):
-    """columns: [[force_pN, wait_s, loading, rotor_deg, rotor_spd], ...] -> the protocol script text; repeat > 1
+    """columns: [[force_pN, wait_s, loading, rotor_deg, rotor_spd, focus_um], ...] (focus_um may be left out: 0)
+    -> the protocol script text; repeat > 1
     wraps the columns in `loop n=repeat` (owner 2026-11-05: cycle repeat). loading is the magnet speed in mm/s
     (`ramp speed=`), or with force_rate=True the force loading rate in pN/s (`ramp rate=`; owner 2026-11-06: the
     two are exclusive, the table's Loading choice).
@@ -42,10 +46,10 @@ def compile_table(columns, name="table", repeat=1, force_rate=False):
         raise ValueError("repeat must be >= 1")
     if repeat > 1:
         lines.append(f"loop n={repeat}")
-    prev_f, turns = None, 0.0
+    prev_f, turns, prev_foc = None, 0.0, 0.0
     for k, col in enumerate(columns, 1):
         try:
-            f, w, v, deg, spd = (float(x) if str(x).strip() != "" else 0.0 for x in col)
+            f, w, v, deg, spd, foc = (float(x) if str(x).strip() != "" else 0.0 for x in (list(col) + [0.0])[:6])
         except (TypeError, ValueError) as e:
             raise ValueError(f"column {k}: not a number ({e})") from None
         if f < 0 or w < 0 or v < 0 or spd < 0:
@@ -58,12 +62,15 @@ def compile_table(columns, name="table", repeat=1, force_rate=False):
             turns += deg / 360.0
             prev_f = f
         elif prev_f is None:
-            done.append(f"hold f={f:g} t={w:g}")
-            w = 0.0
+            done.append(f"hold f={f:g} t={0.0 if foc != prev_foc else w:g}")
+            w = w if foc != prev_foc else 0.0
         elif f != prev_f:
             key = "rate" if force_rate else "speed"
             done.append(f"ramp from={prev_f:g} to={f:g} {key}={v:g}" if v > 0 else f"hold f={f:g} t=0")
         prev_f = f
+        if foc != prev_foc:
+            done.append(f"focus um={foc:g}")
+            prev_foc = foc
         if w > 0:
             done.append(f"wait t={w:g}")
         lines.append(f"# column {k}" + ("" if done else ": nothing to do"))
@@ -76,17 +83,17 @@ def compile_table(columns, name="table", repeat=1, force_rate=False):
 
 def parse_script(text):
     """The reverse of compile_table (owner 2026-11-10: "script -> table"): the script text -> (columns, repeat,
-    force_rate). Only a script of the table's shape fits: hold / ramp / rotate / wait lines, at most one loop around
+    force_rate). Only a script of the table's shape fits: hold / ramp / rotate / focus / wait lines, one loop around
     all of them. ValueError names the first line the table cannot hold. A value the script does not carry (the
     loading of a hold or rotate column) is 0."""
-    cols, repeat, rate, prev_f, turns, in_loop, closed = [], 1, None, None, 0.0, False, False
+    cols, repeat, rate, prev_f, turns, in_loop, closed, foc = [], 1, None, None, 0.0, False, False, 0.0
     for n, raw in enumerate(text.splitlines(), 1):
         line = raw.strip()
         word, _, rest = line.partition(" ")
         bad = f"line {n} ({line})"
         if line.startswith("#"):
             if "nothing to do" in line and prev_f is not None:
-                cols.append([prev_f, 0.0, 0.0, 0.0, 0.0])
+                cols.append([prev_f, 0.0, 0.0, 0.0, 0.0, foc])
             continue
         if not line or word in ("grammar", "protocol") or line == "end protocol":
             continue
@@ -105,7 +112,7 @@ def parse_script(text):
         if word == "loop" and not cols and not in_loop and set(a) == {"n"}:
             in_loop, repeat = True, int(a["n"])
         elif word == "hold" and set(a) == {"f", "t"}:
-            cols.append([a["f"], a["t"], 0.0, 0.0, 0.0])
+            cols.append([a["f"], a["t"], 0.0, 0.0, 0.0, foc])
             prev_f = a["f"]
         elif word == "ramp" and set(a) in ({"from", "to", "speed"}, {"from", "to", "rate"}):
             if a["from"] != prev_f:
@@ -113,22 +120,28 @@ def parse_script(text):
             if rate is not None and rate != ("rate" in a):
                 raise ValueError(f"{bad}: the table has one loading kind (speed= or rate=) for every ramp")
             rate = "rate" in a
-            cols.append([a["to"], 0.0, a.get("speed", a.get("rate")), 0.0, 0.0])
+            cols.append([a["to"], 0.0, a.get("speed", a.get("rate")), 0.0, 0.0, foc])
             prev_f = a["to"]
         elif word == "rotate" and set(a) == {"from", "to", "f", "spd"}:
             if a["from"] != turns:
                 raise ValueError(f"{bad}: a table rotation starts where the last one ended ({turns:g} turns)")
-            cols.append([a["f"], 0.0, 0.0, (a["to"] - a["from"]) * 360.0, a["spd"]])
+            cols.append([a["f"], 0.0, 0.0, (a["to"] - a["from"]) * 360.0, a["spd"], foc])
             prev_f, turns = a["f"], a["to"]
+        elif word == "focus" and set(a) == {"um"} and cols:
+            if cols[-1][1] or cols[-1][5] != foc:      # the column already waited, or already moved the focus
+                cols.append([prev_f, 0.0, 0.0, 0.0, 0.0, a["um"]])
+            else:
+                cols[-1][5] = a["um"]
+            foc = a["um"]
         elif word == "wait" and set(a) == {"t"} and cols:
             if cols[-1][1]:
-                cols.append([prev_f, a["t"], 0.0, 0.0, 0.0])
+                cols.append([prev_f, a["t"], 0.0, 0.0, 0.0, foc])
             else:
                 cols[-1][1] = a["t"]
         else:
             raise ValueError(f"{bad}: the table cannot hold this line")
     if not cols:
-        raise ValueError("no hold / ramp / rotate / wait line in the script")
+        raise ValueError("no hold / ramp / rotate / focus / wait line in the script")
     return cols, repeat, bool(rate)
 
 
@@ -141,7 +154,7 @@ class ExpTable(QWidget):
         lay.setContentsMargins(0, 0, 0, 0)
         self.table = QTableWidget(len(ROWS), 0)
         self.table.setVerticalHeaderLabels(ROWS)
-        self.table.setMinimumHeight(190)
+        self.table.setMinimumHeight(220)
         lay.addWidget(self.table)
         row = QHBoxLayout()
         self.btn_add = QPushButton("+ column", clicked=lambda: self.add_column())
@@ -149,7 +162,8 @@ class ExpTable(QWidget):
         self.btn_script = QPushButton("Table -> script", clicked=on_script)
         self.btn_table = QPushButton("Script -> table", clicked=on_table)
         self.btn_table.setToolTip("Fill the table from the script below (replaces the table). Only a script of the "
-                                  "table's shape fits: hold / ramp / rotate / wait, one loop around them at most.")
+                                  "table's shape fits: hold / ramp / rotate / focus / wait, one loop around them "
+                                  "at most.")
         self.btn_start = QPushButton("Start from table", clicked=on_start)
         self.btn_example = QPushButton("Load example", clicked=lambda: self.set_columns(EXAMPLE))
         self.repeat = QSpinBox()              # owner 2026-11-05: cycle repeat -> loop n=
@@ -160,7 +174,8 @@ class ExpTable(QWidget):
         self.loading.addItems(LOADING)
         self.loading.currentIndexChanged.connect(self._loading_changed)
         self.info = QLabel("columns = steps: a force change at the loading value (Motor mm/s, or Force rate pN/s: the "
-                           "true loading rate), or a rotation at the rotor speed; then the wait")
+                           "true loading rate), or a rotation at the rotor speed; then the focus step (um from "
+                           "the protocol's start, when it changes); then the wait")
         self.info.setWordWrap(True)
         for w in (self.btn_add, self.btn_del, self.btn_example, self.repeat, QLabel("Loading"), self.loading):
             row.addWidget(w)

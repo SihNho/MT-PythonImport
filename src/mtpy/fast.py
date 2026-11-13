@@ -6,7 +6,7 @@ import numba
 import numpy as np
 import rocket_fft  # noqa: F401  (registers np.fft for numba)
 
-from mtpy.track import DEFAULT, GOLDEN, N_ITER, QUAD_WEIGHTS, Z_METHODS, lv_i32_div, lv_round, z_method_name
+from mtpy.track import DEFAULT, GOLDEN, N_ITER, QUAD_WEIGHTS, TOL, Z_METHODS, lv_i32_div, lv_round, z_method_name
 
 
 @numba.njit(cache=True, nogil=True)
@@ -240,12 +240,81 @@ def _z_phase_spline(cork, idx, ampl, cork_cal, qw):
 
 
 @numba.njit(cache=True, nogil=True)
+def _ncc_at(prep, real, z):
+    """spline_v2's cost: minus the normalised correlation of prep with the interpolated LUT (prep's norm is constant)."""
+    num = den = 0.0
+    for r in range(prep.size):
+        c = _catmull(real, z, r)
+        num += c * prep[r]
+        den += c * c
+    return -num / np.sqrt(den)
+
+
+@numba.njit(cache=True, nogil=True)
+def _z_spline2(prep, idx, real):
+    """Z 'spline_v2' = track.z_spline_v2: golden section on _ncc_at to a TOL bracket within +-1 slice."""
+    lo, hi = max(idx - 1.0, 0.0), min(idx + 1.0, real.shape[0] - 1.0)
+    c, d = hi - GOLDEN * (hi - lo), lo + GOLDEN * (hi - lo)
+    fc, fd = _ncc_at(prep, real, c), _ncc_at(prep, real, d)
+    while hi - lo > TOL:
+        if fc < fd:
+            hi, d, fd = d, c, fc
+            c = hi - GOLDEN * (hi - lo)
+            fc = _ncc_at(prep, real, c)
+        else:
+            lo, c, fc = c, d, fd
+            d = lo + GOLDEN * (hi - lo)
+            fd = _ncc_at(prep, real, d)
+    return (lo + hi) / 2
+
+
+@numba.njit(cache=True, nogil=True)
+def _theta2_at(cork, cork_cal, z):
+    """phase_spline_v2's criterion: the angle of sum(c_live conj(c_lut(z)))."""
+    sr = si = 0.0
+    for r in range(cork.size):
+        s = cork[r] * np.conj(_catmull(cork_cal, z, r))
+        sr += s.real
+        si += s.imag
+    return np.arctan2(si, sr)
+
+
+@numba.njit(cache=True, nogil=True)
+def _z_phase_spline2(cork, idx, ampl, cork_cal, qw):
+    """Z 'phase_spline_v2' = track.z_phase_spline_v2: bisection of _theta2_at within +-1, then +-2 slices; the
+    quadratic fit when neither bracket holds a sign change."""
+    S = cork_cal.shape[0]
+    lo = hi = tlo = thi = 0.0
+    found = False
+    for w in (1.0, 2.0):
+        lo, hi = max(idx - w, 0.0), min(idx + w, S - 1.0)
+        tlo, thi = _theta2_at(cork, cork_cal, lo), _theta2_at(cork, cork_cal, hi)
+        if tlo * thi <= 0.0:
+            found = True
+            break
+    if not found:
+        return _z_quad(cork, idx, ampl, cork_cal, qw)
+    while hi - lo > TOL:
+        mid = (lo + hi) / 2
+        tm = _theta2_at(cork, cork_cal, mid)
+        if tm * tlo > 0:
+            lo, tlo = mid, tm
+        else:
+            hi, thi = mid, tm
+    return (lo + hi) / 2
+
+
+@numba.njit(cache=True, nogil=True)
 def _z(rad, half, forget, cosband, real, ampl, cork_cal, qw, method):
     cork, prep, idx = _prep_z(rad, half, forget, cosband, real)
     if method == 1:
         return _z_spline(prep, idx, real), idx
     if method == 2:
         return _z_phase_spline(cork, idx, ampl, cork_cal, qw), idx
+    if method == 3:
+        return _z_spline2(prep, idx, real), idx
+    if method == 4:
+        return _z_phase_spline2(cork, idx, ampl, cork_cal, qw), idx
     return _z_quad(cork, idx, ampl, cork_cal, qw), idx
 
 
@@ -300,7 +369,7 @@ class FastKernel:
 
     def __init__(self, cross, win_rs, win_h, cals, p=DEFAULT, z_method="current_v1"):
         self.z_method_name = z_method_name(z_method)
-        self.z_method = list(Z_METHODS).index(self.z_method_name)   # 0 current, 1 spline, 2 phase_spline (track.Z_METHODS)
+        self.z_method = list(Z_METHODS).index(self.z_method_name)   # 0 current, 1 spline, 2 phase_spline, 3 spline_v2, 4 phase_spline_v2 (track.Z_METHODS)
         nb = len(cals)
         S = len(cals[0]["real"])
         L = max(c["real"].shape[1] for c in cals)
@@ -328,6 +397,9 @@ class FastKernel:
         idx = np.empty(nb, dtype=np.int64)
         good = np.empty(nb, dtype=np.bool_)
         p = self.p
+        # rig 2026-11-13 (owner: limit the threads): 3 beads at 500 Hz kept all 10 workers spinning between frames
+        # (the engine at ~9.4 of 12 cores, frames lost); a bead is one unit of work, so no more threads than beads
+        numba.set_num_threads(max(1, min(nb, numba.config.NUMBA_NUM_THREADS)))
         _track(image, np.asarray(xin, dtype=np.int64), np.asarray(yin, dtype=np.int64),
                np.asarray(good_in, dtype=np.bool_), self.cross, self.h, p.arm, self.n_end, p.n_pts, p.end_quirk,
                p.frame2_shifted, p.z_lo, p.z_hi_margin, self.win_rs, self.win_h, self.forget, self.zstep,

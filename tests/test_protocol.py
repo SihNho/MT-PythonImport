@@ -109,8 +109,8 @@ def test_parse_errors_have_line_and_column():
     assert errs == [
         ("p.mtprot:3:8: 'f' is written with a unit ('7pN'); units are fixed per key and never written in the value: "
          "write f=7 (pN)"),
-        ("p.mtprot:4:1: unknown statement 'jump' (protocol statements: zero ramp hold move rotate focus record light "
-         "mark wait loop if else on stop end repeat rule kind loading; 'end protocol' last)"),
+        ("p.mtprot:4:1: unknown statement 'jump' (protocol statements: zero ramp hold move rotate focus autofocus stage "
+         "record light mark wait loop if else on stop end repeat rule kind loading; 'end protocol' last)"),
         "p.mtprot:6:16: 'f' is given twice",
         "p.mtprot:8:1: 'end' without an open block",
         "p.mtprot:9:20: 't' is 0.01 (s); the grammar allows 0.1-36000 (s)",
@@ -934,3 +934,40 @@ def test_rotate_speed_in_the_script_and_the_loading_header(rig):
                 "hold f=1 t=0.1\nloading force\n"):
         with pytest.raises(ScriptError):
             parse(HEAD + bad, "bad.mtprot")
+
+
+def test_focus_wait_and_autofocus_statements(rig):
+    """Owner 2026-11-12: `focus um= t=` waits after the step (counted in the duration); `autofocus on / off` is a
+    boolean only (the target is the program's); `autofocus on` without a tracked reference bead fails the run."""
+    from mtpy.protocol.check import duration
+    s = parse(HEAD + "autofocus off\nfocus um=2 t=0.3\n")
+    assert duration(s.body) == pytest.approx(0.3)
+    z0 = api.focus.position()
+    api.protocol.run(s)
+    assert api.protocol.wait(30)["state"] == "completed"
+    assert api.focus.position() == pytest.approx(z0 + 2.0, abs=0.2) and not api.focus.autofocus_status()["on"]
+    with pytest.raises(ScriptError, match="autofocus on' or 'autofocus off"):
+        parse(HEAD + "autofocus z=3\n")
+    api.protocol.run(parse(HEAD + "autofocus on\n"))
+    st = api.protocol.wait(30)
+    assert st["state"] == "failed" and "NotReady" in st["reason"], st
+    with pytest.raises(ValueError):
+        api.focus.set_autofocus_target(130)
+    assert api.focus.set_autofocus_target(30)["target_percent"] == 30
+
+
+def test_stage_statement_moves_xy_relative_to_the_start(rig):
+    """Owner 2026-11-13: `stage x= y= t=` moves the sample stage by (x, y) um from its position at the protocol's
+    start (not from the last step), through api.stage.move_to; the read-back is an `act` event."""
+    from mtpy.protocol.check import duration
+    x0, y0 = api.stage.position()
+    n = len(events.events())
+    s = parse(HEAD + "stage x=5 y=0 t=0.2NLstage x=5 y=-3NLstage x=0 y=0NL".replace("NL", chr(10)))
+    assert duration(s.body) == pytest.approx(0.2)
+    api.protocol.run(s)
+    assert api.protocol.wait(30)["state"] == "completed"
+    got = [e.readback for e in events.events()[n:] if e.kind == "act" and e.request.get("quantity") == "stage_xy_mm"]
+    want = [(x0 + 0.005, y0), (x0 + 0.005, y0 - 0.003), (x0, y0)]
+    assert len(got) == 3 and all(abs(g[i] - w[i]) < 1e-3 for g, w in zip(got, want) for i in (0, 1)), got
+    with pytest.raises(ScriptError, match="1000"):
+        parse(HEAD + "stage x=5000 y=0" + chr(10))

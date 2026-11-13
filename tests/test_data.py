@@ -650,7 +650,15 @@ def test_rig_preset_in_run_file(cam, tmp_path, monkeypatch):
     api.acq.start(record=True, name="rig", folder=tmp_path)
     api.acq.wait_frames(5, 5)
     api.acq.stop()
-    pre = read_run(tmp_path / "rig.h5")["metadata"]["presets"]
+    meta = read_run(tmp_path / "rig.h5")["metadata"]
+    assert meta["devices"]["jai"]["binning_at_start"] == {"horizontal": 1, "vertical": 1}      # owner 2026-11-13
+    from mtpy.version import code_version          # owner 2026-11-13: the file names the code that wrote it
+    cv = code_version()
+    assert cv["version"] and len(cv["commit"]) == 40 and cv["dirty"] in (True, False)
+    assert meta["run"]["code_version"] == cv["version"] and meta["run"]["git_commit"] == cv["commit"]
+    assert meta["run"]["git_dirty"] == str(cv["dirty"]).lower()
+    assert meta["run"]["git_remote"] == cv["remote"] and "github.com" in cv["remote"]
+    pre = meta["presets"]
     assert pre["rig_name"] == "60x" and pre["rig"]["focal_shift_factor"] == 0.88 and "1.50" in pre["rig"]["objective"]
     api.devices.disconnect()
     with pytest.raises(api.NotReady, match="rig preset"):

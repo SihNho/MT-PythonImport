@@ -77,6 +77,8 @@ only devices present in the run.
 | `calibration` | string (JSON) | calibration in use: name, version, date, content or hash (e.g. the magnet force table, 0010) | configuration |
 | `backend` (`light_switch` only) | string (JSON) | the chosen back-end (mechanical shutter / AOM / laser modulation) and its settings (open / close delay, TTL polarity, power, modulation mode) (U24) | settings |
 
+*Written now for the camera (`jai`):* `identity`, `settings_at_start` and, since 2026-11-13 (owner: the run file had no binning, and the pixel size depends on it), `binning_at_start` = `{"horizontal", "vertical"}` read back from the camera at the start (`{"error": ...}` when the read failed; the acquisition goes on).
+
 ### `/metadata/presets/` — full content, not just names (U13, U15)
 
 | dataset | dtype | meaning |
@@ -95,7 +97,8 @@ only devices present in the run.
 |---|---|---|---|---|
 | `user` | string | — | who ran it | login / settings |
 | `start_utc`, `end_utc` | string | — | ISO 8601 | host clock |
-| `software_name`, `software_version`, `git_commit` | string | — | the application build | package metadata |
+| `software_name`, `software_version` | string | — | the application (`mtpy`, `api <version>`) | package metadata |
+| `code_version`, `git_commit`, `git_branch`, `git_remote`, `git_dirty` | string | — | the code that wrote the file: the release number of `pyproject.toml` (bumped at every code change), the commit and branch of the working tree, the address of the repository where that commit is found (origin), and `true` when code files were edited since that commit (`false` = exactly that commit; empty = git could not answer). Read once when the engine starts. *Written since 2026-11-13 (owner); older files have none* | `mtpy.version.code_version()` |
 | `tracking_stages` | string (JSON) | — | the stage combination used (decision 0003), e.g. `{"xy": "labview-crosscorr", "z": "labview-radial"}` | tracking configuration |
 | `parameters` | string (JSON) | — | every run setting, by the original control names where one exists (`Cross length (pixels)`, `Limit of Auto-Focus`, `Frame rate` as autofocus period, …) | GUI state at start |
 | `frame_rate_hz` | float64 `[3]` | Hz | the frame-rate triple: **preset / read back / measured** from the camera timestamps (U15); attribute `warning` when they disagree. The frame rate can never be missing | settings, device, computed at close |
@@ -153,8 +156,10 @@ only devices present in the run.
 | `magnet_t` | float64 | s | host time of that magnet reading | motor thread |
 | `rotor_deg` | float64 | deg | last rotor angle read (signed) — `.tra` column 2 | rotor thread |
 | `rotor_t` | float64 | s | host time of that rotor reading | rotor thread |
-| `focus_pos` | float64 | ASI internal units | last focus (piezo) position read; recorded every frame so bead z can be corrected for any piezo move (U35) | ASI thread |
+| `focus_um` | float64 | µm | last focus (piezo z) position read back before the frame, the program's z (sample up positive); from the acquisition's poller at 10 Hz and every focus move's read-back, so bead z can be compared with any piezo move (U35). *Written since 2026-11-12 (owner: the piezo as the ruler); older files have no such column. Not in the `.tra`, which has no place for it* | poller thread |
 | `focus_t` | float64 | s | host time of that focus reading | ASI thread |
+| `stage_x_mm`, `stage_y_mm` | float64 | mm | last sample stage x / y read back before the frame; from the acquisition's poller at 5 Hz and every stage move's read-back. With `focus_um` this is the stage's x, y, z per frame. *Written since 2026-11-13 (owner); older files have no such columns. Not in the `.tra`* | poller thread |
+| `stage_t` | float64 | s | host time of that stage reading (x and y are one reading) | ASI thread |
 | `x_px`, `y_px` | float64 `[n, n_beads]` | px | bead position — `.tra` columns 3 + 3i, 4 + 3i | tracking |
 | `z_um` | float64 `[n, n_beads]` | µm | bead height (the `.tra` header's "nm" is wrong, decision 0008) — `.tra` column 5 + 3i | tracking |
 | `cal_slice` | int32 `[n, n_beads]` | 1 | index of the closest calibration slice (`pos in cal image out`); −1 = lost | tracking |

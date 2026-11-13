@@ -134,10 +134,10 @@ class AttrPanel(QWidget):
         self._fill_favourites()
 
     # --- loading ----------------------------------------------------------------------------------------------------
-    def load(self):
+    def load(self, status=None):
         """Read the catalogue and every readable value (one worker; the camera answers ~200 reads in well under a
-        second), then fill the tree and the favourites."""
-        self.status.setText("loading...")
+        second), then fill the tree and the favourites. status: the line to show when done (after a write)."""
+        self.status.setText(status or "loading...")
 
         def job():
             cat = self.catalogue_fn()
@@ -156,7 +156,9 @@ class AttrPanel(QWidget):
             self.values = vals
             self._fill_tree()
             self._fill_favourites()
-            self.status.setText(f"{len(cat)} attributes in {len({e['category'] for e in cat})} categories")
+            self.status.setText(status or f"{len(cat)} attributes in {len({e['category'] for e in cat})} categories")
+            if status and self.selected in self.entries:
+                self.select(self.selected)                          # the control with the new range and value
         self.call(job, f"{self.title} attributes", done)
 
     def _visible(self, e):
@@ -237,10 +239,10 @@ class AttrPanel(QWidget):
             self.values[name] = got
             same = got == value or (isinstance(got, (int, float)) and isinstance(value, (int, float))
                                     and abs(float(got) - float(value)) <= 1e-9 * max(1.0, abs(float(value))))
-            self.status.setText(f"{name} = {self._fmt(got)} (read back)" if same else
-                                f"{name}: asked {self._fmt(value)}, the device took {self._fmt(got)} (its nearest step)")
-            self._fill_tree()
-            self._fill_favourites()
+            # owner 2026-11-13: one write moves other attributes' ranges and values (a smaller ROI raises the
+            # frame-rate maximum), so everything is read again; the control holds the applied value at once
             if self.selected == name:
-                self.select(name)                                   # the control now holds the applied value
+                self.select(name)
+            self.load(f"{name} = {self._fmt(got)} (read back)" if same else
+                      f"{name}: asked {self._fmt(value)}, the device took {self._fmt(got)} (its nearest step)")
         self.call(lambda: self.set_fn(name, value), f"{self.title} {name}", done)

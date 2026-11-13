@@ -4,10 +4,16 @@ presets applied with read-back (U15).
     api.camera.apply_preset({"name": "tracking 150 Hz", "rate_Hz": 150.0, "exposure_ms": 5.0})
     api.camera.set_exposure(4.0)        # -> 4.0 read back (ms)
 
+A number outside the camera's range now (rate, exposure, gain, a numeric attribute) is set to the nearest end of
+the range, with a `coerced` event (owner 2026-11-13: "coerce, not refuse"; as the magnet, decision 0018). The range
+is the camera's at this moment: the rate maximum follows the ROI, and the frame period must hold the exposure.
+
 Rate and ROI change how data are read: while recording they need confirm=True and log a `guarded_change` event.
 While acquiring they stop acquisition, apply, read back and restart; if the read-back fails, acquisition stays
 stopped (U15: a mismatch is shown and acquisition does not start).
 """
+import math
+
 from mtpy.devices.base import NEEDS_PAUSE  # .base, not the package: see the mtpy.devices import-order note
 
 from . import acq, events
@@ -16,6 +22,19 @@ from .devices import service
 from .errors import SafetyRefused
 
 PRESET_FIELDS = ("roi", "rate_Hz", "exposure_ms", "gain_dB")
+
+
+def _coerce(name, value, lo, hi, why=""):
+    """`value` inside [lo, hi]: the nearest end and a `coerced` event when it was outside. Anything that is not a
+    number (or a range that is not one) is returned unchanged, for the check that follows to refuse."""
+    def num(v):
+        return isinstance(v, (int, float)) and not isinstance(v, bool) and math.isfinite(v)
+    if not (num(value) and num(lo) and num(hi) and lo <= hi) or lo <= value <= hi:
+        return value
+    applied = type(value)(min(max(value, lo), hi))
+    events.log("coerced", request={"quantity": f"camera_{name}", "value": value}, applied=applied, device="camera",
+               reason=f"outside the camera's range [{lo:g}, {hi:g}] now{why}; set to the nearest end")
+    return applied
 
 
 def _guard(svc, dev, names, value, confirm, guarded=None):
@@ -61,6 +80,14 @@ def _set(name, value, confirm=False):
     svc = service("camera")
     dev = svc.require()
     s = svc.call(dev.settings, what="read settings")
+    lim = dev.limits().get(name)
+    if name == "rate_Hz":                # the frame period must hold the exposure
+        value = _coerce(name, value, lim[0], min(lim[1], 1000.0 / s["exposure_ms"]),
+                        f" (the camera's maximum {lim[1]:g} Hz at this ROI, the exposure {s['exposure_ms']:g} ms)")
+    elif name == "exposure_ms":
+        value = _coerce(name, value, lim[0], 1000.0 / s["rate_Hz"], f" (the frame period at {s['rate_Hz']:g} Hz)")
+    elif name == "gain_dB":
+        value = _coerce(name, value, *lim)
 
     def check(v):
         dev.check_setting(name, v, s["rate_Hz"], s["exposure_ms"])
@@ -177,9 +204,8 @@ def set_attribute(name, value, confirm=False):
     guarded = entry["category"] in NEEDS_PAUSE_CATEGORIES
     if entry["type"] == "enum" and value not in (entry.get("values") or [value]):
         raise SafetyRefused(f"camera {name}: {value!r} is not one of {entry.get('values')}")
-    if entry["type"] in ("int", "float") and (entry.get("min") is not None and entry.get("max") is not None) \
-            and not (entry["min"] <= float(value) <= entry["max"]):
-        raise SafetyRefused(f"camera {name}: {value!r} is outside [{entry['min']}, {entry['max']}]")
+    if entry["type"] in ("int", "float"):
+        value = _coerce(name, value, entry.get("min"), entry.get("max"))
     _guard(svc, dev, [name], {name: value}, confirm, guarded=[name] if guarded else [])
 
     def do():

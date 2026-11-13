@@ -33,6 +33,8 @@ Each file records one decision: what was decided, why, and what follows from it.
 | [0027](0027-rotor-limit-is-the-controller-counter-range.md) | The rotor's limit is the controller's own soft-limit registers read at open (today the 24-bit counter range); the program writes nothing to the controller; the profile adopts the readback | 2026-10-30 |
 | [0028](0028-camera-through-ebus-sdk.md) | Two camera SDKs chosen in Setup (`camera_sdk`): IMAQdx (default; NI driver, shared with LabVIEW) and JAI's eBUS SDK (.NET API via pythonnet, a C# pointer helper; Pleora driver). The SDK must match the USB3 Vision driver bound; the binding is the owner's system setting | 2026-11-01 |
 | [0029](0029-engine-process-and-gui-client.md) | The engine (API, devices, acquisition, safety) runs in its own process; the GUI is a client over a local connection, the display snapshot in shared memory, events streamed; scripts stay in-process. Chosen after the GUI's drawing was measured to share the interpreter with the tracker | 2026-11-01 |
+| [0030](0030-measured-criteria-gpu-fp32-method-versions.md) | Tracking methods are chosen by measurement; the GPU path is FP32 and free of the LabVIEW numbers; method names carry versions; user reports are HTML | 2026-11-07 |
+| [0031](0031-spline-v2-phase-spline-v2-and-the-fair-comparison.md) | `spline_v2` (scale-free correlation) and `phase_spline_v2` (the angle of the sum, no per-element atan2), the search to a 1e-3 slice bracket; the fair comparison from one run's recorded bead windows through every method | 2026-11-07 |
 
 The behavior specification of the LabVIEW program is in [../spec/README.md](../spec/README.md) and the device manuals are
 in [../manuals/README.md](../manuals/README.md).

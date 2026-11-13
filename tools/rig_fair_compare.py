@@ -30,7 +30,7 @@ T.OUT = OUT
 PICKS = [(1075.42, 572.24), (680.63, 703.4), (565.13, 792.07), (430.85, 476.99)]     # owner 2026-11-01 15:0x: beads 1, 13, 11, 8 of candidates_numbered.png
 WIN = 160                                                                     # window per bead (cross 120 -> 144 used)
 RUNS, RUN_S = int(os.environ.get("RUNS", "5")), float(os.environ.get("RUN_S", "20"))
-Z_METHODS = ("current", "spline", "phase_spline")
+Z_METHODS = tuple(__import__("mtpy.track", fromlist=["Z_METHODS"]).Z_METHODS)   # every version (0030)
 say = T.say
 
 
@@ -116,7 +116,7 @@ def offline(cal_path, xy, tap, h5_path):
         noise = float(np.nanstd(dz[:, 1] - dz[:, 2]) / np.sqrt(2) * 1000)       # beads 2 - 3 differential, nm
         row = {"fit_per_bead": fit, "holds": holds, "diff_noise_z_nm_beads_2_3": noise,
                "offline_s": time.perf_counter() - t0, "nan_frames": int(np.isnan(z).any(axis=1).sum())}
-        if zm == "current":                        # the online run was `current`: same frames, same numbers?
+        if zm == "current_v1":                     # the online run was `current`: same frames, same numbers?
             idx = {int(b): i for i, b in enumerate(buf_online)}
             keep = [i for i, b in enumerate(tap.buf[:n]) if int(b) in idx]
             sel = [idx[int(tap.buf[i])] for i in keep]
@@ -125,7 +125,7 @@ def offline(cal_path, xy, tap, h5_path):
         out["methods"][zm] = row
         say(f"RESULT offline {zm}: slopes " + ", ".join(f"{f['slope']:.4f}" for f in fit) + "; rms nm "
             + ", ".join(f"{f['rms_resid_nm']:.0f}" for f in fit) + f"; z noise (2-3) {noise:.1f} nm; "
-            + (f"online vs offline max |dz| {row['online_vs_offline_max_dz_nm']:.3f} nm" if zm == "current" else "")
+            + (f"online vs offline max |dz| {row['online_vs_offline_max_dz_nm']:.3f} nm" if zm == "current_v1" else "")
             + f"; {row['offline_s']:.0f} s")
     return out
 
@@ -201,6 +201,7 @@ class SavedTap:
 if __name__ == "__main__":
     if os.environ.get("OFFLINE"):                 # the offline part alone, from windows.npz
         tap = SavedTap(os.path.join(OUT, "windows.npz"))
-        T.dump(offline(os.path.join(OUT, "cal_focus"), tap.xy, tap, os.path.join(OUT, "piezo_current_numba.h5")), "compare.json")
+        T.dump(offline(os.path.join(OUT, "cal_focus"), tap.xy, tap, os.path.join(OUT, "piezo_current_numba.h5")),
+               os.environ.get("COMPARE", "compare.json"))     # COMPARE: a later pass (v2 methods) beside the 11-01 record
     else:
         main()

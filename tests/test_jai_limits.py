@@ -23,3 +23,29 @@ def test_rate_cap_is_the_simulators_without_a_session():
     assert cam.limits()["rate_Hz"] == (1.0, RATE_MAX_HZ)
     with pytest.raises(SafetyRefused):
         cam.check_setting("rate_Hz", 400.0, 90.0, 1.9)
+
+
+def test_catalogue_ranges_follow_the_camera(monkeypatch):
+    """Owner 2026-11-13: the frame-rate maximum in the settings panel stayed at the full frame's after the ROI was
+    halved; the ranges are read at every catalogue() call, the attribute list once."""
+    from mtpy.devices import jai
+
+    class Fake:
+        rate_max, listed = 248.0, 0
+
+        def attributes(self, root, vis=None):
+            Fake.listed += 1
+            return [("CameraAttributes::AcquisitionControl::AcquisitionFrameRate", jai.F64, True, True)]
+
+        def text(self, fn, name):
+            return ""
+
+        def limit(self, fn, name, t):
+            return {"IMAQdxGetAttributeMinimum": 1.0, "IMAQdxGetAttributeMaximum": self.rate_max}.get(fn, 0.0)
+
+    cam = JaiCamera()
+    cam.cam = Fake()
+    assert cam.catalogue()[0]["max"] == 248.0
+    n = Fake.listed
+    Fake.rate_max = 555.0                         # what the driver answers once the ROI is 640 x 512
+    assert cam.catalogue()[0]["max"] == 555.0 and Fake.listed == n

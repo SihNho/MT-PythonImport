@@ -52,7 +52,7 @@ proposals; phase 5 may refine them, and every change after the first release fol
 | `api.rotor.rotate(turns, speed_turns_s=None)` / `api.rotor.position()` | signed turns, inside the profile |
 | `api.stage.move_to(x_mm, y_mm)` / `api.focus.move_to(z_um)` | ASI; inside the window; focus moves invalidate nothing but are logged (U35) |
 | `api.magnet.set_speed(mm_s)` | the magnet speed now, also during a move (the `ramp rate=` loop); inside `magnet_speed_mm_s`, an `act` event (owner 2026-11-06) |
-| `api.focus.autofocus(on, bead_id=)` / `autofocus_status()` | the focus holds a tracked bead's z at the LUT's middle (spec F4.06): own thread, one move of at most 0.2 um per 0.3 s through `move_to`, `autofocus_move` events (owner 2026-11-06) |
+| `api.focus.autofocus(on, bead_id=)` / `autofocus_status()` / `set_autofocus_target(percent)` | the focus holds a tracked bead's z at the target (owner 2026-11-12: percent of the LUT, 0 = index 0 = the largest pattern, default 30, changeable while on; it was the LUT's middle; bead_id None = the tracked reference bead, as a protocol's `autofocus on`) (spec F4.06): own thread, one move of at most 0.2 um per 0.3 s through `move_to`, `autofocus_move` events (owner 2026-11-06) |
 | `api.light.set(laser, on: bool)` | manual on / off (U24); refused while a sequence runs |
 | `api.light.load_sequence(seq)` / `start_sequence()` / `stop_sequence()` | illumination sequence run by the Arduino (0005, U24) |
 | `api.sync.set_ratio(n)` | JAI frames per EMCCD frame (0005) |
