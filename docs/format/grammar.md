@@ -50,7 +50,7 @@ kind experiment            # experiment | screening; `loading magnet` | `loading
 | `hold f= t=` | f (pN; coerced into the reachable range, 0018); t (s) | constant force |
 | `move mm= t=` | mm (magnet position, mm; outside the position limit -> the nearest limit, 0018); t (s, optional) | magnet by position instead of force |
 | `rotate from= to= f= t=` | from, to (turns, ±profile max); f (pN); exactly one of t (s), speed (turns/s, > 0) or spd (the rotor's SPD setting, > 0; turns/s = SPD x 10 / 500) | rotation at a force |
-| `focus um= ` | um (µm, relative to start, ±profile window); t (s, optional: a wait after the step, owner 2026-11-12) | focus step (U35; use sparingly) |
+| `focus um= ` | um (µm, relative to start, ±profile window); t (s, optional: a wait after the step, owner 2026-11-12); speed (um/s > 0, optional: this move as a ramp at that piezo speed, owner 2026-11-14) | focus step (U35; use sparingly) |
 | `stage x= y=` | x, y (µm from the stage position at the protocol's start, each ±1000; the profile's stage window is checked with the devices); t (s, optional: a wait after the move) | sample stage step (owner 2026-11-13) |
 | `autofocus on` / `autofocus off` | none (owner 2026-11-12: a boolean only) | the autofocus on the tracked reference bead at the program's target (`api.focus.set_autofocus_target`, the Run page; percent of the LUT, default 30) |
 | `record t=` / `record on` / `record off` | t (s) | recording on for a time, or switch |

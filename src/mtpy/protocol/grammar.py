@@ -129,7 +129,8 @@ PROTOCOL_KEYS = {
     "rotate": {"from": Key("num", "turns"), "to": Key("num", "turns"), "f": PN, "t": _t(0.1, required=False),
                "speed": Key("num", "turns/s", 0.0, None, False, True),     # one of t= / speed= / spd= (owner 2026-11-06:
                "spd": Key("num", "SPD", 0.0, None, False, True)},          # the rotor speed written in the script)
-    "focus": {"um": Key("num", "um"), "t": _t(required=False)},     # owner 2026-11-12: a wait after the step
+    # owner 2026-11-12: t= is a wait after the step; 2026-11-14: speed= makes the step a slow ramp of the piezo
+    "focus": {"um": Key("num", "um"), "t": _t(required=False), "speed": Key("num", "um/s", 0.0, None, False, True)},
     # owner 2026-11-13: the sample stage x/y by (x, y) um from its position at the protocol's start (e.g. a known
     # step under a tracked reference bead gives the pixel size). The profile's stage window is the hardware travel,
     # so this range is the guard against a typo: shortcut: +-1000 um, widen when a protocol needs another field.

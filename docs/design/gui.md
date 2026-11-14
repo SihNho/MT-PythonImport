@@ -54,6 +54,9 @@ The owner ran watch -> picks -> calibrate -> track -> protocol -> Save the trace
   exists); the owner's protocols live in `G:\Data\protocols` (`*.mtprot`) and the Experiment page lists them in a
   combo (one click loads; Save as... puts a new one there) - "a protocol used again and again is tedious to type".
 - **Explore** magnet speed starts at the profile limit (15 mm/s).
+- **Explore, the piezo** (owner 2026-11-14): the focus rows are named "Piezo z (focus)" / "Piezo move by" (the
+  focus is the ASI Tiger Z piezo) and "Piezo speed" (um/s) sets the speed of every later focus move; the entry
+  shows the speed read back.
 - **Calibration viewer**: z found (um) and the residual (nm) were on one axis and both unreadable; the residual
   has its own plot now (x linked).
 - **Experiment**: a `repeat N x` spin on the table (cycle repeat -> `loop n=N`); "estimated M min S s" after

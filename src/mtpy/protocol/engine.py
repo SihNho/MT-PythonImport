@@ -439,8 +439,20 @@ class Engine:
             api.events.log("protocol", action="warning", line=st.line, name=self.script.name, level="warning",
                            reason="'focus' while the autofocus is on: the autofocus moves the focus back; write "
                                   "'autofocus off' before the focus steps")
-        self._motion(lambda: api.focus.move_to(self.focus_z0 + self._a(st, "um")))
+        target, v, out = self.focus_z0 + self._a(st, "um"), self._a(st, "speed", None), {}
+        if v is None:
+            self._motion(lambda: api.focus.move_to(target))
+        else:                                        # owner 2026-11-14: a ramp - this one move at speed= um/s
+            v0 = api.focus.speed()
+            try:
+                got = api.focus.set_speed(v / 1000.0)            # mm/s; above the cap -> the cap, logged `coerced`
+                out = {"speed_um_s": got * 1000.0}
+                self._motion(lambda: api.focus.move_to(target),
+                             expected_s=abs(target - api.focus.position()) / (got * 1000.0))
+            finally:
+                api.focus.set_speed(v0)
         self._sleep(self._a(st, "t", 0.0))
+        return out
 
     def _do_stage(self, st):
         if self.stage_xy0 is None:                   # the step came with a mid-run edit: relative to the stage now

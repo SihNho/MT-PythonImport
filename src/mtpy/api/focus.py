@@ -35,11 +35,17 @@ def speed():
 
 
 def set_speed(mm_s):
-    """Set the focus drive's speed (mm/s); the device refuses faster than the speed it opened with and restores that
-    speed at close. Owner 2026-11-01: the bench compares the current speed with 1/10 of it. Returns the read-back."""
+    """Set the focus drive's speed (mm/s); faster than the speed the device opened with is lowered to that speed
+    (`coerced`), a very low speed is rounded by the controller (the read-back is returned); the device restores the
+    opening speed at close. Owner 2026-11-01: the bench compares the current speed with 1/10 of it. Returns the read-back."""
     if not (isinstance(mm_s, (int, float)) and not isinstance(mm_s, bool) and mm_s > 0):
         raise ValueError(f"focus speed {mm_s!r} must be a positive number (mm/s)")
     svc = service("focus")
+    cap = getattr(svc.require(), "speed0", None)
+    if cap and mm_s > cap:                      # owner 2026-11-13: out of range is coerced, not refused
+        events.log("coerced", request={"quantity": "focus_speed_mm_s", "value": mm_s}, applied=cap,
+                   reason=f"the focus speed is at most the speed the session opened with ({cap} mm/s)")
+        mm_s = cap
     got = svc.call(svc.require().set_speed, mm_s, what=f"S Z={mm_s}")
     events.log("setting", device="focus", speed_mm_s=mm_s, readback=got)
     return got

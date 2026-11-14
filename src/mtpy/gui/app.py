@@ -704,9 +704,15 @@ class MainWindow(QMainWindow):
                                           QPushButton("+1 turn", clicked=lambda: self._rotate(1.0)),
                                           QPushButton("-1 turn", clicked=lambda: self._rotate(-1.0))))
         self.focus_um = _spin(-1000.0, 1000.0, 0.1, 0.0, 2, " um")
-        f.addRow("Focus z", _row(self.focus_um, QPushButton("Move", clicked=self._move_focus)))
+        # owner 2026-11-14: "the piezo stage on Explore" - the focus IS the piezo (ASI Tiger Z); named so, plus its speed
+        f.addRow("Piezo z (focus)", _row(self.focus_um, QPushButton("Move", clicked=self._move_focus)))
         self.focus_by = _spin(-100.0, 100.0, 0.1, 0.0, 2, " um")
-        f.addRow("Focus move by", _row(self.focus_by, QPushButton("Move", clicked=self._move_focus_by)))
+        f.addRow("Piezo move by", _row(self.focus_by, QPushButton("Move", clicked=self._move_focus_by)))
+        self.focus_speed = _spin(0.01, 10000.0, 1.0, 1.0, 2, " um/s")
+        self.focus_speed.setToolTip("The piezo's speed for every focus move until changed (restored when the device "
+                                    "closes); above the opening speed it is lowered to it")
+        f.addRow("Piezo speed", _row(self.focus_speed, QPushButton("Set", clicked=lambda: self._call(
+            lambda: api.focus.set_speed(self.focus_speed.value() / 1000.0) * 1000.0, "piezo speed (um/s)", self.focus_speed.setValue))))   # the read-back
         self.exp_now = _spin(0.1, 11.0, 0.1, 2.0, 2, " ms")
         self.gain_now = _spin(0.0, 12.0, 0.5, 0.0, 1, " dB")
         f.addRow("Exposure (immediate)", _row(self.exp_now, QPushButton(

@@ -34,7 +34,7 @@ end protocol
 | `zero t=T` | 자석을 0 mm(맨 위, 힘 없음)로, T초. 추적의 영점은 잡지 않음 |
 | `rotate from=A to=B f=F t=T` | 힘 F로 두고, 로터를 원점 기준 A turn으로 보낸 뒤 B turn까지 (B-A)/T turn/s로 회전. `t=` 대신 `speed=` turn/s 또는 `spd=`(로터의 SPD 설정값, turn/s = SPD x 10 / 500)도 가능 |
 | `loading magnet` / `loading force` | 머리말 줄(`protocol` 다음): 램프를 자석 속도(`speed=`)로 썼는지 힘 loading rate(`rate=`)로 썼는지. 반대로 쓴 램프는 Check에서 경고. 표는 Loading 선택대로 이 줄을 씀 |
-| `focus um=X` | 초점을 프로토콜 시작 위치에서 X um 떨어진 곳으로 (직전 단계 기준이 아님); `t=T`를 붙이면 이동 후 T초 대기. 위치는 프레임마다 기록됨 (`/mt/focus_um`) |
+| `focus um=X` | 초점을 프로토콜 시작 위치에서 X um 떨어진 곳으로 (직전 단계 기준이 아님); `t=T`를 붙이면 이동 후 T초 대기; `speed=V` (um/s, 2026-11-14)를 붙이면 그 이동만 피에조를 그 속도로 천천히 움직임 (램프): 피에조를 열 때의 속도보다 빠르면 그 속도로 낮추고(`coerced`), 아주 느린 값은 컨트롤러가 반올림하며, 이동 뒤 원래 속도로 되돌림. 위치는 프레임마다 기록됨 (`/mt/focus_um`, 10 Hz로 읽음) |
 | `stage x=X y=Y` | 샘플 스테이지를 프로토콜 시작 위치에서 (X, Y) um 떨어진 곳으로 (직전 단계 기준이 아님; 각각 ±1000 이내); `t=T`를 붙이면 이동 후 대기. 이동마다 리드백이 run 파일의 `act` 이벤트(`stage_xy_mm`, mm)로 남음; 스테이지 위치는 프레임마다 기록됨 (`/mt/stage_x_mm`, `/mt/stage_y_mm`, 5 Hz로 읽은 값) |
 | `autofocus on` / `autofocus off` | 오토포커스 켜기 / 끄기 (값 없음: 기준 비드와 목표(LUT의 %)는 프로그램에서 설정). `focus` 단계 앞에는 `autofocus off`를 쓸 것: 켜져 있으면 오토포커스가 초점을 되돌림 (경고 이벤트가 남음) |
 | `record on` / `record off` / `record t=T` | 런 파일에 기록을 켬 / 끔 / T초 동안 켬 |

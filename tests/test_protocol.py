@@ -481,6 +481,17 @@ def test_engine_refuses_a_structural_draft_at_the_boundary(rig):
     assert ev[0].extra["action"] == "refused" and "structural change refused" in ev[0].extra["reason"]
 
 
+def test_focus_speed_is_a_ramp_and_the_speed_is_restored(rig):
+    """Owner 2026-11-14: `focus um= speed=` moves the piezo at that speed (um/s) and puts the old speed back."""
+    z0, v0 = api.focus.position(), api.focus.speed()
+    api.protocol.run(parse(HEAD + "focus um=1 speed=2000\nfocus um=0 speed=2000\n"))     # the sim's unit: 2 um/s
+    time.sleep(0.25)
+    assert z0 + 0.1 < api.focus.position() < z0 + 0.9                    # on the way, not a step
+    st = api.protocol.wait(30)
+    assert st["state"] == "completed", st
+    assert api.focus.position() == pytest.approx(z0, abs=0.2) and api.focus.speed() == v0
+
+
 def test_mid_run_edit_focus_uses_the_run_start_reference(rig):
     """Review l2s-wp5-r1 fix 3: an edit's focus check uses the focus position read when the run started (the
     engine's reference), not the position now. The first step moved the focus +45 um; a later step edited to +48 um

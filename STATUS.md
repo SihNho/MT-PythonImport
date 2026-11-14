@@ -314,6 +314,9 @@ Short and current. Details live in the linked documents; the history is in git a
   500 Hz held ~9.4 of 12 cores and lost frames); the effect on the CPU load is to measure on the rig.
   0.1.1 (owner 2026-11-13): the "Camera settings..." button and panel are gone; a click on the camera / emccd
   row of the device table opens that camera's preset, parameters and attributes in the device panel.
+  0.1.2 (owner 2026-11-14): `focus um= speed=` (um/s) runs a focus step as a slow piezo ramp (above the opening
+  speed -> lowered, `coerced`; the old speed restored); Explore names the focus rows "Piezo" and has a piezo
+  speed entry. Simulator only; the piezo's lowest real speed is not measured (1 um/s ran on 2026-11-07).
 - **Next:** protocols on hardware (force ramps, rotation, 3-state clamp, autofocus), the stop / watchdog paths
   exercised on the rig, then the tethered-bead calibration.
 - **Queued (owner 2026-11-06):** which side of the focus to track on. The owner's first run had the beads below
