@@ -281,6 +281,9 @@ checked separately in phases 6/7):**
   `tracking.latest(bead)` (x_px, y_px, z_um, good, segment, buffer number, camera time; `uncertainty: None` with
   `"not yet computed"`); `beads.select(ids, cal_path=None)` (1-based ids of a `.cal`; None = the first `cal*` in the
   sim camera's fixture folder; refused while acquiring), `beads.selected()`.
+- `api.zscan.from_reference(path, xy, ref_cal, bead)` writes a pre-calibration `.cal` (every position with one
+  bead's LUT of a reference calibration); `api.zscan.reference_conditions(ref_cal)` reads the camera conditions and
+  the objective from the run metadata beside it; `api.camera.binning()` reads the binning (owner 2026-11-14).
 - `api.camera.set_rate` / `set_roi` during acquisition now close the segment after the stop (frames still in the
   camera buffer are taken first) and open the next one with the settings read back before the restart. While
   recording, every device service's `recording` flag is set, so the "guarded while recording" settings need

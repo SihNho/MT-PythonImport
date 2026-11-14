@@ -564,6 +564,62 @@ def test_run_page_calibrates_then_tracks_into_the_chosen_run_file(window, monkey
     _until(app, lambda: not api.acq.running(), 15, "stopped")
 
 
+def test_pre_calibration_tracks_with_a_saved_reference_and_zeroes_the_plot(window, monkeypatch, tmp_path):
+    """Owner 2026-11-14: a reference is a name -> a .cal path and one bead (json, paths only); Pre-calibrate gives
+    every picked bead that LUT with no z scan and no reference bead, sets the camera to the conditions in the run
+    metadata beside the reference until Reset calibration, and Set zero makes the z shown now 0 on the graph."""
+    import json
+
+    from PySide6.QtWidgets import QFileDialog
+
+    import mtpy.gui.app as gapp
+    from mtpy.lvfiles import read_cal
+    app, w = window
+    monkeypatch.setattr(gapp, "PRECAL_FILE", tmp_path / "precal_references.json")
+    ref = tmp_path / "ref"
+    ref.mkdir()
+    shutil.copy(FIXTURE / "cal002", ref / "cal002")
+    (ref / "tra001.meta.json").write_text(json.dumps({
+        "calibration": {"path": "X:/moved/cal002"}, "presets": {"rig_name": w.objective.currentData()},
+        "devices": {"jai": {"settings_at_start": {"rate_Hz": 90.0, "exposure_ms": 3.0, "gain_dB": 2.0},
+                            "binning_at_start": {"horizontal": 1, "vertical": 1}}}}), encoding="utf-8")
+    w.precal_name.setText("M270")
+    w.precal_cal.setText(str(ref / "cal002"))
+    w.precal_bead.setValue(2)
+    w._save_precal()
+    assert w.precal.currentText() == "M270" and "exposure_ms" in w.precal_status.text()
+    assert json.loads(gapp.PRECAL_FILE.read_text(encoding="utf-8")) == {"M270": {"cal": str(ref / "cal002"), "bead": 2}}
+    w._connect()
+    _until(app, lambda: "8 / 8" in w.dev_summary.text(), 15, "connect")
+    w._apply_preset()
+    w._toggle_acq()
+    _until(app, lambda: api.acq.running() and w.img_item.image is not None, 20, "camera")
+    s0 = api.devices.info("camera")["settings"]
+    assert s0["exposure_ms"] != pytest.approx(3.0)
+    cal = read_cal(FIXTURE / "cal002")
+    w.picks = [tuple(xy) for xy in cal["xy"][:2, :2]]
+    w._draw_picks()
+    monkeypatch.setattr(QFileDialog, "getExistingDirectory", staticmethod(lambda *a, **k: str(tmp_path)))
+    w._flow_precal()
+    _until(app, lambda: w.bead_ids == [1, 2] and w.ed_h5.text() == str(tmp_path / "tra001.h5"), 60,
+           "the picked beads tracked with the reference's LUT")
+    out = read_cal(tmp_path / "precal001")
+    assert (out["stack"] == cal["stack"][1]).all() and (out["xy"] == cal["xy"][:2, :2]).all()
+    assert set(w.roles.values()) == {"tethered"}                          # no reference bead
+    s = api.devices.info("camera")["settings"]
+    assert s["exposure_ms"] == pytest.approx(3.0) and s["gain_dB"] == pytest.approx(2.0)
+    _until(app, lambda: len(w.history) > 3, 20, "tracked rows")
+    w.btn_zero.click()
+    w._draw(w.plot, w.curves, "t", "z", None)
+    assert w.z_zero is not None and len(w.z_zero) == 2
+    assert "zero" in w.plot.getAxis("left").labelText
+    w._new_calibration()
+    _until(app, lambda: api.beads.selected() is None and w.z_zero is None
+           and api.devices.info("camera")["settings"]["exposure_ms"] == pytest.approx(s0["exposure_ms"]), 30,
+           "beads dropped, the zero cleared, the camera as before")
+    w._toggle_acq()
+    _until(app, lambda: not api.acq.running(), 15, "stopped")
+
 
 def test_experiment_opens_empty_and_the_estop_banner_shows_only_while_engaged(window):
     """Design critique 2026-11-05 #1 and #4: no runnable example on the Experiment page at start; the red banner

@@ -4,6 +4,7 @@ the camera rate by the running acquisition (acq.average), so acquisition must be
 api.focus (refused unless the safety profile has a focus window).
 shortcut: the simulated camera's image does not change with focus, so a .cal made on the simulator is flat (every
 slice alike); it exercises the flow only. Real slices come with phase 6."""
+import json
 import time
 from datetime import datetime
 from pathlib import Path
@@ -11,7 +12,7 @@ from pathlib import Path
 import numpy as np
 
 from mtpy import calib, track
-from mtpy.lvfiles import cal_date, write_cal
+from mtpy.lvfiles import cal_date, read_cal, write_cal
 
 from . import acq, devices, events, focus
 
@@ -122,6 +123,54 @@ def run(path, xy, slices=60, step_nm=100.0, n_avg=20, cross=120, nm_per_px=84.0,
     events.log("calibration", request={"slices": slices, "step_nm": step_nm, "n_avg": n_avg, "cross": cross,
                                            "settle_s": settle_s},
                    path=str(path), beads=len(xy), focus_start_um=z0, focus_end_um=z_end, lut_index0_um=base)
+    return cal
+
+
+def reference_conditions(ref_cal):
+    """What a reference .cal was taken with, read from the run metadata saved beside it (the `*.meta.json` whose
+    calibration is this file): {"camera": {rate_Hz, exposure_ms, gain_dB}, "binning", "objective", "source"}; {} when
+    no such file is there (owner 2026-11-14: "the metadata holds all of it" - nothing is typed again)."""
+    p = Path(ref_cal)
+    for m in sorted(p.parent.glob("*.meta.json")):
+        try:
+            meta = json.loads(m.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            continue
+        if not isinstance(meta, dict) or Path(str((meta.get("calibration") or {}).get("path", ""))).name != p.name:
+            continue
+        jai = (meta.get("devices") or {}).get("jai") or {}
+        s = jai.get("settings_at_start") or {}
+        return {"camera": {k: s[k] for k in ("rate_Hz", "exposure_ms", "gain_dB") if isinstance(s.get(k), (int, float))},
+                "binning": jai.get("binning_at_start"), "objective": (meta.get("presets") or {}).get("rig_name"),
+                "source": str(m)}
+    return {}
+
+
+def from_reference(path, xy, ref_cal, bead=1):
+    """Pre-calibration (owner 2026-11-14): no z scan and no reference bead - write a .cal at `path` that gives every
+    picked position `xy` the LUT of bead `bead` (1-based) of the reference calibration `ref_cal`, so the beads can
+    be tracked at once. z is approximate (another bead's LUT) and nothing subtracts the drift. Returns the cal."""
+    xy = np.asarray(xy, dtype=np.float64).reshape(-1, 2)
+    if len(xy) == 0:
+        raise ValueError("pre-calibration: no bead positions")
+    p = Path(path)
+    if p.exists() or p.is_dir():
+        raise FileExistsError(f"pre-calibration: {p} exists; it is never overwritten - choose another name")
+    ref = read_cal(ref_cal)
+    n = len(ref["stack"])
+    if not (isinstance(bead, int) and 1 <= bead <= n):
+        raise ValueError(f"pre-calibration: bead {bead!r} is not one of the {n} beads of {Path(ref_cal).name}")
+    why = outside_margin(acq.average(1).shape, xy, ref["stack"].shape[2] + 1)
+    if why:
+        raise ValueError("pre-calibration: " + "; ".join(why))
+    k = bead - 1
+    cal = {"xy": xy, "stack": np.repeat(ref["stack"][k:k + 1], len(xy), axis=0), "n_slices": ref["n_slices"],
+           "bead_i32": np.repeat(np.asarray(ref["bead_i32"])[k:k + 1], len(xy), axis=0), "z_step": ref["z_step"],
+           "n_avg": ref["n_avg"], "date": cal_date(datetime.now()), "bead_flags": np.zeros(len(xy), dtype=np.int32),
+           "nm_per_px": ref["nm_per_px"]}
+    write_cal(path, cal)
+    events.log("calibration", action="pre-calibration", path=str(path), beads=len(xy), reference=str(ref_cal),
+               reference_bead=bead)
     return cal
 
 

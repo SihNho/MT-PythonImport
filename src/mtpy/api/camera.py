@@ -118,6 +118,12 @@ def set_rate(rate_Hz, confirm=False):
     return _set("rate_Hz", rate_Hz, confirm)
 
 
+def binning():
+    """The camera's binning read back, {"horizontal", "vertical"}. Example: `api.camera.binning()`."""
+    svc = service("camera")
+    return svc.call(svc.require().binning, what="binning")
+
+
 def set_roi(x, y, w, h, confirm=False):
     """ROI in binned pixels (w step 8, h step 2, inside 1280 x 1024); needs a short pause. Returns the read-back."""
     return _set("roi", (x, y, w, h), confirm)

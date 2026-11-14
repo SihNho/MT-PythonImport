@@ -57,6 +57,20 @@ The owner ran watch -> picks -> calibrate -> track -> protocol -> Save the trace
 - **Explore, the piezo** (owner 2026-11-14): the focus rows are named "Piezo z (focus)" / "Piezo move by" (the
   focus is the ASI Tiger Z piezo) and "Piezo speed" (um/s) sets the speed of every later focus move; the entry
   shows the speed read back.
+- **Pre-calibration** (owner 2026-11-14): a rough z with no z scan and no reference bead, e.g. to see a tether's
+  extension from the surface, or how far a long DNA reaches, before the real calibration.
+  - A **reference** is a name (the bead type) -> the path of a `.cal` and one of its beads, saved on the Calibrate
+    page into `config/precal_references.json` (paths only, no data). The camera conditions (rate, exposure, gain,
+    binning) and the objective of the reference are not typed: they are read from the run metadata beside the
+    `.cal` (the `*.meta.json` whose calibration is that file).
+  - Run page, **3b. Pre-calibrate (no z scan) with [reference]**: asks for the data folder, sets the camera's
+    exposure, rate and gain to the reference's (out-of-range values are coerced), writes `precal001` (every picked
+    position with the reference bead's LUT; `api.zscan.from_reference`) and tracks all picked beads as tethered.
+    Reset calibration puts the camera back. Refused when the Setup objective differs from the reference's, or the
+    binning differs (shortcut: the binning is checked, not set). Without a `*.meta.json` beside the reference the
+    camera is left alone and the objective is not checked.
+  - **Set zero (z)** / **Clear zero** above the graph: the z each bead shows now becomes 0 on the graphs. The plot
+    only: the run file keeps the raw z.
 - **Calibration viewer**: z found (um) and the residual (nm) were on one axis and both unreadable; the residual
   has its own plot now (x linked).
 - **Experiment**: a `repeat N x` spin on the table (cycle repeat -> `loop n=N`); "estimated M min S s" after

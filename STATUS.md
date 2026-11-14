@@ -317,6 +317,10 @@ Short and current. Details live in the linked documents; the history is in git a
   0.1.2 (owner 2026-11-14): `focus um= speed=` (um/s) runs a focus step as a slow piezo ramp (above the opening
   speed -> lowered, `coerced`; the old speed restored); Explore names the focus rows "Piezo" and has a piezo
   speed entry. Simulator only; the piezo's lowest real speed is not measured (1 um/s ran on 2026-11-07).
+  0.2.0 (owner 2026-11-14): pre-calibration - the picked beads tracked at once with the LUT of a saved reference
+  (`config/precal_references.json`: name -> .cal path and bead; the camera conditions and the objective come from
+  the `*.meta.json` beside the .cal), the camera matched until Reset calibration, Set zero on the graphs
+  (design/gui.md). Simulator only: how well another bead's LUT gives z on the rig is not measured.
 - **Next:** protocols on hardware (force ramps, rotation, 3-state clamp, autofocus), the stop / watchdog paths
   exercised on the rig, then the tethered-bead calibration.
 - **Queued (owner 2026-11-06):** which side of the focus to track on. The owner's first run had the beads below

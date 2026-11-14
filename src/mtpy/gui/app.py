@@ -176,6 +176,33 @@ TOUCH_FILE = Path(__file__).resolve().parents[3] / "config" / "touch_position.js
 PRESETS_FILE = TOUCH_FILE.with_name("explore_presets.json")   # owner 2026-11-04: two PI presets, "Cal+" / "Cal-"
 
 
+# owner 2026-11-14: the pre-calibration references, {name (the bead type): {"cal": path, "bead": n}} - paths only; the
+# camera conditions and the objective are read from the run metadata beside the .cal (api.zscan.reference_conditions)
+PRECAL_FILE = TOUCH_FILE.with_name("precal_references.json")
+
+
+def load_precal():
+    try:
+        refs = json.loads(PRECAL_FILE.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+    return refs if isinstance(refs, dict) else {}
+
+
+def match_camera(want):
+    """Set the camera's exposure / rate / gain to `want` (keys left out stay; out-of-range values are coerced by the
+    API) and return what they were before, for the way back."""
+    s = api.devices.info("camera")["settings"]
+    before = {k: s[k] for k in ("rate_Hz", "exposure_ms", "gain_dB") if k in want and k in s}
+    fns = {"exposure_ms": api.camera.set_exposure, "rate_Hz": lambda v: api.camera.set_rate(v, confirm=True),
+           "gain_dB": api.camera.set_gain}
+    shorter = want.get("exposure_ms", float("inf")) <= s.get("exposure_ms", 0.0)    # a rate needs its exposure to fit
+    for k in (("exposure_ms", "rate_Hz") if shorter else ("rate_Hz", "exposure_ms")) + ("gain_dB",):
+        if k in want:
+            fns[k](want[k])
+    return before
+
+
 def load_touch_mm():
     with contextlib.suppress(OSError, ValueError, KeyError, TypeError):
         return float(json.loads(TOUCH_FILE.read_text(encoding="utf-8"))["touch_mm"])
@@ -441,6 +468,13 @@ class MainWindow(QMainWindow):
         ctl.addWidget(self.follow_s)
         ctl.addWidget(self.auto_scale)
         ctl.addWidget(self.sub_ref)
+        # owner 2026-11-14: "a button sets that position as the zero" - the z each bead shows now becomes 0 on the
+        # graphs (the plot only; the run file keeps the raw z)
+        self.z_zero, self._zero_now = None, False
+        self.btn_zero = QPushButton("Set zero (z)", clicked=lambda: setattr(self, "_zero_now", True))
+        self.btn_zero.setToolTip("The z every bead shows now becomes 0 on the graphs; the data keep the raw z")
+        ctl.addWidget(self.btn_zero)
+        ctl.addWidget(QPushButton("Clear zero", clicked=lambda: setattr(self, "z_zero", None)))
         ctl.addWidget(QLabel("Plot refresh"))
         ctl.addWidget(self.plot_hz)
         ctl.addStretch(1)
@@ -618,6 +652,16 @@ class MainWindow(QMainWindow):
         f.addRow(_row(QPushButton("3. Calibrate the picked beads...", clicked=self._flow_calibrate),
                       QPushButton("Reset calibration", clicked=self._new_calibration)))
         f.addRow(self.run_cal)
+        # owner 2026-11-14: pre-calibration - no z scan and no reference bead: the picked beads get the LUT of a saved
+        # reference .cal (Calibrate page) for a rough z, e.g. to see a tether's extension before the real calibration
+        self.precal = QComboBox()
+        self.precal.addItems(sorted(load_precal()))
+        self.precal_info = QLabel("3b. rough z without a z scan: the picked beads get the LUT of a saved reference "
+                                  "(More... > Calibrate). The camera's rate, exposure and gain are set to the "
+                                  "reference's until Reset calibration; check only that the objective is the same.")
+        self.precal_info.setWordWrap(True)
+        f.addRow(_row(QPushButton("3b. Pre-calibrate (no z scan) with", clicked=self._flow_precal), self.precal))
+        f.addRow(self.precal_info)
         f.addRow(_row(self.run_track, self.btn_rec))
         # owner 2026-11-06: autofocus through the piezo (spec F4.06): the focus holds the reference bead's tracked z at
         # the LUT's middle; off by default, off again at Reset calibration and when the camera stops
@@ -657,14 +701,89 @@ class MainWindow(QMainWindow):
         self.run_cal.setText(f"3. scanning -> {cal.name}; then tracking into {next_tra(d)}.h5 in {d}")
         self._run_zscan()
 
-    def _track_from_cal(self, path):
+    def _flow_precal(self):
+        """Step 3b of the Run page: track the picked beads with a saved reference's LUT (api.zscan.from_reference)."""
+        name = self.precal.currentText()
+        ref = load_precal().get(name)
+        if not self.picks or not api.acq.running():
+            self._fail("pre-calibration", "start the camera and left click the beads on the image first")
+            return
+        if not ref:
+            self._fail("pre-calibration", "no reference: save one on the Calibrate page (More...) first")
+            return
+        cond = api.zscan.reference_conditions(ref["cal"])
+        obj = self.objective.currentData()
+        if cond.get("objective") and obj and cond["objective"] != obj:
+            self._fail("pre-calibration", f"the reference {name!r} was taken with the objective {cond['objective']!r}; "
+                                          f"Setup says {obj!r} - another objective needs its own reference")
+            return
+        start = CAL_ROOT if CAL_ROOT.is_dir() else Path(self.cal_out.text()).parent
+        d = QFileDialog.getExistingDirectory(self, "Data folder: the pre-calibration (precal001, ...) and the run file "
+                                             "(tra001.h5, ...) are written here", str(start))
+        if not d:
+            return
+        self.settings.setValue("data_dir", d)
+        path, picks = next_free(Path(d) / "precal001"), [tuple(p) for p in self.picks]
+
+        def job():
+            b = cond.get("binning")
+            if b and api.camera.binning() != b:
+                # shortcut: the binning is checked, not set (it rescales the image under the picks and restarts the
+                # camera); set it automatically when the owner changes binning between experiments
+                raise ValueError(f"the reference was taken with binning {b}, the camera has {api.camera.binning()}: "
+                                 "set the same binning, pick the beads again, then pre-calibrate")
+            before = match_camera(cond.get("camera", {}))
+            api.zscan.from_reference(str(path), picks, ref["cal"], int(ref["bead"]))
+            return before
+
+        def done(before):
+            self._precal_before = getattr(self, "_precal_before", None) or before
+            self._flow = Path(d)
+            self._track_from_cal(path, ref="")
+            self._flow = None
+            cam = ", ".join(f"{k} {v:g}" for k, v in cond.get("camera", {}).items())
+            self.precal_info.setText(
+                f"3b. pre-calibrated with {name!r} (bead {ref['bead']} of {ref['cal']}) -> {path.name}: z is rough, no "
+                "reference bead. " + (f"Camera set to the reference's {cam}; Reset calibration puts it back."
+                                      if cam else "No run metadata beside the reference: the camera was not changed."))
+        self._call(job, "pre-calibration", done)
+
+    def _browse_precal(self):
+        p, _ = QFileDialog.getOpenFileName(self, "Reference calibration (.cal)", str(CAL_ROOT), "Calibration (*cal*);;All (*)")
+        if p:
+            self.precal_cal.setText(p)
+
+    def _save_precal(self):
+        name, cal, bead = self.precal_name.text().strip(), self.precal_cal.text().strip(), self.precal_bead.value()
+        try:
+            n = len(read_cal(cal)["stack"])
+        except Exception as e:  # noqa: BLE001
+            self._fail("save reference", f"{type(e).__name__}: {e}")
+            return
+        if not name or not 1 <= bead <= n:
+            self._fail("save reference", f"give a name and a bead 1..{n} of {Path(cal).name}")
+            return
+        refs = {**load_precal(), name: {"cal": cal, "bead": bead}}
+        PRECAL_FILE.parent.mkdir(parents=True, exist_ok=True)
+        PRECAL_FILE.write_text(json.dumps(refs, indent=1), encoding="utf-8")
+        self.precal.clear()
+        self.precal.addItems(sorted(refs))
+        self.precal.setCurrentText(name)
+        cond = api.zscan.reference_conditions(cal)
+        self.precal_status.setText(
+            f"saved {name!r} -> bead {bead} of {cal}. " + (
+                f"Taken with {cond['camera']}, binning {cond['binning']}, objective {cond['objective']!r} "
+                f"({Path(cond['source']).name})" if cond else
+                "No run metadata (*.meta.json) beside it: the camera will not be matched, the objective not checked."))
+
+    def _track_from_cal(self, path, ref="1"):
         """After the Run page's scan: the run file is the next free tra00N.h5 in the folder chosen before the scan;
         every bead of the .cal is selected (bead 1 the reference) and tracked from the next frame on."""
         folder = self._flow
         self.ed_out.setText(str(folder))
         self.ed_name.setText(next_tra(folder))
         self.ed_cal.setText(str(path))
-        self.role_ref.setText("1")
+        self.role_ref.setText(ref)                       # "" = the pre-calibration: no reference bead
         self._load_cal_list()
         self._select_beads()
 
@@ -777,6 +896,21 @@ class MainWindow(QMainWindow):
         f.addRow(self.cal_status)
         self.calview = CalView(on_saved=lambda path: (self.ed_cal.setText(path), self._load_cal_list()))
         f.addRow(self.calview)
+        g = QGroupBox("Pre-calibration references: a name (the bead type) -> one bead of a .cal (the path is saved)")
+        gf = QFormLayout(g)
+        self.precal_name, self.precal_cal = QLineEdit(), QLineEdit()
+        self.precal_name.setPlaceholderText("e.g. M270")
+        self.precal_bead = QSpinBox()
+        self.precal_bead.setRange(1, 9999)
+        self.precal_status = QLabel(f"saved in {PRECAL_FILE.name} (config); the camera conditions and the objective "
+                                    "come from the run metadata beside the .cal")
+        self.precal_status.setWordWrap(True)
+        gf.addRow("Name", self.precal_name)
+        gf.addRow("Reference .cal", _row(self.precal_cal, QPushButton("Browse...", clicked=self._browse_precal)))
+        gf.addRow("Bead of that .cal", self.precal_bead)
+        gf.addRow(QPushButton("Save reference", clicked=self._save_precal))
+        gf.addRow(self.precal_status)
+        f.addRow(g)
         return w
 
     def _panel_plot(self):
@@ -1276,6 +1410,8 @@ class MainWindow(QMainWindow):
         self._clear_picks()
         self._rebuild_chips()
         self.history.clear()
+        self.z_zero = None
+        before, self._precal_before = getattr(self, "_precal_before", None), None
 
         def dropped(_):
             self.beads_info.setText("no beads selected: left click beads on the image, then Calibrate")
@@ -1287,6 +1423,8 @@ class MainWindow(QMainWindow):
             api.beads.clear()
             if api.acq.running():
                 api.acq.retarget()
+            if before:                           # the camera as it was before the pre-calibration matched it
+                match_camera(before)
         self._call(job, "new calibration", dropped)
 
     def _select_beads(self):
@@ -1951,7 +2089,10 @@ class MainWindow(QMainWindow):
 
     def _draw(self, plot, curves, kx, ky, last_s):
         """One graph from the history; last_s = only the rows of the last so many seconds (None: all of it)."""
-        h = list(self.history)
+        # a frame tracked before the selection changed has another bead count: it cannot share the array
+        h = [r for r in self.history if len(r[3]) == len(self.bead_ids)]
+        if not h:
+            return
         if last_s is not None:
             tmax = h[-1][0]
             h = [r for r in h if r[0] >= tmax - last_s]
@@ -1966,11 +2107,17 @@ class MainWindow(QMainWindow):
                 warnings.simplefilter("ignore", RuntimeWarning)
                 ref = np.nanmean(xyz[:, refs, :], axis=1, keepdims=True)
             xyz = np.where(np.isin(np.arange(len(self.bead_ids)), refs)[None, :, None], xyz, xyz - ref)
+        if self._zero_now and xyz.ndim == 3:
+            self.z_zero, self._zero_now = np.nan_to_num(xyz[-1, :, 2]), False
+        zero = self.z_zero is not None and xyz.ndim == 3 and xyz.shape[1] == len(self.z_zero)
+        if zero:
+            xyz[:, :, 2] -= self.z_zero
         base = {"t": t, "mag": mag, "force": force}
         cols = {"x": 0, "y": 1, "z": 2}
         sub = self.sub_ref.isChecked() and bool(refs)
         for side, key in (("bottom", kx), ("left", ky)):
-            plot.setLabel(side, AXES[key] + (" - reference" if sub and key in cols else ""))
+            plot.setLabel(side, AXES[key] + (" - reference" if sub and key in cols else "")
+                          + (" - zero" if zero and key == "z" else ""))
         if getattr(plot, "_ky", None) != (kx, ky, sub):   # rig 2026-11-05: the legend kept the old axis's name
             for c in curves.values():
                 plot.removeItem(c)
