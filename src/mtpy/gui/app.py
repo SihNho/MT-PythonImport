@@ -203,6 +203,18 @@ def match_camera(want):
     return before
 
 
+def match_binning(want):
+    """Set the camera's binning to `want` ({"horizontal", "vertical"}); return the binning before when it was
+    changed, else None. The write pauses the acquisition (api.camera.set_attribute)."""
+    now = api.camera.binning()
+    if not want or now == want:
+        return None
+    for name, key in (("BinningHorizontal", "horizontal"), ("BinningVertical", "vertical")):
+        if now[key] != want[key]:
+            api.camera.set_attribute(name, int(want[key]), confirm=True)
+    return now
+
+
 def load_touch_mm():
     with contextlib.suppress(OSError, ValueError, KeyError, TypeError):
         return float(json.loads(TOUCH_FILE.read_text(encoding="utf-8"))["touch_mm"])
@@ -657,8 +669,9 @@ class MainWindow(QMainWindow):
         self.precal = QComboBox()
         self.precal.addItems(sorted(load_precal()))
         self.precal_info = QLabel("3b. rough z without a z scan: the picked beads get the LUT of a saved reference "
-                                  "(More... > Calibrate). The camera's rate, exposure and gain are set to the "
-                                  "reference's until Reset calibration; check only that the objective is the same.")
+                                  "(More... > Calibrate). The camera's binning, rate, exposure and gain are set "
+                                  "to the reference's until Reset calibration; check only that the objective is the "
+                                  "same.")
         self.precal_info.setWordWrap(True)
         f.addRow(_row(QPushButton("3b. Pre-calibrate (no z scan) with", clicked=self._flow_precal), self.precal))
         f.addRow(self.precal_info)
@@ -726,17 +739,25 @@ class MainWindow(QMainWindow):
         path, picks = next_free(Path(d) / "precal001"), [tuple(p) for p in self.picks]
 
         def job():
-            b = cond.get("binning")
-            if b and api.camera.binning() != b:
-                # shortcut: the binning is checked, not set (it rescales the image under the picks and restarts the
-                # camera); set it automatically when the owner changes binning between experiments
-                raise ValueError(f"the reference was taken with binning {b}, the camera has {api.camera.binning()}: "
-                                 "set the same binning, pick the beads again, then pre-calibrate")
+            # owner 2026-11-14: "without the binning it is meaningless" (the pixel pitch is the LUT's radial scale):
+            # the binning is set to the reference's first; that rescales the image, so the picks are taken again
+            was = match_binning(cond.get("binning"))
+            if was:
+                return "repick", was
             before = match_camera(cond.get("camera", {}))
             api.zscan.from_reference(str(path), picks, ref["cal"], int(ref["bead"]))
-            return before
+            return "tracking", before
 
-        def done(before):
+        def done(r):
+            if r[0] == "repick":
+                self._precal_binning = getattr(self, "_precal_binning", None) or r[1]
+                self._clear_picks()
+                self.precal_info.setText(
+                    f"3b. the binning was {r[1]} and is now the reference's {cond['binning']}: the image scale "
+                    "changed - click the beads again, then press Pre-calibrate again. Reset calibration puts the "
+                    "binning back.")
+                return
+            before = r[1]
             self._precal_before = getattr(self, "_precal_before", None) or before
             self._flow = Path(d)
             self._track_from_cal(path, ref="")
@@ -1412,6 +1433,7 @@ class MainWindow(QMainWindow):
         self.history.clear()
         self.z_zero = None
         before, self._precal_before = getattr(self, "_precal_before", None), None
+        binning, self._precal_binning = getattr(self, "_precal_binning", None), None
 
         def dropped(_):
             self.beads_info.setText("no beads selected: left click beads on the image, then Calibrate")
@@ -1423,7 +1445,9 @@ class MainWindow(QMainWindow):
             api.beads.clear()
             if api.acq.running():
                 api.acq.retarget()
-            if before:                           # the camera as it was before the pre-calibration matched it
+            if binning:                          # the camera as it was before the pre-calibration matched it
+                match_binning(binning)
+            if before:
                 match_camera(before)
         self._call(job, "new calibration", dropped)
 

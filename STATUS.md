@@ -321,6 +321,8 @@ Short and current. Details live in the linked documents; the history is in git a
   (`config/precal_references.json`: name -> .cal path and bead; the camera conditions and the objective come from
   the `*.meta.json` beside the .cal), the camera matched until Reset calibration, Set zero on the graphs
   (design/gui.md). Simulator only: how well another bead's LUT gives z on the rig is not measured.
+  0.2.1 (owner 2026-11-14: "without the binning it is meaningless"): the pre-calibration sets the binning to the
+  reference's (then the beads are picked again) and Reset calibration puts it back.
 - **Next:** protocols on hardware (force ramps, rotation, 3-state clamp, autofocus), the stop / watchdog paths
   exercised on the rig, then the tethered-bead calibration.
 - **Queued (owner 2026-11-06):** which side of the focus to track on. The owner's first run had the beads below

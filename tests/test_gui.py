@@ -600,6 +600,16 @@ def test_pre_calibration_tracks_with_a_saved_reference_and_zeroes_the_plot(windo
     w.picks = [tuple(xy) for xy in cal["xy"][:2, :2]]
     w._draw_picks()
     monkeypatch.setattr(QFileDialog, "getExistingDirectory", staticmethod(lambda *a, **k: str(tmp_path)))
+    # the camera at another binning: the first press sets the reference's and asks for the picks again
+    state, writes = {"horizontal": 2, "vertical": 2}, []
+    monkeypatch.setattr(api.camera, "binning", lambda: dict(state))
+    monkeypatch.setattr(api.camera, "set_attribute", lambda name, v, confirm=False: (
+        writes.append((name, v)), state.update({"horizontal" if "Horizontal" in name else "vertical": v})))
+    w._flow_precal()
+    _until(app, lambda: not w.picks and "click the beads again" in w.precal_info.text(), 20, "binning set, picks dropped")
+    assert writes == [("BinningHorizontal", 1), ("BinningVertical", 1)] and w.bead_ids == []
+    w.picks = [tuple(xy) for xy in cal["xy"][:2, :2]]
+    w._draw_picks()
     w._flow_precal()
     _until(app, lambda: w.bead_ids == [1, 2] and w.ed_h5.text() == str(tmp_path / "tra001.h5"), 60,
            "the picked beads tracked with the reference's LUT")
@@ -614,7 +624,7 @@ def test_pre_calibration_tracks_with_a_saved_reference_and_zeroes_the_plot(windo
     assert w.z_zero is not None and len(w.z_zero) == 2
     assert "zero" in w.plot.getAxis("left").labelText
     w._new_calibration()
-    _until(app, lambda: api.beads.selected() is None and w.z_zero is None
+    _until(app, lambda: api.beads.selected() is None and w.z_zero is None and state == {"horizontal": 2, "vertical": 2}
            and api.devices.info("camera")["settings"]["exposure_ms"] == pytest.approx(s0["exposure_ms"]), 30,
            "beads dropped, the zero cleared, the camera as before")
     w._toggle_acq()

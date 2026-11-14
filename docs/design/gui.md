@@ -64,10 +64,11 @@ The owner ran watch -> picks -> calibrate -> track -> protocol -> Save the trace
     binning) and the objective of the reference are not typed: they are read from the run metadata beside the
     `.cal` (the `*.meta.json` whose calibration is that file).
   - Run page, **3b. Pre-calibrate (no z scan) with [reference]**: asks for the data folder, sets the camera's
-    exposure, rate and gain to the reference's (out-of-range values are coerced), writes `precal001` (every picked
+    binning, exposure, rate and gain to the reference's (out-of-range values are coerced; a binning change rescales
+    the image, so the picks are dropped and the user clicks the beads and presses the button again), writes `precal001` (every picked
     position with the reference bead's LUT; `api.zscan.from_reference`) and tracks all picked beads as tethered.
-    Reset calibration puts the camera back. Refused when the Setup objective differs from the reference's, or the
-    binning differs (shortcut: the binning is checked, not set). Without a `*.meta.json` beside the reference the
+    Reset calibration puts the camera back. Refused when the Setup objective differs from the reference's, (the pixel
+    pitch is the LUT's radial scale, so the binning must be the reference's). Without a `*.meta.json` beside the reference the
     camera is left alone and the objective is not checked.
   - **Set zero (z)** / **Clear zero** above the graph: the z each bead shows now becomes 0 on the graphs. The plot
     only: the run file keeps the raw z.
