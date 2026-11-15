@@ -888,7 +888,7 @@ class MainWindow(QMainWindow):
         w = QWidget()
         f = QFormLayout(w)
         self.cal_slices = QSpinBox()
-        self.cal_slices.setRange(3, 512)
+        self.cal_slices.setRange(5, 512)                 # the z fit reads 5 slices (api.beads refuses a shorter LUT)
         self.cal_slices.setValue(60)
         self.cal_step = _spin(-1000.0, 1000.0, 10.0, 100.0, 0, " nm")   # negative: the sample goes UP (bead above the focus; owner 2026-11-07)
         self.cal_avg = QSpinBox()

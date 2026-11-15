@@ -327,6 +327,9 @@ Short and current. Details live in the linked documents; the history is in git a
   LabVIEW's rule that every bead restarts from its pick after any bead's -1 (a bead far from its pick never came
   back, so every second frame was a restart frame: x up to ~1 px, z tens to hundreds of nm off). Now only the
   lost bead restarts, from where it was last seen. Old files: drop the frames that follow a frame with a -1.
+  0.3.1 (owner 2026-11-15): the intermittent access violation of the GUI tests was a 3-slice LUT - the z fit
+  reads 5 slices and the compiled kernel read past the array; a .cal with fewer than 5 slices is now refused.
+  Open: test_stop_timeout_slow_sink_keeps_incomplete_pipeline fails in full runs (passes alone), cause not found.
 - **Next:** protocols on hardware (force ramps, rotation, 3-state clamp, autofocus), the stop / watchdog paths
   exercised on the rig, then the tethered-bead calibration.
 - **Queued (owner 2026-11-06):** which side of the focus to track on. The owner's first run had the beads below

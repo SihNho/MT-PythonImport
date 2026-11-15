@@ -548,3 +548,14 @@ def test_camera_catalogue_and_generic_attributes_on_the_simulator(cam):
     finally:
         api.acq.stop()
     assert [e for e in events.events() if e.kind == "setting" and e.extra.get("name") == "Width"]
+
+
+def test_a_lut_shorter_than_five_slices_is_refused(tmp_path):
+    """Owner 2026-11-15: the z fit reads 5 slices; a 3-slice LUT made the compiled kernel read past the array (the
+    intermittent access violation of the GUI suite). Selecting beads from such a .cal is refused with the number."""
+    from mtpy.lvfiles import read_cal, write_cal
+    cal = read_cal(FIXTURE / "cal002")
+    cal["stack"], cal["n_slices"] = cal["stack"][:, :3], 3
+    write_cal(tmp_path / "cal_short", cal)
+    with pytest.raises(NotReady, match="3 slices"):
+        api.beads.select([1], cal_path=tmp_path / "cal_short")

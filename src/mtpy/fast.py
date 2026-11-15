@@ -147,8 +147,8 @@ def _prep_z(rad, half, forget, cosband, real):
 def _z_quad(cork, idx, ampl, cork_cal, qw):
     """Z 'current': weighted phase on 5 slices, weighted quadratic fit, P(0)."""
     S = cork_cal.shape[0]
-    if idx + 2 >= S:                                   # LabVIEW at the stack's upper edge: P(0) = 0
-        return float(idx)
+    if idx + 2 >= S or S < 5:                          # LabVIEW at the stack's upper edge: P(0) = 0; S < 5: the
+        return float(idx)                              # five rows below would be read past the array (a crash)
     lo = max(idx - 2, 0)
     ph = np.empty(5)
     for q in range(5):

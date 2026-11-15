@@ -79,9 +79,17 @@ def selected():
     return _selected
 
 
+MIN_SLICES = 5
+
+
 def _check_band(cal, path):
     """A .cal whose per-bead (LOW, HIGH, forget) gives an empty band-pass would divide by zero inside the tracking
     kernel (rig 2026-10-30); refuse it here with the numbers instead."""
+    # owner 2026-11-15 ("why does it crash?"): the z fit reads 5 slices; on a shorter LUT the compiled kernel read
+    # past the array - an access violation now and then (the GUI test that scanned 3 slices)
+    if cal["stack"].shape[1] < MIN_SLICES:
+        raise NotReady(f"{path}: the LUT has {cal['stack'].shape[1]} slices; tracking needs at least {MIN_SLICES} "
+                       "(the z fit reads 5 slices) - scan the calibration again with more slices")
     half = cal["stack"].shape[2] // 2
     for b, (lo, hi, fg) in enumerate(np.asarray(cal["bead_i32"]).tolist()):
         if not (0 <= lo < hi <= half and 0 <= fg < half):

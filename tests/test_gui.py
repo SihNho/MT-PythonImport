@@ -33,7 +33,7 @@ def _until(app, cond, timeout_s, what):
         if cond():
             return
         time.sleep(0.02)
-    raise AssertionError(f"timeout: {what}")
+    raise AssertionError(f"timeout: {what() if callable(what) else what}")   # a callable: evaluated at the failure
 
 
 @pytest.fixture
@@ -111,7 +111,8 @@ def test_gui_emccd_group_on_simulators(window):
     w.em_cycles.setValue(3)
     w.em_pause.setValue(0.0)
     w._exercise_emccd()
-    _until(app, lambda: "6 of 6 calls ok" in w.em_readback.text(), 10, "shutter exercise")
+    _until(app, lambda: "6 of 6 calls ok" in w.em_readback.text(), 10,
+           lambda: f"shutter exercise; the read-back shows {w.em_readback.text()!r}; status {w.statusBar().currentMessage()!r}")
     assert api.emccd.settings()["shutter"] == 2
     w._disconnect()
     _until(app, lambda: "not connected" in w.dev_summary.text(), 20, "disconnect")
@@ -545,7 +546,7 @@ def test_run_page_calibrates_then_tracks_into_the_chosen_run_file(window, monkey
     w.picks = [tuple(xy) for xy in cal["xy"][:2, :2]]
     w._draw_picks()
     assert "2 picked" in w.run_beads.text()
-    w.cal_slices.setValue(3)
+    w.cal_slices.setValue(5)       # 3 slices crashed this test now and then: the z fit read past a 3-slice LUT
     w.cal_avg.setValue(1)
     w.cal_settle.setValue(0.0)
     asked = []
