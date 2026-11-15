@@ -348,6 +348,11 @@ def test_explore_shows_positions_and_relative_moves_return_to_zero(window, monke
     w.rotor_turns.setValue(1.0)
     w.btn_rotate.click()                            # the button itself: wired wrongly, it did nothing (rig 2026-11-15)
     _until(app, lambda: w.rotor_turns.value() == 0.0, 30, "rotor entry back to 0")
+    p0 = api.rotor.position()
+    w.rotor_turns.setValue(-0.05)                   # rig 2026-11-15: one decimal turned 0.05 into 0 (no move)
+    assert w.rotor_turns.value() == -0.05
+    w.btn_rotate.click()
+    _until(app, lambda: abs(api.rotor.position() - p0 + 0.05) < 0.003 and w.rotor_turns.value() == 0.0, 30, "-0.05 turn")
     assert (tmp_path / "runs" / "gui_events.log").exists()
 
 

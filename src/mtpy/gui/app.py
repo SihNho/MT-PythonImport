@@ -839,12 +839,14 @@ class MainWindow(QMainWindow):
         f.addRow("Force", _row(self.force_pn, QPushButton("Set force", clicked=self._set_force)))
         self.rotor_speed = _spin(0.1, 10.0, 0.1, 1.0, 1, " turns/s")
         f.addRow("Rotor speed", self.rotor_speed)
-        self.rotor_turns = _spin(-50.0, 50.0, 1.0, 0.0, 1, " turns")
+        # rig 2026-11-15: one decimal could not hold 0.05 turn (it became 0 = no move), and four widgets in the row
+        # left the entry too narrow to read; three decimals, and the +1 / -1 buttons on their own row
+        self.rotor_turns = _spin(-50.0, 50.0, 1.0, 0.0, 3, " turns")
         # rig 2026-11-15: wired as clicked=self._rotate the button passed its `checked` (False) as the turns -> 0, no move
         self.btn_rotate = QPushButton("Rotate", clicked=lambda: self._rotate())
-        f.addRow("Rotor (relative)", _row(self.rotor_turns, self.btn_rotate,
-                                          QPushButton("+1 turn", clicked=lambda: self._rotate(1.0)),
-                                          QPushButton("-1 turn", clicked=lambda: self._rotate(-1.0))))
+        f.addRow("Rotor (relative)", _row(self.rotor_turns, self.btn_rotate))
+        f.addRow("", _row(QPushButton("+1 turn", clicked=lambda: self._rotate(1.0)),
+                          QPushButton("-1 turn", clicked=lambda: self._rotate(-1.0))))
         self.focus_um = _spin(-1000.0, 1000.0, 0.1, 0.0, 2, " um")
         # owner 2026-11-14: "the piezo stage on Explore" - the focus IS the piezo (ASI Tiger Z); named so, plus its speed
         f.addRow("Piezo z (focus)", _row(self.focus_um, QPushButton("Move", clicked=self._move_focus)))
@@ -1371,7 +1373,7 @@ class MainWindow(QMainWindow):
         n = self.rotor_turns.value() if from_entry else n
         if n == 0:
             return
-        self._call(lambda: api.rotor.rotate(n, v).wait(60), f"rotor {n:+.1f} turns at {v:g} turns/s",
+        self._call(lambda: api.rotor.rotate(n, v).wait(60), f"rotor {n:+.3f} turns at {v:g} turns/s",
                    lambda _: from_entry and self.rotor_turns.setValue(0.0))
 
     def _move_focus(self):
