@@ -323,6 +323,10 @@ Short and current. Details live in the linked documents; the history is in git a
   (design/gui.md). Simulator only: how well another bead's LUT gives z on the rig is not measured.
   0.2.1 (owner 2026-11-14: "without the binning it is meaningless"): the pre-calibration sets the binning to the
   reference's (then the beads are picked again) and Reset calibration puts it back.
+  0.3.0 (owner 2026-11-15, decision 0032): the odd / even frame offset in the 11-06 / 11-10 run files came from
+  LabVIEW's rule that every bead restarts from its pick after any bead's -1 (a bead far from its pick never came
+  back, so every second frame was a restart frame: x up to ~1 px, z tens to hundreds of nm off). Now only the
+  lost bead restarts, from where it was last seen. Old files: drop the frames that follow a frame with a -1.
 - **Next:** protocols on hardware (force ramps, rotation, 3-state clamp, autofocus), the stop / watchdog paths
   exercised on the rig, then the tethered-bead calibration.
 - **Queued (owner 2026-11-06):** which side of the focus to track on. The owner's first run had the beads below

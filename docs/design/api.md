@@ -263,7 +263,8 @@ checked separately in phases 6/7):**
   counted as a **pipeline drop** per segment and passed on as a `FrameResult` with `dropped=True`. **Camera gaps**
   are counted from the buffer numbers (also a first buffer > 0 in a segment). The worker runs `BeadTracker`
   (track.Tracker's frame-to-frame rule on the numba `FastKernel`: start from the previous output rounded half to
-  even, -1 on the frame after a bad flag, all beads back to their calibration positions after any -1).
+  even, -1 on the frame after a bad flag, all beads back to their calibration positions after any -1; since decision 0032 the live `BeadTracker` restarts
+  only the lost bead, from where it was last seen).
   `FrameResult` = record + x, y (px), z (um), good per bead + tracking ms. `Segment` keeps rate / ROI / exposure read
   back, first / last buffer, counters, `pc_gap_s` (PC time since the previous segment ended) and `end_loss = None`
   (unknown, never 0). A buffer number that goes backwards without an API restart opens a new segment ("unannounced

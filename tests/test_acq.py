@@ -101,8 +101,9 @@ def test_replay_matches_offline_tracker(fixture_cam, rate_Hz, seconds):
 
 
 def test_replay_lost_bead_rule(fixture_cam):
-    """The end of the recording, where beads are lost: -1 and the restart from the calibration positions as in
-    track.Tracker."""
+    """The end of the recording, where beads are lost. Up to the first -1 frame the pipeline equals track.Tracker
+    (LabVIEW); after it only the lost bead restarts (decision 0032), so a -1 is exactly a bead flagged bad on the
+    frame before - never the echo of another bead's restart."""
     dev = fixture_cam.device
     dev.files = dev.files[-60:]
     api.camera.set_rate(150.0)
@@ -110,8 +111,11 @@ def test_replay_lost_bead_rule(fixture_cam):
     st = _run(60, record=True)
     assert st["pipeline_drops"] == 0, st
     res = api.acq.sink().frames
-    assert any((r.xyz == -1.0).any() for r in res)              # the rule is exercised
-    _offline(dev.files, res, api.beads.selected())
+    k = next(i for i, r in enumerate(res) if (r.xyz == -1.0).any())       # the rule is exercised
+    _offline(dev.files, res[:k + 1], api.beads.selected())
+    for prev, r in zip(res[k:], res[k + 1:]):
+        flagged = ~prev.good & ~(prev.xyz == -1.0).all(axis=1)
+        np.testing.assert_array_equal((r.xyz == -1.0).all(axis=1), flagged, err_msg=f"buffer {r.record.buffer_number}")
 
 
 # --- drops, gaps, segments --------------------------------------------------------------------------------------------

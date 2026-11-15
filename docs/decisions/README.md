@@ -35,6 +35,7 @@ Each file records one decision: what was decided, why, and what follows from it.
 | [0029](0029-engine-process-and-gui-client.md) | The engine (API, devices, acquisition, safety) runs in its own process; the GUI is a client over a local connection, the display snapshot in shared memory, events streamed; scripts stay in-process. Chosen after the GUI's drawing was measured to share the interpreter with the tracker | 2026-11-01 |
 | [0030](0030-measured-criteria-gpu-fp32-method-versions.md) | Tracking methods are chosen by measurement; the GPU path is FP32 and free of the LabVIEW numbers; method names carry versions; user reports are HTML | 2026-11-07 |
 | [0031](0031-spline-v2-phase-spline-v2-and-the-fair-comparison.md) | `spline_v2` (scale-free correlation) and `phase_spline_v2` (the angle of the sum, no per-element atan2), the search to a 1e-3 slice bracket; the fair comparison from one run's recorded bead windows through every method | 2026-11-07 |
+| [0032](0032-only-the-lost-bead-restarts.md) | After a lost frame only the lost bead restarts, from where it was last seen (LabVIEW restarts every bead from its pick: the odd / even frame offset of the 11-06 / 11-10 run files); a deliberate departure from LabVIEW's numbers |
 
 The behavior specification of the LabVIEW program is in [../spec/README.md](../spec/README.md) and the device manuals are
 in [../manuals/README.md](../manuals/README.md).

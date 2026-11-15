@@ -21,6 +21,8 @@ from dataclasses import dataclass
 
 import numpy as np
 
+from mtpy import track
+
 from .records import UNKNOWN, FrameRecord, FrameResult, Segment
 from .ring import FrameRing
 from .sink import MemorySink
@@ -63,16 +65,25 @@ def make_kernel(beads, z_method="current_v1", gpu=False, precision=None):
 
 
 class BeadTracker:
-    """track.Tracker's frame-to-frame state on any kernel with FastKernel's `track(image, xin, yin, good_in)`: each
-    frame starts from the previous output (rounded half to even, as LabVIEW); a bead flagged bad is output as -1 on
-    the next frame, and after any -1 every bead restarts from its calibration position."""
+    """The frame-to-frame state on any kernel with FastKernel's `track(image, xin, yin, good_in)`: each frame starts
+    from the previous output (rounded half to even, as LabVIEW); a bead flagged bad is output as -1 on the next
+    frame, as LabVIEW.
+
+    NOT as LabVIEW (decision 0032, owner 2026-11-15 "fix it"): LabVIEW (track.Tracker) restarts EVERY bead from its
+    calibration position on the frame after any -1. A bead that had moved more than a few px from its pick was never
+    found again from there, so the -1 came back every second frame for the rest of the run, and on each restart
+    frame all the other beads, started some px off, read x up to ~1 px and z tens to hundreds of nm differently
+    (the odd / even frame offset in the run files of 2026-11-06 / 10). Here only the lost bead restarts, the others
+    go on from their own output; it restarts from where it was last seen (the xy of the frame that flagged it, when
+    that lies inside the image), and from its calibration position at every second failed try."""
 
     def __init__(self, beads, kernel):
         self.beads, self.kernel = beads, kernel
         self.xy0 = np.asarray(beads.xy0, dtype=np.float64)[:, :2]
         self.xy = self.xy0.copy()
         self.good = np.ones(len(self.xy0), dtype=bool)
-        self.lost = False
+        self.fails = np.zeros(len(self.xy0), dtype=np.int64)    # bad flags in a row, per bead
+        self._h = track.lv_round(beads.cross * 0.6)             # the kernel's half window: a start nearer the edge is bad
         self._shape = self._fits = None
 
     def step(self, image):
@@ -81,15 +92,23 @@ class BeadTracker:
             self._shape, self._fits = image.shape, self.beads.fit(image.shape)
         if not self._fits:
             raise ValueError(f"beads do not fit a {image.shape[1]} x {image.shape[0]} image; select beads again")
-        if self.lost:
-            self.xy = self.xy0.copy()
-            self.good = np.ones(len(self.xy0), dtype=bool)   # a new array: the last result keeps its own flags
         xyz, _, good = self.kernel.track(image, np.rint(self.xy[:, 0]).astype(np.int64),
                                          np.rint(self.xy[:, 1]).astype(np.int64), self.good)
-        self.lost = bool((xyz == -1.0).any())
-        self.xy = xyz[:, :2].copy()
-        self.good = np.array(good, dtype=bool)
-        return xyz, self.good
+        good = np.array(good, dtype=bool)                    # a new array: the last result keeps its own flags
+        out = (xyz == -1.0).all(axis=1)                      # the -1 frame of a bead flagged on the frame before
+        seen = ~out
+        self.fails = np.where(good, 0, self.fails + seen)    # counted on the frame that flags, kept over the -1 frame
+        H, W = image.shape
+        x, y = xyz[:, 0], xyz[:, 1]
+        with np.errstate(invalid="ignore"):
+            inside = np.isfinite(x + y) & (x >= self._h) & (x <= W - self._h) & (y >= self._h) & (y <= H - self._h)
+        # the next start: a tracked bead from its own output; a flagged bead from where it was seen (odd tries, inside
+        # the image) or from its calibration position; a bead on its -1 frame keeps the start chosen when it was flagged
+        here = seen & (good | (inside & (self.fails % 2 == 1)))
+        home = seen & ~here
+        self.xy = np.where(here[:, None], xyz[:, :2], np.where(home[:, None], self.xy0, self.xy))
+        self.good = good | out                               # after its -1 frame the bead is tried again
+        return xyz, good
 
 
 @dataclass(frozen=True)
