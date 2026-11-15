@@ -30,7 +30,7 @@ RETURN_TIMEOUT_S = 60.0  # the stall return: 39 mm at >= 1 mm/s, with margin
 _STALL_LOCK = threading.Lock()   # one stall check / response at a time (one magnet)
 
 
-def move_to(position_mm, speed_mm_s=None, _stall_return=False):
+def move_to(position_mm, speed_mm_s=None, _stall_return=False, duration_s=None):
     """Move the magnet to position_mm (0 = top, larger = closer to the sample) and return a Motion.
 
     Position (decision 0018 item 5): outside the profile's `magnet_position_mm` it is coerced to the nearest limit
@@ -78,6 +78,8 @@ def move_to(position_mm, speed_mm_s=None, _stall_return=False):
         return _send(svc, dev, v, speed)
 
     def expected():
+        if duration_s is not None:              # the caller changes the speed on the way (a rate ramp) and knows the time
+            return duration_s
         return abs(applied - pre["from_mm"]) / speed if speed and "from_mm" in pre else None
     m = _move("magnet", "magnet_position_mm", applied, lambda: _read_checked(svc, dev, n_stall, _stall_return),
               gen=gen, send=send, read_on_caller=True, expected_s=expected, moving=lambda: _moving_logged(dev))

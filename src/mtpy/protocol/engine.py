@@ -412,8 +412,13 @@ class Engine:
                 state["speeds"].append(v)
         v0 = capped(p0)
         state["v"], state["speeds"] = v0, [v0]
+        # rig 2026-11-15: 1 -> 50 pN at 0.5 pN/s (98 s) failed with "did not arrive within 71.5 s" - the arrival wait
+        # took the time from the FIRST speed (fast, far from the sample). The move's time along the speed it will
+        # really have (capped where the profile caps it):
+        n = 400
+        dur = sum(abs(p1 - p0) / n / min(speed_at(p0 + (i + 0.5) * (p1 - p0) / n), vmax or math.inf) for i in range(n))
         if abs(p1 - p0) > 1e-6:
-            self._motion(lambda: api.magnet.move_to(p1, speed_mm_s=v0), tick=tick, expected_s=abs(f1 - f0) / rate)
+            self._motion(lambda: api.magnet.move_to(p1, speed_mm_s=v0, duration_s=dur), tick=tick, expected_s=dur)
         return {"from_mm": p0, "to_mm": p1, "rate_pN_s": rate, "speed_mm_s": state["v"], "speed_updates": state["updates"],
                 "speeds_mm_s": state["speeds"], "coerced": state["coerced"]}
 

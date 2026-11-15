@@ -57,6 +57,8 @@ The owner ran watch -> picks -> calibrate -> track -> protocol -> Save the trace
 - **Explore, the piezo** (owner 2026-11-14): the focus rows are named "Piezo z (focus)" / "Piezo move by" (the
   focus is the ASI Tiger Z piezo) and "Piezo speed" (um/s) sets the speed of every later focus move; the entry
   shows the speed read back.
+- **Plot window** (owner 2026-11-15): "4. Plot" opens the second graph in a window of its own (any size, beside the
+  Run page); it is drawn only while the window is open.
 - **Pre-calibration** (owner 2026-11-14): a rough z with no z scan and no reference bead, e.g. to see a tether's
   extension from the surface, or how far a long DNA reaches, before the real calibration.
   - A **reference** is a name (the bead type) -> the path of a `.cal` and one of its beads, saved on the Calibrate

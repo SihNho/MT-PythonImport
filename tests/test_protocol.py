@@ -895,6 +895,17 @@ def test_ramp_with_a_magnet_speed_is_one_move_at_that_speed(rig):
     assert not rep["ok"] and any("magnet_speed_mm_s" in str(e) or "speed" in str(e) for e in rep["errors"])
 
 
+def test_a_rate_ramp_that_slows_down_is_waited_for_by_its_own_duration(rig, monkeypatch):
+    """Rig 2026-11-15: `ramp from=1 to=50 rate=0.5` (98 s) failed with "did not arrive within 71.5 s" at 50 pN and the
+    protocol stopped there. The arrival wait took the move's time from its FIRST speed (fast, far from the sample),
+    but the speed falls towards the touch position; it now gets the ramp's own duration."""
+    api.magnet.use_force_table(WIDE_TABLE)
+    monkeypatch.setattr(api.devices.service("magnet").device, "move_timeout_s", 0.3)
+    api.protocol.run(parse(HEAD + "hold f=1 t=0.1\nramp from=1 to=8 rate=2\nramp from=8 to=1 rate=4\n", "slow.mtprot"))
+    st = api.protocol.wait(60)
+    assert st["state"] == "completed" and st["steps_done"] == 3, st
+
+
 def test_ramp_with_a_force_rate_holds_the_rate_by_changing_the_speed_during_one_move(rig):
     """Owner 2026-11-06 (the table's Loading = Force rate): `ramp rate=` is the TRUE loading rate: ONE magnet move
     whose speed is set again from the position read back (rate / the calibration's slope there), so dF/dt stays

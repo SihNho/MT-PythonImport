@@ -675,9 +675,13 @@ def test_owner_feedback_2026_11_06_plot_folder_rate_and_step_highlight(window, m
     w.sub_ref.setChecked(False)
     w._update_plot()
     assert np.allclose(w.curves[2].yData[:5], [1.0, 1.5, 2.0, 2.5, 3.0]) and w.curves[2].name() == "b2"
-    # owner 2026-11-10: the Plot page's tall graph draws only while its page is shown, with its own axes
-    assert not w.curves2
-    w._set_step(w.panel.indexOf(w.plot2.parent()))
+    # owner 2026-11-10: the tall graph draws only while it is shown, with its own axes; 2026-11-15: it is a window
+    # of its own, and opening it leaves the page that was shown
+    assert not w.curves2 and not w.plot_panel.isVisible()
+    page = w.panel.currentIndex()
+    from mtpy.gui.app import STEPS
+    w.step_group.button([k for k, _ in STEPS].index("plot")).click()
+    assert w.plot_panel.isVisible() and w.panel.currentIndex() == page and w.step_group.checkedId() == page
     w.ax_x2.setCurrentIndex(w.ax_x2.findData("force"))
     w._update_plot()
     assert np.allclose(w.curves2[2].xData, 2.0) and np.allclose(w.curves2[2].yData[:5], [1.0, 1.5, 2.0, 2.5, 3.0])

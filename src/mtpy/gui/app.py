@@ -90,7 +90,7 @@ PROTOCOLS_DIR = DATA_ROOT / "protocols"          # the owner's own protocols (.m
 TITLES = {"setup": "Setup: devices, camera, analysis", "explore": "Explore (no recording)",
           "run": "Run: camera -> beads -> calibrate -> track -> save, in that order",
           "beads": "Beads: select from a .cal", "cal": "Calibrate: z scan -> .cal", "exp": "Experiment: protocol",
-          "plot": "Plot: a second, tall graph with its own axes",
+          "plot": "Plot: a second graph in its own window",
           "save": "Save and export"}
 AXES = {"t": "Time (s)", "mag": "Magnet (mm)", "force": "Force (pN)", "z": "z (um)", "x": "x (px)", "y": "y (px)"}
 COLORS = ["#60A5FA", "#F472B6", "#34D399", "#FBBF24", "#A78BFA", "#F87171", "#2DD4BF", "#FB923C"]
@@ -318,7 +318,12 @@ class MainWindow(QMainWindow):
         scroll.setMinimumWidth(440)
         body.addWidget(scroll, 0)
         for key, _ in STEPS:
-            self.panel.addWidget(getattr(self, f"_panel_{key}")())
+            w = getattr(self, f"_panel_{key}")()
+            if key == "plot":            # owner 2026-11-15: the tall graph in a window of its own (any size, beside
+                self.plot_panel = _Panel(self, "Plot", w)       # Explore), not a page that hides the Run page
+                self.plot_panel.resize(900, 700)
+                w = QWidget()                                   # the step's index in the stack stays
+            self.panel.addWidget(w)
         self.events_list = QListWidget()
         self.events_list.setMaximumHeight(110)
         v.addWidget(self.events_list)
@@ -417,6 +422,10 @@ class MainWindow(QMainWindow):
         self.btn_more.setText("Less" if on else "More...")
 
     def _set_step(self, i):
+        if STEPS[i][0] == "plot":                # a window, not a page: the page shown stays
+            self.plot_panel.open_()
+            self.step_group.button(self.panel.currentIndex()).setChecked(True)
+            return
         if STEPS[i][0] in DETAILS and not self.btn_more.isChecked():
             self.btn_more.setChecked(True)
         self.panel.setCurrentIndex(i)
@@ -955,7 +964,7 @@ class MainWindow(QMainWindow):
         self.plot2 = pg.PlotWidget()
         self.plot2.showGrid(x=True, y=True, alpha=0.3)
         self.plot2.addLegend(offset=(10, 10))
-        self.plot2.setMinimumHeight(500)
+        self.plot2.setMinimumHeight(200)
         self.curves2 = {}
         v.addWidget(self.plot2, 1)
         return w
@@ -2110,7 +2119,7 @@ class MainWindow(QMainWindow):
         kx = self.ax_x.currentData()
         self._draw(self.plot, self.curves, kx, self.ax_y.currentData(),
                    self.follow_s.value() if self.follow.isChecked() and kx == "t" else None)
-        if self.panel.currentWidget() is self.plot2.parent():     # the tall graph costs nothing while its page is hidden
+        if self.plot_panel.isVisible():           # the tall graph costs nothing while its window is closed
             # shortcut: the history is turned into arrays once per graph, share them if two graphs cost too much
             self._draw(self.plot2, self.curves2, self.ax_x2.currentData(), self.ax_y2.currentData(),
                        self.last2_s.value() if self.last2.isChecked() else None)
