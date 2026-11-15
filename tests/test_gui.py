@@ -346,7 +346,7 @@ def test_explore_shows_positions_and_relative_moves_return_to_zero(window, monke
     w._go_preset("Cal+")
     _until(app, lambda: abs(api.magnet.position() - 3.0) < 0.01, 30, "preset Cal+ reached")
     w.rotor_turns.setValue(1.0)
-    w._rotate()
+    w.btn_rotate.click()                            # the button itself: wired wrongly, it did nothing (rig 2026-11-15)
     _until(app, lambda: w.rotor_turns.value() == 0.0, 30, "rotor entry back to 0")
     assert (tmp_path / "runs" / "gui_events.log").exists()
 

@@ -840,7 +840,9 @@ class MainWindow(QMainWindow):
         self.rotor_speed = _spin(0.1, 10.0, 0.1, 1.0, 1, " turns/s")
         f.addRow("Rotor speed", self.rotor_speed)
         self.rotor_turns = _spin(-50.0, 50.0, 1.0, 0.0, 1, " turns")
-        f.addRow("Rotor (relative)", _row(self.rotor_turns, QPushButton("Rotate", clicked=self._rotate),
+        # rig 2026-11-15: wired as clicked=self._rotate the button passed its `checked` (False) as the turns -> 0, no move
+        self.btn_rotate = QPushButton("Rotate", clicked=lambda: self._rotate())
+        f.addRow("Rotor (relative)", _row(self.rotor_turns, self.btn_rotate,
                                           QPushButton("+1 turn", clicked=lambda: self._rotate(1.0)),
                                           QPushButton("-1 turn", clicked=lambda: self._rotate(-1.0))))
         self.focus_um = _spin(-1000.0, 1000.0, 0.1, 0.0, 2, " um")
