@@ -112,3 +112,20 @@ def test_engine_errors_are_rebuilt_with_their_text_whatever_the_class():
     assert isinstance(e, DeviceError) and str(e) == "pi: MOV - stall"
     assert isinstance(_rebuild("NotReady", "x"), NotReady) and isinstance(_rebuild("KeyError", "k"), KeyError)
     assert isinstance(_rebuild("SomethingElse", "y"), EngineError)
+
+
+def test_a_snapshot_without_a_rate_is_written_not_fatal():
+    """Rig 2026-11-15: "struct.error: required argument is not a float" ended the snapshot thread (the display)."""
+    from types import SimpleNamespace
+
+    import numpy as np
+
+    from mtpy.engine import HEADER, HEADER_SIZE, SharedSnapshot
+    s = SharedSnapshot(f"mtpy_snap_test_{os.getpid()}")
+    try:
+        rec = SimpleNamespace(segment=1, buffer_number=7, t_camera_s=0.5, rate_Hz=None, t_pc_s=1.0, recording=False)
+        s._write(SimpleNamespace(seq=3, image=np.zeros((4, 8), np.uint8), result=None, record=rec))
+        got = HEADER.unpack(bytes(s.buf[:HEADER_SIZE]))
+        assert got[0] == 3 and got[5] == 7 and got[7] != got[7]          # the rate is NaN
+    finally:
+        s.close()

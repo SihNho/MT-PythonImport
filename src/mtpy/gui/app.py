@@ -560,7 +560,13 @@ class MainWindow(QMainWindow):
         self.dev_info = QLabel("")                      # identity line; the rows and controls are built per device
         self.dev_info.setWordWrap(True)
         self.dev_form, self.dev_controls = None, {}
-        self.dev_panel = _Panel(self, "Device", self.dev_info)
+        # owner 2026-11-15: the camera panel was taller than the screen and its lower part could not be reached
+        self.dev_body = QWidget()
+        QVBoxLayout(self.dev_body).addWidget(self.dev_info)
+        dev_scroll = QScrollArea()
+        dev_scroll.setWidget(self.dev_body)
+        dev_scroll.setWidgetResizable(True)
+        self.dev_panel = _Panel(self, "Device", dev_scroll)
         self.dev_panel.resize(640, 520)
         # owner 2026-11-13: no separate "Camera settings..." panel - a click on the camera / emccd row of the device
         # table opens that camera's settings inside the device panel (one place per setting)
@@ -568,7 +574,7 @@ class MainWindow(QMainWindow):
         cams_lay, em_lay = QVBoxLayout(self.cam_box), QVBoxLayout(self.em_box)
         for box, lay in ((self.cam_box, cams_lay), (self.em_box, em_lay)):
             lay.setContentsMargins(0, 0, 0, 0)
-            self.dev_panel.layout().addWidget(box, 1)
+            self.dev_body.layout().addWidget(box, 1)
             box.hide()
         g = QGroupBox("Camera preset")
         gf = QFormLayout(g)
@@ -626,6 +632,11 @@ class MainWindow(QMainWindow):
         self.gpu = QCheckBox("Z, XY and radial on the GPU (fused CUDA kernel, FP32; decision 0030)")
         g2f.addRow("Z method", self.z_method)
         g2f.addRow(self.gpu)
+        # owner 2026-11-15: "I cannot tell when the choice applies" - it is read when tracking starts; Apply puts it
+        # on the running tracking, and the label is what the frames are tracked with now
+        self.track_now = QLabel("In use: not tracking")
+        g2f.addRow(_row(QPushButton("Apply to the tracking now", clicked=self._apply_method), self.track_now))
+        g2f.addRow(QLabel("The choice is taken when tracking starts (Run page) or with Apply (a new run file)."))
         f.addRow(g2)
         g3 = QGroupBox("Force from magnet position")
         g3f = QFormLayout(g3)
@@ -1196,7 +1207,7 @@ class MainWindow(QMainWindow):
         build = getattr(self, f"_controls_{name}", None)
         if build is not None and d.get("settings") is not None:
             build(f, d, self.dev_controls)
-        lay = self.dev_panel.layout()
+        lay = self.dev_body.layout()
         if self.dev_form is not None:
             lay.removeWidget(self.dev_form)
             self.dev_form.deleteLater()
@@ -1204,7 +1215,8 @@ class MainWindow(QMainWindow):
         lay.insertWidget(1, w)                           # under the identity line, above the camera boxes
         self.cam_box.setVisible(name == "camera")
         self.em_box.setVisible(name == "emccd")
-        self.dev_panel.resize(*((900, 900) if name in ("camera", "emccd") else (640, 520)))
+        room = self.screen().availableGeometry().height() - 60          # the title bar stays on the screen
+        self.dev_panel.resize(*((900, min(900, room)) if name in ("camera", "emccd") else (640, 520)))
         self.dev_panel.open_()
 
     def _dev_act(self, name, what, fn):
@@ -1285,7 +1297,7 @@ class MainWindow(QMainWindow):
     def _apply_preset(self):
         preset = {"name": "gui", "roi": (0, 0, 1280, 1024), "rate_Hz": self.cam_rate.currentData(),
                   "exposure_ms": self.cam_exp.value(), "gain_dB": self.cam_gain.value()}
-        if self.backend.currentData() == "real":
+        if self.backend.currentData() != "sim":    # rig 2026-11-15: "real-motors" still sent it, every preset failed
             preset.pop("gain_dB")                  # read-only on the JAI until its gain unit is verified (jai.py)
         if api.acq.status().get("recording") and QMessageBox.question(
                 self, "Recording is on", "Rate and ROI changes alter how the recorded data are read and are logged "
@@ -1687,6 +1699,27 @@ class MainWindow(QMainWindow):
         self._call(lambda: api.acq.start(record=False, name=name, folder=folder, roles=roles, z_method=zm, gpu=gpu),
                    "start acquisition", done)
 
+    def _apply_method(self):
+        """The Setup page's Z method / GPU choice on the beads tracked now: a new run file, as a bead change."""
+        if not (api.acq.running() and self.bead_ids):
+            self._fail("apply tracking method", "nothing is tracked now; the choice is taken when tracking starts")
+            return
+        folder = Path(self.ed_out.text())
+        name = self.ed_name.text().strip() or next_tra(folder)
+        zm, gpu, roles = self.z_method.currentText(), self.gpu.isChecked(), dict(self.roles)
+
+        def done(_):
+            self.history.clear()
+            self.t0 = time.time()
+            self.ed_h5.setText(str(folder / f"{name}.h5"))
+            self.ed_name.setText(next_tra(folder))
+            self.run_track.setText(f"4. tracking {len(self.bead_ids)} beads -> {self.ed_h5.text()}; Record writes into it")
+
+        def job():
+            folder.mkdir(parents=True, exist_ok=True)
+            return api.acq.retarget(folder=folder, name=name, roles=roles, z_method=zm, gpu=gpu)
+        self._call(job, "apply tracking method", done)
+
     def _toggle_autofocus(self, on):
         refs = [i for i in self.bead_ids if self.roles.get(i) == "reference"]
         if on and not refs:
@@ -1953,7 +1986,7 @@ class MainWindow(QMainWindow):
         parts = []
         reads = (("stage", lambda: "stage x {:.4f} y {:.4f} mm".format(*api.stage.position())),
                  ("focus", lambda: f"focus {api.focus.position():.3f} um"),
-                 ("rotor", lambda: f"rotor {api.rotor.position():.2f} turns"),
+                 ("rotor", lambda: f"rotor {api.rotor.position():.3f} turns"),
                  ("magnet", lambda: f"magnet {self._mag:.3f} mm" + (f" = {self._force:.2f} pN" if self._force == self._force else "")))
         for name, read in reads:
             if st.get(name, {}).get("state") == "connected":
@@ -2182,13 +2215,20 @@ class MainWindow(QMainWindow):
     def _on_event(self, ev):
         kind = getattr(ev, "kind", "?")
         if kind == "motor_reading":
-            if getattr(ev, "device", None) == "magnet" and isinstance(getattr(ev, "readback", None), (int, float)):
-                self._mag = float(ev.readback)          # the poller's rate (10 Hz), as the run file has it
+            # rig 2026-11-15 ("the force axis is stairs"): the device is in ev.extra; read as an attribute it was
+            # never found, so the curve had only the 2 Hz tick
+            if ev.extra.get("device") == "magnet" and isinstance(ev.readback, (int, float)):
+                self._mag = float(ev.readback)          # the poller's rate (50 Hz), as the run file has it
                 try:
                     self._force = api.magnet.force_at(self._mag)
                 except Exception:    # noqa: BLE001, S110 - no calibration: the 2 Hz tick keeps its value
                     pass
             return
+        if kind == "acquisition" and ev.extra.get("action") in ("start", "retarget", "stop"):
+            x = ev.extra
+            self.track_now.setText("In use: not tracking" if x["action"] == "stop" or not x.get("beads") else
+                                   f"In use: {x['z_method']}, {x['executor']}, {x['precision']} "
+                                   f"({len(x['beads'])} beads)")
         extra = {k: v for k, v in vars(ev).items() if k not in ("t", "kind", "caller", "event_id") and v not in (None, {})}
         self._log(f"{time.strftime('%H:%M:%S', time.localtime(ev.t))}  {kind}  {_sentence(extra)}", detail=str(extra)[:400])
         if kind == "magnet_stall":

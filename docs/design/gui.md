@@ -57,6 +57,10 @@ The owner ran watch -> picks -> calibrate -> track -> protocol -> Save the trace
 - **Explore, the piezo** (owner 2026-11-14): the focus rows are named "Piezo z (focus)" / "Piezo move by" (the
   focus is the ASI Tiger Z piezo) and "Piezo speed" (um/s) sets the speed of every later focus move; the entry
   shows the speed read back.
+- **Tracking method in use** (owner 2026-11-15): Setup's Z method / GPU choice is read when tracking starts; "Apply
+  to the tracking now" puts it on the beads tracked now (a retarget), and the label beside it shows the method,
+  executor and precision the frames are tracked with.
+- **Device panel** (owner 2026-11-15): scrolls, and is never taller than the screen.
 - **Plot window** (owner 2026-11-15): "4. Plot" opens the second graph in a window of its own (any size, beside the
   Run page); it is drawn only while the window is open.
 - **Pre-calibration** (owner 2026-11-14): a rough z with no z scan and no reference bead, e.g. to see a tether's

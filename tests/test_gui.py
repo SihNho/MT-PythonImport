@@ -166,6 +166,10 @@ def test_camera_settings_and_device_info_open_in_panels(window):
     assert not w.cam_box.isVisible() and not w.em_box.isVisible()               # row 0 is not a camera
     w.dev_table.cellClicked.emit(rows["camera"], 0)
     _until(app, lambda: w.cam_box.isVisible(), 10, "the camera row opens the camera settings")
+    # owner 2026-11-15: the panel's lower part was off the screen and could not be reached - it scrolls and fits
+    from PySide6.QtWidgets import QScrollArea
+    assert isinstance(w.dev_panel.layout().itemAt(0).widget(), QScrollArea)
+    assert w.dev_panel.height() <= w.screen().availableGeometry().height()
     assert w.cam_attrs.isVisible() and w.cam_rate.isVisible() and not w.em_box.isVisible()
     assert "rate_Hz" not in w.dev_controls                                      # one place per setting
     w.dev_table.cellClicked.emit(rows["emccd"], 0)
@@ -848,3 +852,36 @@ def test_script_to_table_round_trip():
         parse_script('grammar 0.1\nprotocol "x"\nhold f=1 t=0\nrecord on\nend protocol\n')
     with pytest.raises(ValueError, match="previous force"):
         parse_script("hold f=1 t=0\nramp from=3 to=5 speed=0.1\n")
+
+
+def test_owner_feedback_2026_11_15_force_curve_method_in_use_and_rig_preset(window, monkeypatch):
+    app, w = window
+    w._connect()
+    _until(app, lambda: "8 / 8" in w.dev_summary.text(), 15, "connect")
+    # 1. "the force axis is stairs": the graph's magnet / force follow every poller reading, not the 2 Hz tick
+    w._call(lambda: api.magnet.set_touch_position(40.0), "touch")
+    _until(app, lambda: api.magnet.force_calibration()["ready"], 10, "touch position")
+    w._on_event(events.Event(time.time(), "motor_reading", "gui", {"quantity": "magnet_position_mm"}, 12.5,
+                             {"device": "magnet"}))
+    assert w._mag == 12.5 and w._force == pytest.approx(api.magnet.force_at(12.5))
+    # 2. the Z method: the label says what is in use, Apply puts the choice on the running tracking (a new run file)
+    assert w.track_now.text() == "In use: not tracking"
+    w._load_cal_list()
+    w._select_beads()
+    _until(app, lambda: w.bead_ids, 10, "beads selected")
+    w._toggle_acq()
+    _until(app, lambda: "current_v1, numba" in w.track_now.text(), 30, lambda: w.track_now.text())
+    w.z_method.setCurrentIndex(1)
+    assert "current_v1" in w.track_now.text()                # a choice alone changes nothing
+    w._apply_method()
+    _until(app, lambda: w.z_method.currentText() in w.track_now.text(), 30, lambda: w.track_now.text())
+    w._toggle_acq()
+    _until(app, lambda: w.track_now.text() == "In use: not tracking", 20, lambda: w.track_now.text())
+    # 3. rig 2026-11-15: on the rig backend ("real-motors") the preset still carried the read-only gain and failed
+    sent = []
+    with monkeypatch.context() as m:                         # undone before the window closes (its shutdown reads it)
+        m.setattr(api.camera, "apply_preset", lambda preset, confirm=False: sent.append(preset) or {})
+        m.setattr(w.backend, "currentData", lambda *a: "real-motors")
+        w._apply_preset()
+        _until(app, lambda: sent, 5, "preset sent")
+    assert "gain_dB" not in sent[0] and "rate_Hz" in sent[0]

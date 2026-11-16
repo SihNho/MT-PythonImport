@@ -559,3 +559,39 @@ def test_a_lut_shorter_than_five_slices_is_refused(tmp_path):
     write_cal(tmp_path / "cal_short", cal)
     with pytest.raises(NotReady, match="3 slices"):
         api.beads.select([1], cal_path=tmp_path / "cal_short")
+
+
+def test_a_stop_during_the_start_does_not_leave_the_camera_running(cam, monkeypatch):
+    """Rig 2026-11-15 22:17: the stop found no camera thread yet, the start then made one, and every later start
+    was refused with "already acquiring outside api.acq"."""
+    dev, inside = cam.device, threading.Event()
+    real = dev.start_acquisition
+
+    def slow_start():
+        inside.set()
+        time.sleep(0.5)
+        real()
+    monkeypatch.setattr(dev, "start_acquisition", slow_start)
+    t = threading.Thread(target=api.acq.start)
+    t.start()
+    assert inside.wait(10)
+    api.acq.stop()
+    t.join(20)
+    assert not api.acq.running() and not dev.acquiring()
+    api.acq.start()
+    api.acq.wait_frames(5, 5)
+    errors = []                              # two stops at once (the button and the shutdown): neither fails
+
+    def stop():
+        try:
+            api.acq.stop()
+        except NotReady:                     # it came after the other had finished: the plain answer
+            pass
+        except Exception as e:  # noqa: BLE001
+            errors.append(e)
+    ts = [threading.Thread(target=stop) for _ in range(2)]
+    for x in ts:
+        x.start()
+    for x in ts:
+        x.join(20)
+    assert not errors and not api.acq.running()

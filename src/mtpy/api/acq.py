@@ -394,7 +394,11 @@ def stop(timeout_s=10.0):
     is logged, the sink is NOT closed and the pipeline is kept; call stop() again to finish (the camera is already
     stopped and recording already off, so only the draining is resumed)."""
     _require()
-    _finish(timeout_s)
+    # rig 2026-11-15 22:17: a stop that came while the start was still opening the camera found no camera thread,
+    # the start then made one, and every later start was refused ("already acquiring outside api.acq")
+    with _start_lock:
+        if _pipe is not None:               # None: another stop finished it while this one waited
+            _finish(timeout_s)
     return status()
 
 

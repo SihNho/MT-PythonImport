@@ -16,6 +16,7 @@ import queue
 import struct
 import threading
 import time
+import traceback
 from concurrent.futures import ThreadPoolExecutor
 from multiprocessing import shared_memory
 from multiprocessing.connection import Listener
@@ -48,7 +49,7 @@ class SharedSnapshot:
         self.shm = shared_memory.SharedMemory(name=name, create=True, size=SNAP_BYTES)
         self.buf = self.shm.buf
         self.buf[:HEADER_SIZE] = HEADER.pack(0, 0, 0, 0, 0, 0, 0.0, 0.0, 0.0, 0)
-        self._last, self._stop = None, threading.Event()
+        self._last, self._err, self._stop = None, None, threading.Event()
         self._thread = threading.Thread(target=self._loop, name="engine-snapshot", daemon=True)
         self._thread.start()
 
@@ -60,8 +61,13 @@ class SharedSnapshot:
                 snap = None
             if snap is None or snap.seq == self._last:
                 continue
-            self._write(snap)
             self._last = snap.seq
+            try:
+                self._write(snap)
+            except Exception as e:  # noqa: BLE001 - one bad snapshot must not end the display for the session
+                if repr(e) != self._err:
+                    self._err = repr(e)
+                    traceback.print_exc()
 
     def _write(self, snap):
         img = snap.image
@@ -75,8 +81,11 @@ class SharedSnapshot:
             self.buf[XYZ_OFF:XYZ_OFF + n * 24] = xyz[:n].tobytes()
             self.buf[GOOD_OFF:GOOD_OFF + n] = np.asarray(res.good, dtype=np.uint8)[:n].tobytes()
         self.buf[IMG_OFF:IMG_OFF + h * w] = np.ascontiguousarray(img, dtype=np.uint8).tobytes()
-        self.buf[:HEADER_SIZE] = HEADER.pack(snap.seq, h, w, n, rec.segment, rec.buffer_number, rec.t_camera_s,
-                                             rec.rate_Hz, rec.t_pc_s, int(rec.recording))
+        # rig 2026-11-15: "struct.error: required argument is not a float" ended this thread (a segment the camera
+        # opened unannounced has no rate) and the display with it
+        t_cam, rate, t_pc = (float("nan") if v is None else float(v) for v in (rec.t_camera_s, rec.rate_Hz, rec.t_pc_s))
+        self.buf[:HEADER_SIZE] = HEADER.pack(snap.seq, h, w, n, rec.segment, rec.buffer_number, t_cam, rate, t_pc,
+                                             int(rec.recording))
 
     def close(self):
         self._stop.set()
