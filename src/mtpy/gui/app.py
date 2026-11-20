@@ -233,6 +233,17 @@ def save_presets(values):
     PRESETS_FILE.write_text(json.dumps(values, indent=1), encoding="utf-8")
 
 
+CAM_PRESETS_FILE = TOUCH_FILE.with_name("camera_presets.json")   # owner 2026-11-21: {name: {rate_Hz, exposure_ms, gain_dB}}
+
+
+def load_cam_presets():
+    try:
+        p = json.loads(CAM_PRESETS_FILE.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+    return p if isinstance(p, dict) else {}
+
+
 def save_touch_mm(mm):
     TOUCH_FILE.write_text(json.dumps({"touch_mm": mm, "set_at": time.strftime("%Y-%m-%d %H:%M:%S"),
                                       "by": "gui (Change / Set)"}, indent=1) + "\n", encoding="utf-8")
@@ -530,7 +541,7 @@ class MainWindow(QMainWindow):
         self.mode = QComboBox()          # owner 2026-10-30: MT and MT-TIRF are distinct modes of the program
         self.mode.addItem("MT: tracking (JAI, motors)", "MT")
         self.mode.addItem("MT-TIRF: tracking + EMCCD", "MT-TIRF")
-        self.mode.setCurrentIndex(self.mode.findData(api.devices.default_mode()))
+        self.mode.setCurrentIndex(self.mode.findData("MT"))    # owner 2026-11-21: MT is the program's default (the API's stays)
         self.mode.currentIndexChanged.connect(self._apply_mode)
         f.addRow("Mode", self.mode)
         # owner 2026-11-12: the lens in use and its refractive-index (focal-shift) factor go into every run file
@@ -576,17 +587,28 @@ class MainWindow(QMainWindow):
             lay.setContentsMargins(0, 0, 0, 0)
             self.dev_body.layout().addWidget(box, 1)
             box.hide()
-        g = QGroupBox("Camera preset")
+        # owner 2026-11-21: a changed number goes to the camera at once, also during a measurement; 150 Hz is the
+        # default (set at Connect); named presets are kept in config/camera_presets.json
+        g = QGroupBox("Camera: a changed number is applied at once (also while recording) and read back")
         gf = QFormLayout(g)
-        self.cam_rate = QComboBox()
-        for r in ("90", "150"):
-            self.cam_rate.addItem(f"{r} Hz", float(r))
+        self.cam_rate = _spin(1.0, 1000.0, 10.0, 150.0, 2, " Hz")
         self.cam_exp = _spin(0.1, 11.0, 0.1, 2.0, 2, " ms")
         self.cam_gain = _spin(0.0, 12.0, 0.5, 0.0, 1, " dB")
+        for key, sp in (("rate_Hz", self.cam_rate), ("exposure_ms", self.cam_exp), ("gain_dB", self.cam_gain)):
+            sp.setKeyboardTracking(False)          # a typed number applies at Enter / on leaving the field
+            sp.valueChanged.connect(lambda v, k=key: self._cam_set(k, v))
+        self.cam_preset = QComboBox()
+        self.cam_preset.setEditable(True)
+        self.cam_preset.setInsertPolicy(QComboBox.InsertPolicy.NoInsert)
+        self.cam_preset.addItems(sorted(load_cam_presets()))
+        self.cam_preset.setCurrentIndex(-1)
+        self.cam_preset.activated.connect(self._load_cam_preset)
+        gf.addRow("Preset (choose = apply)", _row(self.cam_preset, QPushButton("Save under this name",
+                                                                              clicked=self._save_cam_preset)))
         gf.addRow("Frame rate (needs a short pause)", self.cam_rate)
         gf.addRow("Exposure", self.cam_exp)
         gf.addRow("Gain", self.cam_gain)
-        gf.addRow(QPushButton("Apply preset and read back", clicked=self._apply_preset))
+        gf.addRow(QPushButton("Apply all three again and read back", clicked=self._apply_preset))
         cams_lay.addWidget(g)
         # owner 2026-11-04: every camera attribute, generated from the device's catalogue; favourites per device
         self.cam_attrs = AttrPanel("Camera", lambda: api.camera.catalogue(), lambda n: api.camera.get_attribute(n),
@@ -630,6 +652,8 @@ class MainWindow(QMainWindow):
         self.z_method = QComboBox()
         self.z_method.addItems(list(Z_METHODS))
         self.gpu = QCheckBox("Z, XY and radial on the GPU (fused CUDA kernel, FP32; decision 0030)")
+        self.z_method.setCurrentText("phase_spline_v2")     # owner 2026-11-21: Phase_Spline V2 on the GPU is the default
+        self.gpu.setChecked(True)
         g2f.addRow("Z method", self.z_method)
         g2f.addRow(self.gpu)
         # owner 2026-11-15: "I cannot tell when the choice applies" - it is read when tracking starts; Apply puts it
@@ -674,7 +698,7 @@ class MainWindow(QMainWindow):
                               "and the pattern grows; the LUT is stored bottom-up so z rises with the bead; its middle is "
                               "2.9 um below the start at 60 x 100 nm and the focus goes there after the scan. Then it tracks every bead of the .cal (bead 1 = "
                               "reference) from the next frame on; the camera never stops. Reset calibration drops the "
-                              "beads so the image takes picks again.")
+                              "beads so the image takes picks again, and moves the piezo (focus) to z = 0.")
         self.run_track = QLabel("4. not tracking")
         self.run_save = QLabel("5. the traces go next to the run file as tra001-000, tra001-001, ... (LabVIEW's files)")
         for lab in (self.run_cam, self.run_beads, self.run_cal, self.run_track, self.run_save):
@@ -695,7 +719,10 @@ class MainWindow(QMainWindow):
         self.precal_info.setWordWrap(True)
         f.addRow(_row(QPushButton("3b. Pre-calibrate (no z scan) with", clicked=self._flow_precal), self.precal))
         f.addRow(self.precal_info)
-        f.addRow(_row(self.run_track, self.btn_rec))
+        # owner 2026-11-21: saving data is the default - tracking records from its first frame unless unticked
+        self.auto_rec = QCheckBox("Record from the start of tracking")
+        self.auto_rec.setChecked(True)
+        f.addRow(_row(self.run_track, self.auto_rec, self.btn_rec))
         # owner 2026-11-06: autofocus through the piezo (spec F4.06): the focus holds the reference bead's tracked z at
         # the LUT's middle; off by default, off again at Reset calibration and when the camera stops
         self.autofocus = QCheckBox("Autofocus: the piezo holds the reference bead's z at")
@@ -1132,6 +1159,11 @@ class MainWindow(QMainWindow):
 
     def _connected(self, st):
         self._show_devices(st)
+        if st.get("camera", {}).get("state") == "connected":
+            rate = self.cam_rate.value()
+            self.cam_gain.setEnabled(self.backend.currentData() == "sim")    # read-only on the JAI (jai.py)
+            self._call(lambda: (api.camera.set_rate(rate, confirm=True), api.devices.info("camera")["settings"])[1],
+                       "camera rate", self._show_camera)
         if "magnet" in st:                              # the kept touch position is the session's from the start
             mm = self.touch_mm.value()
             self._call(lambda: api.magnet.set_touch_position(mm), "touch position",
@@ -1294,8 +1326,47 @@ class MainWindow(QMainWindow):
         the refusal names it, so retry confirmed only when the owner said yes beforehand (the panel's checkbox)."""
         return api.camera.set_attribute(name, value, confirm=self.cam_attrs_confirm.isChecked())
 
+    def _show_camera(self, s):
+        """The camera's values read back into the three fields (no write back) and the read-back line."""
+        for key, sp in (("rate_Hz", self.cam_rate), ("exposure_ms", self.cam_exp), ("gain_dB", self.cam_gain)):
+            if isinstance(s.get(key), (int, float)):
+                sp.blockSignals(True)
+                sp.setValue(s[key])
+                sp.blockSignals(False)
+        self.readback.setText("camera: " + ", ".join(f"{k} {s[k]}" for k in ("rate_Hz", "exposure_ms", "gain_dB", "roi")
+                                                     if k in s))
+
+    def _cam_set(self, key, v):
+        """Owner 2026-11-21: one changed number -> the camera, at once, also while recording (confirm=True is the
+        owner's standing yes; the change is in the run file with its frame, api.camera._changed)."""
+        if api.devices.status().get("camera", {}).get("state") != "connected":
+            return                                 # not connected: the rate is set at Connect
+        fn = {"rate_Hz": lambda: api.camera.set_rate(v, confirm=True), "exposure_ms": lambda: api.camera.set_exposure(v),
+              "gain_dB": lambda: api.camera.set_gain(v)}[key]
+        self._call(lambda: (fn(), api.devices.info("camera")["settings"])[1], f"camera {key}", self._show_camera)
+
+    def _save_cam_preset(self):
+        name = self.cam_preset.currentText().strip()
+        if not name:
+            self._fail("camera preset", "type a name for the preset first")
+            return
+        presets = load_cam_presets()
+        presets[name] = {"rate_Hz": self.cam_rate.value(), "exposure_ms": self.cam_exp.value(),
+                         "gain_dB": self.cam_gain.value()}
+        CAM_PRESETS_FILE.parent.mkdir(parents=True, exist_ok=True)
+        CAM_PRESETS_FILE.write_text(json.dumps(presets, indent=1) + "\n", encoding="utf-8")
+        if self.cam_preset.findText(name) < 0:
+            self.cam_preset.addItem(name)
+        self.statusBar().showMessage(f"camera preset {name!r} saved to {CAM_PRESETS_FILE.name}", 6000)
+
+    def _load_cam_preset(self, index):
+        p = load_cam_presets().get(self.cam_preset.itemText(index))
+        if p:
+            self._show_camera(p)
+            self._apply_preset()
+
     def _apply_preset(self):
-        preset = {"name": "gui", "roi": (0, 0, 1280, 1024), "rate_Hz": self.cam_rate.currentData(),
+        preset = {"name": "gui", "roi": (0, 0, 1280, 1024), "rate_Hz": self.cam_rate.value(),
                   "exposure_ms": self.cam_exp.value(), "gain_dB": self.cam_gain.value()}
         if self.backend.currentData() != "sim":    # rig 2026-11-15: "real-motors" still sent it, every preset failed
             preset.pop("gain_dB")                  # read-only on the JAI until its gain unit is verified (jai.py)
@@ -1303,8 +1374,7 @@ class MainWindow(QMainWindow):
                 self, "Recording is on", "Rate and ROI changes alter how the recorded data are read and are logged "
                 "into the run as a guarded change. Apply anyway?") != QMessageBox.StandardButton.Yes:
             return                                 # fault list G5: confirm=True below is the operator's yes, not a default
-        self._call(lambda: api.camera.apply_preset(preset, confirm=True), "camera preset",
-                   lambda r: self.readback.setText(f"camera: {r}"))
+        self._call(lambda: api.camera.apply_preset(preset, confirm=True), "camera preset", self._show_camera)
 
     def _apply_emccd(self):
         preset = {"name": "gui", "em_gain_mode": self.em_mode.currentData(), "em_gain": int(self.em_gain.value()),
@@ -1459,6 +1529,7 @@ class MainWindow(QMainWindow):
         self.z_zero = None
         before, self._precal_before = getattr(self, "_precal_before", None), None
         binning, self._precal_binning = getattr(self, "_precal_binning", None), None
+        home = api.devices.status().get("focus", {}).get("state") == "connected"
 
         def dropped(_):
             self.beads_info.setText("no beads selected: left click beads on the image, then Calibrate")
@@ -1469,7 +1540,10 @@ class MainWindow(QMainWindow):
         def job():
             api.beads.clear()
             if api.acq.running():
-                api.acq.retarget()
+                self._retarget(False)
+            if home:                             # owner 2026-11-21: "Reset calibration moves the piezo z to 0"
+                api.focus.autofocus(False)
+                api.focus.move_to(0.0).wait(30)
             if binning:                          # the camera as it was before the pre-calibration matched it
                 match_binning(binning)
             if before:
@@ -1502,13 +1576,13 @@ class MainWindow(QMainWindow):
         running = api.acq.running()
         folder, name = Path(self.ed_out.text()), self.ed_name.text().strip() or next_tra(Path(self.ed_out.text()))
         roles = {i: ("reference" if i in refs else "tethered") for i in ids}
-        zm, gpu = self.z_method.currentText(), self.gpu.isChecked()
+        zm, gpu, rec = self.z_method.currentText(), self.gpu.isChecked(), self.auto_rec.isChecked()
 
         def job():
             pos = api.beads.select(ids, cal_path=path)
             if running:
                 folder.mkdir(parents=True, exist_ok=True)
-                api.acq.retarget(folder=folder, name=name, roles=roles, z_method=zm, gpu=gpu)
+                self._retarget(rec, folder=folder, name=name, roles=roles, z_method=zm, gpu=gpu)
             return pos
         self._call(job, "select beads", done)
 
@@ -1686,6 +1760,7 @@ class MainWindow(QMainWindow):
         if folder:
             folder.mkdir(parents=True, exist_ok=True)
         zm, gpu, roles = self.z_method.currentText(), self.gpu.isChecked(), dict(self.roles)
+        rec = tracking and self.auto_rec.isChecked()
         self.history.clear()
         self.t0 = time.time()
 
@@ -1696,8 +1771,18 @@ class MainWindow(QMainWindow):
                 self.ed_name.setText(next_tra(folder))
             self.run_track.setText(f"4. tracking {len(self.bead_ids)} beads -> {self.ed_h5.text()}; Record writes into it"
                                    if tracking else "4. camera running, no beads: nothing is written")
-        self._call(lambda: api.acq.start(record=False, name=name, folder=folder, roles=roles, z_method=zm, gpu=gpu),
+        self._call(lambda: api.acq.start(record=rec, name=name, folder=folder, roles=roles, z_method=zm, gpu=gpu),
                    "start acquisition", done)
+
+    @staticmethod
+    def _retarget(rec, **kw):
+        """Worker: api.acq.retarget around the recording (it is refused while recording): off before; on again
+        after when the beads go into a run file and "Record from the start of tracking" is ticked (`rec`)."""
+        api.acq.set_recording(False)
+        st = api.acq.retarget(**kw)
+        if rec and kw.get("folder") is not None:
+            api.acq.set_recording(True, name=kw.get("name"))
+        return st
 
     def _apply_method(self):
         """The Setup page's Z method / GPU choice on the beads tracked now: a new run file, as a bead change."""
@@ -1707,6 +1792,7 @@ class MainWindow(QMainWindow):
         folder = Path(self.ed_out.text())
         name = self.ed_name.text().strip() or next_tra(folder)
         zm, gpu, roles = self.z_method.currentText(), self.gpu.isChecked(), dict(self.roles)
+        rec = self.auto_rec.isChecked()
 
         def done(_):
             self.history.clear()
@@ -1717,7 +1803,7 @@ class MainWindow(QMainWindow):
 
         def job():
             folder.mkdir(parents=True, exist_ok=True)
-            return api.acq.retarget(folder=folder, name=name, roles=roles, z_method=zm, gpu=gpu)
+            return self._retarget(rec, folder=folder, name=name, roles=roles, z_method=zm, gpu=gpu)
         self._call(job, "apply tracking method", done)
 
     def _toggle_autofocus(self, on):
@@ -1968,8 +2054,10 @@ class MainWindow(QMainWindow):
             if res is not None and res.xyz is not None:
                 self._draw_boxes(res.xyz[:, :2], res.good, res.xyz[:, 2])
             r = snap.record
+            # owner 2026-11-21 ("the frame rate shown is not right after a camera change"): the set rate is the
+            # segment's read-back; the measured one (camera timestamps) is what the frames really arrive at
             self.cam_label.setText(f"JAI frame {r.buffer_number}  seg {r.segment}  t {r.t_camera_s:.3f} s  "
-                                   f"{r.rate_Hz:.1f} Hz  {'REC' if r.recording else ''}")
+                                   f"{r.rate_Hz:.1f} Hz set, {self._fps:.1f} measured  {'REC' if r.recording else ''}")
         if res is not None and res.xyz is not None and getattr(self, "_last_seq", None) != snap.seq:
             self._last_seq = snap.seq
             self.history.append((time.time() - self.t0, self._mag, self._force, res.xyz.copy()))
@@ -1979,7 +2067,7 @@ class MainWindow(QMainWindow):
                 self._update_plot()
                 self._chip_texts(res.xyz)
 
-    _mag = _force = float("nan")
+    _mag = _force = _fps = float("nan")
 
     def _positions_text(self, st):
         """One line: every connected motor's position read back and the force (owner 2026-11-04)."""
@@ -2050,6 +2138,7 @@ class MainWindow(QMainWindow):
             parts.append(f"acq: {a.get('frames_received', 0)} frames, {a.get('fps_measured', a.get('fps', 0)) or 0:.1f} fps"
                          f"{', REC' if a.get('recording') else ''}")
             d["rec"] = bool(a.get("recording"))
+            d["fps"] = a.get("fps_measured") or float("nan")
             d["lost"] = (a.get("camera_gaps", 0), a.get("pipeline_drops", 0), a.get("frames_not_written") or 0,
                          a.get("track_ms_p99"))
         else:
@@ -2078,6 +2167,9 @@ class MainWindow(QMainWindow):
             if d.get("af") is not None and d.get("protocol", {}).get("state") in ("running", "paused"):
                 self._af_text(d["af"])            # only a protocol switches it behind the checkbox
             self.rec_badge.setText("\u25cf RECORDING" if d["rec"] else "not recording")
+            self.btn_rec.setChecked(d["rec"])     # also what a protocol or the tracking start switched
+            self.btn_rec.setText("* Recording (press to stop)" if d["rec"] else "4. Record on")
+            self._fps = d.get("fps", float("nan"))
             self.rec_badge.setStyleSheet("background:#B91C1C;color:white;font-weight:bold;padding:2px 8px" if d["rec"] else "")
             if "lost" in d:                       # stopped: the last count stays
                 gaps, drops, unwritten, p99 = d["lost"]

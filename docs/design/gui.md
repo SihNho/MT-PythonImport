@@ -61,6 +61,16 @@ The owner ran watch -> picks -> calibrate -> track -> protocol -> Save the trace
   to the tracking now" puts it on the beads tracked now (a retarget), and the label beside it shows the method,
   executor and precision the frames are tracked with.
 - **Device panel** (owner 2026-11-15): scrolls, and is never taller than the screen.
+- **Defaults** (owner 2026-11-21): mode MT (the program's; `api.devices.connect` without a mode stays MT-TIRF); Z method `phase_spline_v2` on the GPU; camera 150 Hz, set at Connect;
+  "Record from the start of tracking" ticked (Run page) - tracking records from its first frame, a bead change or
+  Reset calibration switches the recording off first, and the Record button follows the recording whoever
+  switched it (a protocol's `record on` while it is on changes nothing).
+- **Camera numbers** (owner 2026-11-21): rate, exposure and gain go to the camera when the number changes, also
+  while recording, and the fields show the read-back. Every change logs a `camera_settings` event (the four
+  settings read back, segment and buffer number), so the run file has the settings at the recording's start and
+  each change with its frame. Named presets: `config/camera_presets.json` (choose = apply; "Save under this name").
+  The image line shows the rate set and the rate measured from the camera timestamps.
+- **Reset calibration** (owner 2026-11-21): also switches the autofocus off and moves the piezo (focus) to z = 0.
 - **Plot window** (owner 2026-11-15): "4. Plot" opens the second graph in a window of its own (any size, beside the
   Run page); it is drawn only while the window is open.
 - **Pre-calibration** (owner 2026-11-14): a rough z with no z scan and no reference bead, e.g. to see a tether's

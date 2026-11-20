@@ -81,6 +81,8 @@ def test_mode_switch_hides_the_emccd_screen(tmp_path, monkeypatch):
     w = MainWindow(fixture=str(tmp_path), out=str(tmp_path / "runs"), sim_dev=cfg)
     w.show()
     try:
+        assert not w.em_view.isVisible() and "[MT]" in w.windowTitle()         # owner 2026-11-21: MT is the default
+        w.mode.setCurrentIndex(w.mode.findData("MT-TIRF"))
         assert w.em_view.isVisible() and not w.em_group.isHidden() and "[MT-TIRF]" in w.windowTitle()
         w.mode.setCurrentIndex(w.mode.findData("MT"))
         assert not w.em_view.isVisible() and w.em_group.isHidden() and "[MT]" in w.windowTitle()

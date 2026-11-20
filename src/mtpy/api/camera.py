@@ -76,6 +76,13 @@ def _run(svc, dev, names, act, needs_pause=None):
     return got
 
 
+def _changed(svc, dev):
+    """Owner 2026-11-21: a change made during a measurement is in the run file with its frame: the four settings read
+    back and the newest frame's segment / buffer number (after a pause: the new segment, no frame of it yet)."""
+    s = svc.call(dev.settings, what="read settings")
+    events.log("camera_settings", device="camera", settings={k: s.get(k) for k in PRESET_FIELDS}, **acq._position())
+
+
 def _set(name, value, confirm=False):
     svc = service("camera")
     dev = svc.require()
@@ -97,9 +104,11 @@ def _set(name, value, confirm=False):
     match = (lambda got: tuple(got) == tuple(value)) if name == "roi" else None
     precheck(quantity, value, tol, check=check)     # refuse before anything stops
     _guard(svc, dev, [name], value, confirm)
-    return _run(svc, dev, [name], lambda: acting(
+    got = _run(svc, dev, [name], lambda: acting(
         quantity, value, lambda v: svc.call(dev.set, name, v, what=f"set {name} {v!r}"),
         lambda: svc.call(dev.get, name, what=f"read {name}"), tol, device="camera", check=check, match=match))
+    _changed(svc, dev)
+    return got
 
 
 def set_exposure(exposure_ms):
@@ -171,6 +180,7 @@ def apply_preset(preset, confirm=False):
     _guard(svc, dev, list(values), values, confirm)
     got = _run(svc, dev, list(values), lambda: acting("camera_preset", values, do, readback, 0.0, device="camera",
                                                        check=check, match=match))
+    _changed(svc, dev)
     svc.reapply = lambda: apply_preset(preset, confirm=True)
     svc.preset = dict(preset)                       # stored with the next recording (U15 frame-rate triple, WP6)
     events.log("preset", device="camera", name=preset["name"], readback=got)
@@ -218,4 +228,6 @@ def set_attribute(name, value, confirm=False):
         got = svc.call(dev.set_attribute, name, value, what=f"set {name} {value!r}")
         events.log("setting", device="camera", name=name, value=value, readback=got, category=entry["category"])
         return got
-    return _run(svc, dev, [name], do, needs_pause=guarded)
+    got = _run(svc, dev, [name], do, needs_pause=guarded)
+    _changed(svc, dev)                              # e.g. the binning moves the rate's maximum
+    return got

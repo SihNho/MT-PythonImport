@@ -38,7 +38,19 @@ def _until(app, cond, timeout_s, what):
 
 @pytest.fixture
 def window(tmp_path, monkeypatch):
+    yield from _window(tmp_path, monkeypatch, True)
+
+
+@pytest.fixture
+def window_defaults(tmp_path, monkeypatch):
+    yield from _window(tmp_path, monkeypatch, False)
+
+
+def _window(tmp_path, monkeypatch, old):
+    """old: the choices the tests were written with (the defaults before 2026-11-21: MT-TIRF, current_v1 on numba,
+    no recording at the tracking start); window_defaults keeps what the owner gets."""
     need(FIXTURE / "cal002")
+    monkeypatch.setattr("mtpy.gui.app.CAM_PRESETS_FILE", tmp_path / "camera_presets.json")   # never the rig's own
     from PySide6.QtCore import QSettings
     from PySide6.QtWidgets import QApplication
 
@@ -51,6 +63,11 @@ def window(tmp_path, monkeypatch):
     cfg = sim_dev_config()
     app = QApplication.instance() or QApplication([])
     w = MainWindow(fixture=str(FIXTURE), out=str(tmp_path / "runs"), sim_dev=cfg)
+    if old:
+        w.mode.setCurrentIndex(w.mode.findData("MT-TIRF"))
+        w.z_method.setCurrentText("current_v1")
+        w.gpu.setChecked(False)
+        w.auto_rec.setChecked(False)
     w.show()
     yield app, w
     w.close()
@@ -885,3 +902,52 @@ def test_owner_feedback_2026_11_15_force_curve_method_in_use_and_rig_preset(wind
         w._apply_preset()
         _until(app, lambda: sent, 5, "preset sent")
     assert "gain_dB" not in sent[0] and "rate_Hz" in sent[0]
+
+
+def test_owner_2026_11_21_defaults_camera_numbers_at_once_presets_and_reset(window_defaults):
+    import json
+
+    from mtpy.gui import app as gui_app
+    app, w = window_defaults
+    # the defaults: MT, Phase_Spline V2 on the GPU, 150 Hz, recording from the start of tracking
+    assert w.mode.currentData() == "MT" and w.z_method.currentText() == "phase_spline_v2" and w.gpu.isChecked()
+    assert w.cam_rate.value() == 150.0 and w.auto_rec.isChecked()
+    w._connect()
+    _until(app, lambda: "5 / 5" in w.dev_summary.text(), 15, "connect (MT: five devices)")
+
+    def cam():
+        return api.devices.info("camera")["settings"]
+    _until(app, lambda: abs(cam()["rate_Hz"] - 150.0) < 0.1, 10, lambda: cam())
+    # a changed number is on the camera at once, and the field shows the read-back
+    w.cam_exp.setValue(3.0)
+    _until(app, lambda: abs(cam()["exposure_ms"] - 3.0) < 0.01, 10, lambda: cam())
+    # a preset is saved under a name and applied when chosen
+    w.cam_preset.setEditText("slow")
+    w._save_cam_preset()
+    assert json.loads(gui_app.CAM_PRESETS_FILE.read_text(encoding="utf-8"))["slow"]["exposure_ms"] == 3.0
+    w.cam_exp.setValue(1.0)
+    _until(app, lambda: abs(cam()["exposure_ms"] - 1.0) < 0.01, 10, lambda: cam())
+    w._load_cam_preset(w.cam_preset.findText("slow"))
+    _until(app, lambda: abs(cam()["exposure_ms"] - 3.0) < 0.01 and w.cam_exp.value() == 3.0, 10, lambda: cam())
+    # tracking records from its first frame, with the default method
+    w._load_cal_list()
+    w._select_beads()
+    _until(app, lambda: w.bead_ids, 10, "beads selected")
+    w._toggle_acq()
+    _until(app, lambda: api.acq.running() and api.acq.status().get("recording"), 40, lambda: api.acq.status())
+    _until(app, lambda: "phase_spline_v2, cuda" in w.track_now.text(), 10, lambda: w.track_now.text())
+    _until(app, lambda: w.btn_rec.isChecked() and " measured" in w.cam_label.text, 10, "the Record button follows")
+    assert api.acq.set_recording(True) is True               # a protocol's `record on` while it is on: nothing
+    # a change during the recording is an event with its frame
+    api.acq.wait_frames(5, 5)
+    w.cam_exp.setValue(2.5)
+    _until(app, lambda: abs(cam()["exposure_ms"] - 2.5) < 0.01, 10, lambda: cam())
+    ev = [e for e in events.events() if e.kind == "camera_settings"][-1]
+    assert ev.extra["settings"]["exposure_ms"] == pytest.approx(2.5) and ev.extra["buffer_number"] >= 5
+    # Reset calibration: recording off, nothing tracked, the piezo at z = 0
+    w._call(lambda: api.focus.move_to(3.0).wait(10), "focus away")
+    _until(app, lambda: abs(api.focus.position() - 3.0) < 0.01, 10, "focus moved")
+    w._new_calibration()
+    _until(app, lambda: abs(api.focus.position()) < 0.01 and not api.acq.status().get("recording"), 30,
+           lambda: (api.focus.position(), api.acq.status().get("recording")))
+    assert api.acq.running() and not w.bead_ids

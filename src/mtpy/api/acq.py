@@ -514,6 +514,11 @@ def _roi_refusal(roi, current_roi):
     return None
 
 
+def _position():
+    """The newest frame's {"segment", "buffer_number"} ({} when not acquiring), for another module's event."""
+    return {} if _pipe is None else _pipe.last_record()
+
+
 def _camera_paused():
     if _pipe is not None:
         _seg_event("end", _pipe.end_segment())

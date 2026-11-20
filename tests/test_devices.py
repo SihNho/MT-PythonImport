@@ -732,7 +732,8 @@ def test_rate_change_pauses_and_restarts_with_readback(rig):
     n = len(events.events())
     assert api.camera.set_rate(150.0) == pytest.approx(149.9925, abs=1e-4)
     kinds = [(e.kind, e.extra.get("action")) for e in _since(n)]
-    assert kinds == [("acquisition", "pause"), ("act", None), ("acquisition", "restart")]
+    assert kinds == [("acquisition", "pause"), ("act", None), ("acquisition", "restart"),
+                     ("camera_settings", None)]          # owner 2026-11-21: every change with its frame
     assert cam.acquiring() and cam.next_frame(2.0).buffer_number == 0      # IMAQdx restarts buffer numbers
     assert api.camera.set_exposure(4.0) == 4.0                            # immediate: no pause
     rig["camera"].recording = True

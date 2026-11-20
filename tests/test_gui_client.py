@@ -42,7 +42,7 @@ def test_window_runs_the_flow_as_a_client_of_the_engine(engine, tmp_path, monkey
             st = client.api.devices.status()
             return bool(st) and all(d["state"] == "connected" for d in st.values()) and not w._workers
         _until(app, connected, 60, "connect through the client")
-        assert "8 / 8" in w.dev_summary.text() and client.events.history() != []      # MT-TIRF: eight simulators
+        assert "5 / 5" in w.dev_summary.text() and client.events.history() != []      # MT (the default since 2026-11-21): five simulators
         # acquisition: the display comes from the shared-memory snapshot, the plot history grows
         w._toggle_acq()
         _until(app, lambda: w.btn_live.text() == "Stop the camera", 20, "acquisition started")
