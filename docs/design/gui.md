@@ -70,6 +70,8 @@ The owner ran watch -> picks -> calibrate -> track -> protocol -> Save the trace
   settings read back, segment and buffer number), so the run file has the settings at the recording's start and
   each change with its frame. Named presets: `config/camera_presets.json` (choose = apply; "Save under this name").
   The image line shows the rate set and the rate measured from the camera timestamps.
+- **EMCCD beside the JAI** (owner 2026-11-21, plan 10a): with the EMCCD on Live, its frames are written into the
+  run file while the JAI records; the status line counts the frames read, recorded and lost.
 - **Reset calibration** (owner 2026-11-21): also switches the autofocus off and moves the piezo (focus) to z = 0.
 - **Plot window** (owner 2026-11-15): "4. Plot" opens the second graph in a window of its own (any size, beside the
   Run page); it is drawn only while the window is open.

@@ -163,6 +163,21 @@ def _event_columns():
     }
 
 
+def _fl_columns():
+    """/fluorescence (plan 10a first build: internal trigger, no Arduino - the cameras are aligned by host time)."""
+    return {
+        "emccd_frame": (np.int64, None, "1", "EMCCD frame number from 0 within one EMCCD acquisition (SDK number - 1)"),
+        "t_host": (np.float64, None, "s", ("estimated host time of the frame's end, relative to t0_unix: frame number "
+                                           "x kinetic cycle, anchored to the earliest read of this EMCCD acquisition")),
+        "t_read": (np.float64, None, "s", "host time the batch holding this frame was read, relative to t0_unix"),
+        "jai_segment": (np.int64, None, "1", "segment of the newest JAI frame when the batch was read, -1 if none"),
+        "jai_buffer_at_read": (np.int64, None, "1", ("buffer number of the newest JAI frame when the batch was read "
+                                                     "(an upper bound for this frame), -1 if none")),
+        "exposure_s": (np.float64, None, "s", "exposure read back when the EMCCD acquisition started"),
+        "image_index": (np.int64, None, "1", "row in `images`"),
+    }
+
+
 def _mt_columns(n_beads):
     cols = {
         "buffer_number": (np.uint64, None, "1", ("original camera buffer number (restarts at 0 in each segment, WP3 "
@@ -294,8 +309,35 @@ class HDF5Writer(ResultSink):
         self._iv = None               # cached recording intervals (rebuilt when an on / off event arrives)
         self._motor_dirty = None      # earliest PC time of a motor reading that arrived after rows were flushed
         self._last_flush = time.monotonic()
+        self._fl = None               # /fluorescence table, made at the first EMCCD batch
 
     # --- ResultSink -------------------------------------------------------------------------------------------------
+    def write_emccd(self, batch):
+        """One batch of EMCCD frames read while recording was on (api.emccd._Recorder): raw images and one row per
+        frame. The file is open by then (the recording-on event comes before it in the sink's queue)."""
+        frames = batch["frames"]
+        if self.f is None:
+            raise RecordingRefused(f"{len(frames)} EMCCD frames not written: no recording-on event opened the file")
+        if self._fl is None:
+            g = self.f.create_group("fluorescence")
+            self._fl = _Table(g, _fl_columns())
+            ds = g.create_dataset("images", shape=(0, *frames.shape[1:]), maxshape=(None, *frames.shape[1:]),
+                                  dtype=np.uint16, chunks=(1, *frames.shape[1:]))
+            ds.attrs["unit"], ds.attrs["description"] = "counts", "raw EMCCD frames (decision 0006 item 6)"
+            g.attrs["trigger"] = "internal (no frame divider): align with /mt by t_host"
+        ds, n, m = self.f["fluorescence/images"], self.f["fluorescence/images"].shape[0], len(frames)
+        ds.resize(n + m, axis=0)
+        ds[n:] = frames
+        for i in range(m):
+            # shortcut: the frame time is the SDK frame number on the kinetic cycle, anchored to the earliest read
+            # (api.emccd._Recorder); upgrade with the frame divider (decision 0005)
+            self._fl.append({"emccd_frame": batch["first"] - 1 + i,
+                             "t_host": batch["t_last"] - (m - 1 - i) * batch["period_s"] - self.t0,
+                             "t_read": batch["t_read"] - self.t0, "jai_segment": _int(batch["jai_segment"]),
+                             "jai_buffer_at_read": _int(batch["jai_buffer"]), "exposure_s": batch["exposure_s"],
+                             "image_index": n + i})
+        self._maybe_flush()
+
     def write_event(self, ev):
         x = ev.extra or {}
         if ev.kind == "recording" and x.get("action") == "on":
@@ -794,6 +836,8 @@ class HDF5Writer(ResultSink):
             self._beads_tab.rewrite(self._bead_rows())
         for tab in self._ev_tables.values():
             tab.flush()
+        if self._fl is not None:
+            self._fl.flush()
         self._segs.rewrite(self._segment_rows())
         self._recs.rewrite(self._recording_rows())
         self.f.attrs["frames_written"] = self._mt.n if self._mt is not None else 0
@@ -924,6 +968,9 @@ def _value(ds):
 def _read_group(g):
     out = {}
     for k, item in g.items():
+        if k == "images" and g.name == "/fluorescence":       # GBs of raw frames: read them from the file by index
+            out[k] = {"shape": tuple(item.shape), "dtype": str(item.dtype)}
+            continue
         out[k] = _read_group(item) if isinstance(item, h5py.Group) else _value(item)
     return out
 

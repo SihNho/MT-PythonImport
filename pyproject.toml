@@ -1,6 +1,6 @@
 [project]
 name = "mtpy"
-version = "0.3.6"
+version = "0.3.7"
 description = "Python port of the Kim Lab magnetic-tweezers tracking and experiment-control program"
 requires-python = ">=3.10"
 dependencies = ["numpy", "h5py>=3.8", "pythonnet"]   # pythonnet: the eBUS camera (decision 0028)

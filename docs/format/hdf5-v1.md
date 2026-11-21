@@ -193,6 +193,13 @@ read back at recording on; a recording-on without all four is refused and no row
 
 ## `/fluorescence` — one row per EMCCD frame (absent without an EMCCD)
 
+**Written since v0.3.7 (2026-11-21, first build of plan 10a, internal trigger):** `emccd_frame` (from 0 within one
+EMCCD acquisition), `t_host` (estimated: frame number x kinetic cycle, anchored to the earliest read), `t_read`,
+`jai_segment`, `jai_buffer_at_read` (the newest JAI frame when the batch was read: an upper bound), `exposure_s`,
+`images`, `image_index`; group attribute `trigger`. There is no frame divider yet, so the two cameras are aligned
+by host time only; `jai_first_buffer` / `jai_last_buffer`, `excitation` and the sequence columns below wait for the
+Arduino sync (decision 0005). Frames are written only while recording is on and the EMCCD is acquiring.
+
 | dataset | dtype | unit | meaning | source |
 |---|---|---|---|---|
 | `emccd_frame` | int64 | 1 | EMCCD frame number from 0 | iXon driver |

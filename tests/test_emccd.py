@@ -22,6 +22,7 @@ def test_emccd_core_parameters_set_and_read_back(rig):
     assert api.emccd.set_gain_mode(3) == 3 and dev.gain_range == (1, 300)
     assert api.emccd.set_gain(100) == 100
     assert api.emccd.set_exposure(30.0) == pytest.approx(30.0)
+    api.emccd.set_exposure(20.0)
     assert api.emccd.set_rate(20.0) == pytest.approx(20.0, rel=0.01)
     assert api.emccd.set_temperature(-70) == -70
     s = api.emccd.settings()
@@ -102,3 +103,36 @@ def test_emccd_shutter_closed_until_start_and_closed_again_at_stop(rig):
     sdk = dev.sdk
     rig["emccd"].close()
     assert sdk.shutter == 2 and sdk.shut
+
+
+def test_emccd_frames_are_recorded_beside_the_jai(rig, tmp_path):
+    """Plan 10a, owner 2026-11-21 ("JAI + iXon measured together"): while api.acq records, the EMCCD's frames go into
+    the run file's /fluorescence with their number, a host time and the newest JAI frame; none before recording."""
+    import time
+
+    import h5py
+    import numpy as np
+    api.emccd.set_exposure(20.0)
+    assert api.emccd.set_rate(20.0) == pytest.approx(20.0, rel=0.01)
+    api.emccd.start()
+    api.acq.start(folder=tmp_path, name="both")
+    time.sleep(0.4)                                        # frames before the recording: read, not written
+    assert api.acq.status()["emccd"]["frames_read"] >= 3 and api.acq.status()["emccd"]["frames_recorded"] == 0
+    assert api.emccd.read_new()[2].shape == (1, 512, 512)  # a display still gets the newest frame
+    api.acq.set_recording(True, name="both")
+    time.sleep(1.0)
+    st = api.acq.stop()
+    api.emccd.stop()
+    n = st["emccd"]["frames_recorded"]
+    assert n >= 15 and st["emccd"]["frames_lost"] == 0 and st["emccd"]["error"] is None
+    with h5py.File(tmp_path / "both.h5", "r") as f:
+        fl = f["fluorescence"]
+        assert fl["images"].shape == (n, 512, 512) and fl["images"].dtype == np.uint16
+        num, t, buf = fl["emccd_frame"][:], fl["t_host"][:], fl["jai_buffer_at_read"][:]
+        assert (np.diff(num) == 1).all() and num[0] >= 3 and list(fl["image_index"][:]) == list(range(n))
+        assert np.median(np.diff(t)) == pytest.approx(0.05, abs=0.01)          # the 20 Hz cycle
+        assert (np.diff(buf) >= 0).all() and buf[-1] > buf[0] >= 0
+        mt_t = f["mt/t_host"][:]
+        assert mt_t[0] - 0.2 < t[0] and t[-1] < mt_t[-1] + 0.2                 # the same clock as the JAI rows
+    from mtpy.data.hdf5 import read_run
+    assert read_run(tmp_path / "both.h5")["fluorescence"]["images"]["shape"] == (n, 512, 512)

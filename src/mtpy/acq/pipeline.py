@@ -384,6 +384,9 @@ class Pipeline:
                     self.sink.close()
                     self.sink = x
                     continue
+                if kind == "emccd":                  # plan 10a: a sink without write_emccd (memory) drops them
+                    getattr(self.sink, "write_emccd", lambda batch: None)(x)
+                    continue
                 self.sink.write_frame(x) if kind == "frame" else self.sink.write_event(x)
             except Exception as e:  # noqa: BLE001 - shown in status(); never an event (it would come back here)
                 self.sink_failures, self.sink_error = self.sink_failures + 1, f"{type(e).__name__}: {e}"
@@ -425,6 +428,10 @@ class Pipeline:
             self.recording = bool(on)
             seg = self.segments[-1].as_dict() if self.segments else None
             return self.last_record(), seg
+
+    def forward_emccd(self, batch):
+        """Hand one batch of EMCCD frames (api.emccd._Recorder) to the sink thread."""
+        self._out.put(("emccd", batch))
 
     def forward(self, ev):
         """Hand one event to the sink regardless of the flag (the `recording off` event)."""

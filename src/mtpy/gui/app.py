@@ -631,6 +631,8 @@ class MainWindow(QMainWindow):
         g4f.addRow("EM gain", self.em_gain)
         g4f.addRow("Temperature set point (cooler on)", self.em_temp)
         self.btn_em_live = QPushButton("Live", checkable=True, clicked=self._toggle_emccd_live)
+        self.btn_em_live.setToolTip("Starts the EMCCD (shutter open). While the JAI records, its frames are written "
+                                    "into the same run file (/fluorescence); without Live nothing is recorded.")
         g4f.addRow(_row(QPushButton("Apply and read back", clicked=self._apply_emccd),
                         QPushButton("Snap one frame", clicked=self._snap_emccd), self.btn_em_live))
         self.em_cycles = _spin(1, 1000, 10, 100, 0, " cycles")
@@ -2139,6 +2141,10 @@ class MainWindow(QMainWindow):
                          f"{', REC' if a.get('recording') else ''}")
             d["rec"] = bool(a.get("recording"))
             d["fps"] = a.get("fps_measured") or float("nan")
+            em = a.get("emccd")
+            if em:                                # plan 10a: the EMCCD read beside the JAI (recorded while REC)
+                parts.append(f"emccd: {em['frames_read']} read, {em['frames_recorded']} recorded, "
+                             f"{em['frames_lost']} lost" + (f", {em['error']}" if em["error"] else ""))
             d["lost"] = (a.get("camera_gaps", 0), a.get("pipeline_drops", 0), a.get("frames_not_written") or 0,
                          a.get("track_ms_p99"))
         else:

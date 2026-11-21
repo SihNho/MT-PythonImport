@@ -39,6 +39,7 @@ from mtpy.devices.base import passive_reads
 
 from . import beads as _beads
 from . import devices as _devices_api
+from . import emccd as _emccd
 from . import events
 from . import focus as _focus
 from . import magnet as _magnet
@@ -236,6 +237,7 @@ def _start(record, name, sink, ring_capacity, folder, roles, motor_poll_s, z_met
         svc.call(dev.start_acquisition, what="start acquisition")
         if pipe.motor_poll is not None:
             pipe.motor_poll.start()
+        _emccd._acq_started(pipe)
     except BaseException:
         _finish()
         raise
@@ -360,6 +362,7 @@ def _finish(timeout_s=10.0):
         if pipe.stop_state is None:               # first stop: camera, segment end, recording off (once)
             if getattr(pipe, "motor_poll", None) is not None:
                 pipe.motor_poll.stop()
+            pipe.emccd = _emccd._acq_stopping() or getattr(pipe, "emccd", None)   # kept for status() after the stop
             error = None
             try:
                 _svc.call(_svc.device.stop_acquisition, what="stop acquisition")
@@ -480,8 +483,9 @@ def status():
     if pipe is None:
         return {"running": False}
     poll = getattr(pipe, "motor_poll", None)
+    em = _emccd._rec if pipe is _pipe and _emccd._rec is not None else getattr(pipe, "emccd", None)
     return {"running": pipe is _pipe, **pipe.status(), "camera_stop": getattr(pipe, "camera_stop", None),
-            "motor_poll": None if poll is None else poll.status()}
+            "motor_poll": None if poll is None else poll.status(), "emccd": None if em is None else em.status()}
 
 
 def sink():

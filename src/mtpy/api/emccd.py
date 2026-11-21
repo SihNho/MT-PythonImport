@@ -1,13 +1,23 @@
 """EMCCD (Andor iXon Ultra) settings: the five core parameters the owner asked for on 2026-10-30 - exposure, frame
 rate, EM gain mode, EM gain, sensor temperature - each sent, read back and verified like a camera setting
-(`mtpy.devices.ixon`). The EMCCD has no acquisition pipeline yet (plan phase 10a); `snap()` grabs one frame.
+(`mtpy.devices.ixon`). `snap()` grabs one frame.
+
+Recording beside the JAI (plan 10a, owner 2026-11-21 "JAI + iXon measured together"): while `api.acq` runs, a
+recorder thread reads every new EMCCD frame; while recording is on they go into the run file's `/fluorescence`
+(raw images, the SDK frame number, an estimated host time, the newest JAI frame at the read). The EMCCD runs on its
+internal trigger: the two cameras are aligned by host time only, until the Arduino frame divider exists (0005).
 
     api.emccd.apply_preset({"name": "tirf", "exposure_ms": 30.0, "rate_Hz": 20.0, "em_gain": 100, "temperature_C": -70})
     api.emccd.set_exposure(50.0)        # -> 50.0 read back (ms)
 """
+import contextvars
+import threading
+import time
+
 from . import events
 from ._act import acting
-from .devices import service
+from .devices import _services, service
+from .errors import MtpyError
 
 FIELDS = ("frame_transfer", "shutter", "em_gain_mode", "em_gain", "exposure_ms", "rate_Hz", "temperature_C")   # applied in this order
 
@@ -107,9 +117,101 @@ def stop():
 
 
 def read_new():
-    """(first, last, frames n x h x w uint16) not yet read, or None; a jump in first over the last read = loss."""
+    """(first, last, frames n x h x w uint16) not yet read, or None; a jump in first over the last read = loss.
+    While api.acq runs the recorder reads the camera: this returns its newest frame once (for a display)."""
+    rec = _rec
+    if rec is not None:
+        latest, rec.latest = rec.latest, None
+        return latest
     svc = service("emccd")
     return svc.call(svc.require().read_new, what="read new frames")
+
+
+class _Recorder:
+    """Reads the EMCCD's new frames every `period_s` on its own thread while api.acq runs (never on the JAI frame
+    path) and, while recording is on, hands them to the pipeline's sink. A frame number that does not follow the
+    last one read is a loss (`emccd_frames_lost` event); a failed read is one `emccd_read_error` event per text."""
+
+    def __init__(self, pipe, svc, period_s=0.02):
+        self.pipe, self.svc, self.period_s = pipe, svc, period_s
+        self.latest = None                      # (first, last, the newest frame as 1 x h x w) for a display
+        self.frames_read = self.frames_recorded = self.frames_lost = 0
+        self.error = None
+        self._next, self._timing = None, None   # the frame number expected next; (exposure_s, period_s)
+        self._stop = threading.Event()
+        self._thread = threading.Thread(target=contextvars.copy_context().run, args=(self._loop,),
+                                        name="acq-emccd", daemon=True)
+        self._thread.start()
+
+    def _loop(self):
+        while not self._stop.wait(self.period_s):
+            try:
+                self.read_once()
+                self.error = None
+            except MtpyError as e:
+                msg = f"{type(e).__name__}: {e}"
+                if msg != self.error:
+                    self.error = msg
+                    events.log("emccd_read_error", device="emccd", error=msg, **self.pipe.last_record())
+
+    def read_once(self):
+        dev = self.svc.device
+        r = self.svc.call(dev.read_new, what="read new frames")
+        if r is None:
+            return
+        t_read, jai = time.time(), self.pipe.last_record()
+        first, last, frames = r
+        if self._next is None or first < self._next:          # a new EMCCD acquisition: its numbers restart at 1
+            s = self.svc.call(dev.settings, what="read settings")
+            self._timing = (s["exposure_ms"] / 1000.0, 1.0 / s["rate_Hz"] if s.get("rate_Hz") else 0.0)
+            self._offset = float("inf")
+        elif first > self._next:
+            self.frames_lost += first - self._next
+            events.log("emccd_frames_lost", device="emccd", first=self._next, last=first - 1, **jai)
+        self._next = last + 1
+        # the frame clock: frame n ends at offset + n * cycle; a frame is never read before it exists, so the
+        # smallest (read time - n * cycle) seen is the offset (the poll's delay only ever adds to it)
+        self._offset = min(self._offset, t_read - last * self._timing[1])
+        self.frames_read += len(frames)
+        self.latest = (last, last, frames[-1:])
+        if self.pipe.recording:
+            self.frames_recorded += len(frames)
+            self.pipe.forward_emccd({"first": first, "frames": frames, "t_read": t_read, "exposure_s": self._timing[0],
+                                     "t_last": self._offset + last * self._timing[1],
+                                     "period_s": self._timing[1], "jai_segment": jai.get("segment"),
+                                     "jai_buffer": jai.get("buffer_number")})
+
+    def stop(self):
+        self._stop.set()
+        self._thread.join(2.0)                  # a read stuck in the device keeps only this daemon thread
+
+    def status(self):
+        return {"frames_read": self.frames_read, "frames_recorded": self.frames_recorded,
+                "frames_lost": self.frames_lost, "error": self.error}
+
+
+_rec = None
+
+
+def _acq_started(pipe):
+    """api.acq: acquisition started - record the EMCCD beside it when one is connected."""
+    global _rec
+    svc = _services.get("emccd")
+    if svc is not None and svc.connected:
+        _rec = _Recorder(pipe, svc)
+
+
+def _acq_stopping():
+    """api.acq: before the pipeline stops - a last read, so the frames up to the stop reach the sink."""
+    global _rec
+    rec, _rec = _rec, None
+    if rec is not None:
+        rec.stop()
+        try:
+            rec.read_once()
+        except MtpyError:
+            pass
+    return rec
 
 
 def total_acquired():
