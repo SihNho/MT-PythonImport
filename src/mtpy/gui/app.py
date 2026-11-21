@@ -51,7 +51,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from mtpy import api
+from mtpy import api, mapping
 from mtpy.api import estop, events, safety
 from mtpy.lvfiles import read_cal
 from mtpy.track import Z_METHODS
@@ -552,6 +552,13 @@ class MainWindow(QMainWindow):
         self.objective.setToolTip("Written into the run file (metadata/presets/rig) at the next Connect. z is stored "
                                   "raw: the factor is recorded, never applied. The list is config/rig_presets.json.")
         f.addRow("Objective", self.objective)
+        # owner 2026-11-21: the JAI tube is adjusted by hand (bead focus apart from the fluorescence focus)
+        self.jai_tube = QLineEdit(str(self.settings.value("jai_tube", "")))
+        self.jai_tube.setPlaceholderText("as read on the tube, e.g. 'adjustable tube, scale 12.5 mm'")
+        self.jai_tube.setToolTip("Written into every run file (metadata/presets/jai_tube). A pre-calibration "
+                                 "reference taken at another tube setting is refused. After a change: a new LUT.")
+        self.jai_tube.editingFinished.connect(self._set_jai_tube)
+        f.addRow("JAI tube (manual)", self.jai_tube)
         self.cam_sdk = QComboBox()       # owner 2026-11-01: the JAI's SDK is chosen here; it must match the USB3 Vision driver bound
         self.cam_sdk.addItem("IMAQdx (NI driver - LabVIEW can share the camera)", "imaqdx")
         self.cam_sdk.addItem("eBUS (JAI / Pleora driver - LabVIEW cannot open the camera)", "ebus")
@@ -644,6 +651,20 @@ class MainWindow(QMainWindow):
         self.em_readback = QLabel("emccd: not connected")
         self.em_readback.setWordWrap(True)
         g4f.addRow(self.em_readback)
+        # owner 2026-11-21: "first frames whole, then the chosen pixels" - per bead a box (its molecule is chosen later)
+        self.em_store = QComboBox()
+        self.em_store.addItem("every frame whole", "full")
+        self.em_store.addItem("bead boxes + some whole frames", "boxes")
+        self.em_box_px = _spin(3, 255, 2, 15, 0, " px box")
+        self.em_first = _spin(0, 100000, 10, 20, 0, " first whole")
+        self.em_every = _spin(0, 100000, 10, 100, 0, " every Nth whole")
+        self.em_map_path = QLineEdit()
+        self.em_map_path.setPlaceholderText("JAI -> EMCCD map file (needed for bead boxes)")
+        g4f.addRow("Storage (next run file)", _row(self.em_store, self.em_box_px, self.em_first, self.em_every))
+        g4f.addRow("Map", _row(self.em_map_path, QPushButton("Browse...", clicked=self._browse_em_map),
+                               QPushButton("Apply storage", clicked=self._apply_em_storage)))
+        self.em_store_info = QLabel("next run file: every EMCCD frame whole")
+        g4f.addRow(self.em_store_info)
         em_lay.addWidget(g4)
         self.em_attrs = AttrPanel("EMCCD", lambda: api.emccd.catalogue(), lambda n: api.emccd.get_attribute(n),
                                   lambda n, v: api.emccd.set_attribute(n, v), self._call,
@@ -778,6 +799,11 @@ class MainWindow(QMainWindow):
         if cond.get("objective") and obj and cond["objective"] != obj:
             self._fail("pre-calibration", f"the reference {name!r} was taken with the objective {cond['objective']!r}; "
                                           f"Setup says {obj!r} - another objective needs its own reference")
+            return
+        tube = self.jai_tube.text().strip()
+        if cond.get("jai_tube") is not None and cond["jai_tube"] != tube:
+            self._fail("pre-calibration", f"the reference {name!r} was taken at the JAI tube {cond['jai_tube']!r}; "
+                                          f"Setup says {tube!r} - another tube setting needs its own reference")
             return
         start = CAL_ROOT if CAL_ROOT.is_dir() else Path(self.cal_out.text()).parent
         d = QFileDialog.getExistingDirectory(self, "Data folder: the pre-calibration (precal001, ...) and the run file "
@@ -1161,6 +1187,7 @@ class MainWindow(QMainWindow):
 
     def _connected(self, st):
         self._show_devices(st)
+        self._set_jai_tube()
         if st.get("camera", {}).get("state") == "connected":
             rate = self.cam_rate.value()
             self.cam_gain.setEnabled(self.backend.currentData() == "sim")    # read-only on the JAI (jai.py)
@@ -1327,6 +1354,36 @@ class MainWindow(QMainWindow):
         """Runs on the worker: an attribute that changes how frames are produced needs confirm=True while recording;
         the refusal names it, so retry confirmed only when the owner said yes beforehand (the panel's checkbox)."""
         return api.camera.set_attribute(name, value, confirm=self.cam_attrs_confirm.isChecked())
+
+    def _set_jai_tube(self):
+        text = self.jai_tube.text().strip()
+        self.settings.setValue("jai_tube", text)
+        if api.devices.status():
+            self._call(lambda: api.devices.set_jai_tube(text), "JAI tube")
+
+    def _browse_em_map(self):
+        p, _ = QFileDialog.getOpenFileName(self, "JAI -> EMCCD map (mt-map/1 JSON)", str(TOUCH_FILE.parent),
+                                           "Map (*.json);;All (*)")
+        if p:
+            self.em_map_path.setText(p)
+
+    def _apply_em_storage(self):
+        """Owner 2026-11-21: the EMCCD frames whole, or bead boxes + some whole frames, for the next run file."""
+        mode = self.em_store.currentData()
+        if mode == "full":
+            self._call(lambda: api.emccd.set_storage("full"), "emccd storage",
+                       lambda st: self.em_store_info.setText("next run file: every EMCCD frame whole"))
+            return
+        try:
+            m = mapping.load(self.em_map_path.text())
+        except (OSError, ValueError) as e:
+            self._fail("emccd storage", f"no usable map: {e}")
+            return
+        size, n, every = int(self.em_box_px.value()), int(self.em_first.value()), int(self.em_every.value())
+        self._call(lambda: api.emccd.set_storage("boxes", m, size, n, every), "emccd storage",
+                   lambda st: self.em_store_info.setText(
+                       f"next run file: {size} x {size} px box per bead (map {m['id']}), the first {n} frames and "
+                       f"every {every}th whole"))
 
     def _show_camera(self, s):
         """The camera's values read back into the three fields (no write back) and the read-back line."""

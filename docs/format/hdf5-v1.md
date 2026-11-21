@@ -200,6 +200,13 @@ EMCCD acquisition), `t_host` (estimated: frame number x kinetic cycle, anchored 
 by host time only; `jai_first_buffer` / `jai_last_buffer`, `excitation` and the sequence columns below wait for the
 Arduino sync (decision 0005). Frames are written only while recording is on and the EMCCD is acquiring.
 
+**Bead-box storage (v0.3.8, owner 2026-11-21 "first frames whole, then the chosen pixels"; `api.emccd.set_storage`,
+taken when the run file is made):** `boxes` uint16 `[n, k, s, s]` (one s x s box per tracked bead, every frame),
+`box_bead_id` `[k]`, `box_x0y0` `[k, 2]` (EMCCD corner pixel), `box_centre_px` `[k, 2]` (the bead's start position
+mapped with the JAI -> EMCCD map); `images` then holds only the first `first_full` frames and every
+`every_full`-th frame (`image_index` -1 for the others). Group attributes `storage` (mode, size, first_full,
+every_full) and `map` (the map's full JSON, U16). The default stays every frame whole (decision 0006 item 6).
+
 | dataset | dtype | unit | meaning | source |
 |---|---|---|---|---|
 | `emccd_frame` | int64 | 1 | EMCCD frame number from 0 | iXon driver |

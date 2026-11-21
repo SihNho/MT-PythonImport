@@ -337,7 +337,8 @@ def _hdf5_sink(folder, name, beads, roles, svc, dev, settings, tracking=None):
     rig = _devices_api.rig_preset()                    # owner 2026-11-12: the lens and its focal-shift factor (z is raw)
     if rig is not None:
         meta["presets"]["rig_name"], meta["presets"]["rig"] = rig
-    return HDF5Writer(path, beads=beads, roles=roles, metadata=meta)
+    meta["presets"]["jai_tube"] = _devices_api.jai_tube()     # owner 2026-11-21: set by hand, typed in Setup
+    return HDF5Writer(path, beads=beads, roles=roles, metadata=meta, emccd_storage=_emccd.storage())
 
 
 def _check_camera_stopped(pipe, error):

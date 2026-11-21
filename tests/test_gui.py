@@ -912,6 +912,8 @@ def test_owner_2026_11_21_defaults_camera_numbers_at_once_presets_and_reset(wind
     # the defaults: MT, Phase_Spline V2 on the GPU, 150 Hz, recording from the start of tracking
     assert w.mode.currentData() == "MT" and w.z_method.currentText() == "phase_spline_v2" and w.gpu.isChecked()
     assert w.cam_rate.value() == 150.0 and w.auto_rec.isChecked()
+    w.jai_tube.setText("tube 12.5 mm")                       # owner 2026-11-21: the manual tube, in every run file
+    w._set_jai_tube()
     w._connect()
     _until(app, lambda: "5 / 5" in w.dev_summary.text(), 15, "connect (MT: five devices)")
 
@@ -951,3 +953,28 @@ def test_owner_2026_11_21_defaults_camera_numbers_at_once_presets_and_reset(wind
     _until(app, lambda: abs(api.focus.position()) < 0.01 and not api.acq.status().get("recording"), 30,
            lambda: (api.focus.position(), api.acq.status().get("recording")))
     assert api.acq.running() and not w.bead_ids
+    # the run file closed by the reset carries the tube setting
+    from pathlib import Path
+    folder = Path(w.ed_out.text())
+    _until(app, lambda: list(folder.glob("*.meta.json")), 20, "the run file's metadata copy")
+    meta = json.loads(sorted(folder.glob("*.meta.json"))[-1].read_text(encoding="utf-8"))
+    assert meta["presets"]["jai_tube"] == "tube 12.5 mm"
+
+
+def test_owner_2026_11_21_emccd_storage_from_the_panel(window, tmp_path):
+    import numpy as np
+
+    from mtpy import mapping
+    app, w = window
+    w.em_store.setCurrentIndex(w.em_store.findData("boxes"))
+    w._apply_em_storage()                                     # no map: refused in the status bar, storage unchanged
+    assert api.emccd.storage() == {"mode": "full"}
+    m = mapping.make("gui-map", [{"from": "jai", "to": "emccd",
+                                   **mapping.fit(np.zeros((1, 2)), np.ones((1, 2)), "translation")}])
+    w.em_map_path.setText(str(mapping.save(m, tmp_path / "gui-map.json")))
+    w._apply_em_storage()
+    try:
+        _until(app, lambda: api.emccd.storage()["mode"] == "boxes", 10, lambda: api.emccd.storage())
+        assert api.emccd.storage()["size"] == 15 and "gui-map" in w.em_store_info.text()
+    finally:
+        api.emccd.set_storage("full")                         # module state: never leak into later tests

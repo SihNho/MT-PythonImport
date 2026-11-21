@@ -48,6 +48,23 @@ def rig_presets():
     return json.loads(p.read_text(encoding="utf-8")) if p.exists() else {}
 
 
+_tube = ""             # owner 2026-11-21: the JAI camera tube is adjusted by hand; its setting as the owner reads it
+
+
+def set_jai_tube(text):
+    """The JAI tube setting now, as typed (owner 2026-11-21: a length-adjustable tube, set by hand, puts the bead
+    focus apart from the fluorescence focus; the LUT, pixel size, pre-calibration references and the JAI-EMCCD map
+    depend on it). Written into every run file created from now on (metadata/presets/jai_tube); a `setting` event."""
+    global _tube
+    _tube = str(text).strip()
+    events.log("setting", device="jai_tube", value=_tube)
+    return _tube
+
+
+def jai_tube():
+    return _tube
+
+
 def rig_preset():
     """(name, content) of the rig preset of the current connection, or None (none chosen, or disconnected)."""
     return _rig if _services else None

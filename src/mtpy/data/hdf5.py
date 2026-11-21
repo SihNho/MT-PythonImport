@@ -174,7 +174,7 @@ def _fl_columns():
         "jai_buffer_at_read": (np.int64, None, "1", ("buffer number of the newest JAI frame when the batch was read "
                                                      "(an upper bound for this frame), -1 if none")),
         "exposure_s": (np.float64, None, "s", "exposure read back when the EMCCD acquisition started"),
-        "image_index": (np.int64, None, "1", "row in `images`"),
+        "image_index": (np.int64, None, "1", "row in `images`; -1 = no whole frame kept (bead-box storage)"),
     }
 
 
@@ -275,7 +275,7 @@ class HDF5Writer(ResultSink):
     strings under /metadata. All methods are called from the pipeline's single sink thread."""
 
     def __init__(self, path, beads=None, roles=None, metadata=None, flush_frames=150, flush_s=1.0,
-                 max_pending=20000, json_copy=True):
+                 max_pending=20000, json_copy=True, emccd_storage=None):
         self.path = Path(path)
         if self.path.exists():
             raise FileExistsError(f"{self.path} exists; the writer never overwrites a data file")
@@ -310,6 +310,8 @@ class HDF5Writer(ResultSink):
         self._motor_dirty = None      # earliest PC time of a motor reading that arrived after rows were flushed
         self._last_flush = time.monotonic()
         self._fl = None               # /fluorescence table, made at the first EMCCD batch
+        self.emccd_storage = dict(emccd_storage or {"mode": "full"})    # api.emccd.storage() when the file was made
+        self._boxes = None            # (x0, y0) per bead box, bead-box storage only
 
     # --- ResultSink -------------------------------------------------------------------------------------------------
     def write_emccd(self, batch):
@@ -319,15 +321,23 @@ class HDF5Writer(ResultSink):
         if self.f is None:
             raise RecordingRefused(f"{len(frames)} EMCCD frames not written: no recording-on event opened the file")
         if self._fl is None:
-            g = self.f.create_group("fluorescence")
-            self._fl = _Table(g, _fl_columns())
-            ds = g.create_dataset("images", shape=(0, *frames.shape[1:]), maxshape=(None, *frames.shape[1:]),
-                                  dtype=np.uint16, chunks=(1, *frames.shape[1:]))
-            ds.attrs["unit"], ds.attrs["description"] = "counts", "raw EMCCD frames (decision 0006 item 6)"
-            g.attrs["trigger"] = "internal (no frame divider): align with /mt by t_host"
-        ds, n, m = self.f["fluorescence/images"], self.f["fluorescence/images"].shape[0], len(frames)
-        ds.resize(n + m, axis=0)
-        ds[n:] = frames
+            self._fl_open(frames.shape[1:])
+        st, m = self.emccd_storage, len(frames)
+        row0 = self._fl.n + self._fl.waiting()           # frames of this file before the batch
+        if self._boxes is None:
+            keep = np.arange(m)
+        else:
+            k = row0 + np.arange(m)
+            keep = np.nonzero((k < st["first_full"]) | ((k % st["every_full"] == 0) if st["every_full"] else False))[0]
+            s, bx = st["size"], self.f["fluorescence/boxes"]
+            bx.resize(row0 + m, axis=0)
+            bx[row0:] = np.stack([frames[:, y: y + s, x: x + s] for x, y in self._boxes], axis=1)
+        ds = self.f["fluorescence/images"]
+        n = ds.shape[0]
+        ds.resize(n + len(keep), axis=0)
+        ds[n:] = frames[keep]
+        index = np.full(m, -1, dtype=np.int64)
+        index[keep] = n + np.arange(len(keep))
         for i in range(m):
             # shortcut: the frame time is the SDK frame number on the kinetic cycle, anchored to the earliest read
             # (api.emccd._Recorder); upgrade with the frame divider (decision 0005)
@@ -335,8 +345,38 @@ class HDF5Writer(ResultSink):
                              "t_host": batch["t_last"] - (m - 1 - i) * batch["period_s"] - self.t0,
                              "t_read": batch["t_read"] - self.t0, "jai_segment": _int(batch["jai_segment"]),
                              "jai_buffer_at_read": _int(batch["jai_buffer"]), "exposure_s": batch["exposure_s"],
-                             "image_index": n + i})
+                             "image_index": int(index[i])})
         self._maybe_flush()
+
+    def _fl_open(self, shape):
+        """/fluorescence at the first EMCCD batch: the whole-frame dataset and, for bead-box storage, one box per
+        tracked bead around its start position mapped to the EMCCD (api.emccd.set_storage)."""
+        g = self.f.create_group("fluorescence")
+        self._fl = _Table(g, _fl_columns())
+        ds = g.create_dataset("images", shape=(0, *shape), maxshape=(None, *shape), dtype=np.uint16, chunks=(1, *shape))
+        ds.attrs["unit"], ds.attrs["description"] = "counts", "raw EMCCD frames (decision 0006 item 6)"
+        g.attrs["trigger"] = "internal (no frame divider): align with /mt by t_host"
+        st = self.emccd_storage
+        if st.get("mode") == "boxes" and (self.beads is None or not len(self.beads.ids)):
+            st = self.emccd_storage = {"mode": "full", "note": "bead boxes asked for, but no beads were tracked"}
+        g.attrs["storage"] = to_json({k: v for k, v in st.items() if k != "map"})
+        if st.get("mode") != "boxes":
+            return
+        from mtpy import mapping
+        g.attrs["map"] = to_json(st["map"])               # U16: the map's id and full content
+        s, (h, w) = st["size"], shape
+        c = mapping.to_emccd(st["map"], self.beads.xy0)
+        x0 = np.clip(np.rint(c[:, 0]).astype(int) - s // 2, 0, w - s)
+        y0 = np.clip(np.rint(c[:, 1]).astype(int) - s // 2, 0, h - s)
+        self._boxes = list(zip(x0.tolist(), y0.tolist()))
+        bx = g.create_dataset("boxes", shape=(0, len(self._boxes), s, s), maxshape=(None, len(self._boxes), s, s),
+                              dtype=np.uint16, chunks=(1, len(self._boxes), s, s))
+        bx.attrs["unit"], bx.attrs["description"] = "counts", ("per frame, the box of each tracked bead "
+                                                             "(axis 1 = box_bead_id; pixels from box_x0y0)")
+        for name, v, desc in (("box_bead_id", np.asarray(self.beads.ids, dtype=np.int32), "bead of each box"),
+                              ("box_x0y0", np.c_[x0, y0].astype(np.int64), "EMCCD pixel of each box's corner (x, y)"),
+                              ("box_centre_px", c, "the bead's start position mapped to the EMCCD (x, y)")):
+            g.create_dataset(name, data=v).attrs["description"] = desc
 
     def write_event(self, ev):
         x = ev.extra or {}
@@ -968,7 +1008,7 @@ def _value(ds):
 def _read_group(g):
     out = {}
     for k, item in g.items():
-        if k == "images" and g.name == "/fluorescence":       # GBs of raw frames: read them from the file by index
+        if k in ("images", "boxes") and g.name == "/fluorescence":    # GBs of raw frames: read them by index
             out[k] = {"shape": tuple(item.shape), "dtype": str(item.dtype)}
             continue
         out[k] = _read_group(item) if isinstance(item, h5py.Group) else _value(item)

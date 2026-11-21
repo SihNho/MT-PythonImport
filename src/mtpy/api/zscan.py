@@ -142,7 +142,7 @@ def reference_conditions(ref_cal):
         s = jai.get("settings_at_start") or {}
         return {"camera": {k: s[k] for k in ("rate_Hz", "exposure_ms", "gain_dB") if isinstance(s.get(k), (int, float))},
                 "binning": jai.get("binning_at_start"), "objective": (meta.get("presets") or {}).get("rig_name"),
-                "source": str(m)}
+                "jai_tube": (meta.get("presets") or {}).get("jai_tube"), "source": str(m)}
     return {}
 
 

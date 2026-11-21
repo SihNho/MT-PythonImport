@@ -17,7 +17,7 @@ import time
 from . import events
 from ._act import acting
 from .devices import _services, service
-from .errors import MtpyError
+from .errors import MtpyError, SafetyRefused
 
 FIELDS = ("frame_transfer", "shutter", "em_gain_mode", "em_gain", "exposure_ms", "rate_Hz", "temperature_C")   # applied in this order
 
@@ -125,6 +125,45 @@ def read_new():
         return latest
     svc = service("emccd")
     return svc.call(svc.require().read_new, what="read new frames")
+
+
+_storage = {"mode": "full"}
+
+
+def set_storage(mode="full", jai_map=None, size=15, first_full=20, every_full=100):
+    """How the EMCCD frames go into the run files created from now on (owner 2026-11-21: "first frames whole, then
+    the chosen pixels"). "full": every frame whole (decision 0006 item 6; the default). "boxes": per tracked bead a
+    size x size box (odd, px) around its start position mapped to the EMCCD with `jai_map` (a mapping.load() map
+    with a jai -> emccd transform), plus the first `first_full` frames and every `every_full`-th frame whole (0 =
+    none) for the map check, drift and choosing spots later. The box is wide because which spot under a bead is its
+    molecule is decided after the run (U25). Returns storage()."""
+    global _storage
+    if mode == "full":
+        _storage = {"mode": "full"}
+    elif mode == "boxes":
+        from mtpy import mapping
+        if not isinstance(jai_map, dict):
+            raise SafetyRefused("emccd bead boxes need a JAI -> EMCCD map (mapping.load); none given")
+        try:
+            mapping.transform(jai_map, "jai", jai_map.get("reference", "emccd"))
+        except (KeyError, TypeError) as e:
+            raise SafetyRefused(f"emccd bead boxes: {e}") from None
+        nums = (size, first_full, every_full)
+        if not all(isinstance(v, int) and not isinstance(v, bool) for v in nums) or size < 3 or size % 2 == 0 \
+                or size > 255 or first_full < 0 or every_full < 0:
+            raise SafetyRefused(f"emccd bead boxes: size {size!r} must be an odd integer 3..255, first_full "
+                                f"{first_full!r} and every_full {every_full!r} integers >= 0")
+        _storage = {"mode": "boxes", "size": size, "first_full": first_full, "every_full": every_full, "map": jai_map}
+    else:
+        raise SafetyRefused(f"emccd storage {mode!r} is not 'full' or 'boxes'")
+    events.log("emccd_storage", device="emccd", **{k: v for k, v in _storage.items() if k != "map"},
+               map_id=(jai_map or {}).get("id") if mode == "boxes" else None)
+    return storage()
+
+
+def storage():
+    """The EMCCD storage for the next run file (set_storage); the map is included in full."""
+    return dict(_storage)
 
 
 class _Recorder:

@@ -2,6 +2,15 @@
 
 Status: proposed 2026-10-23 in chat; waiting for the owner's agreement. Requirements: [ui-requirements.md](../spec/ui-requirements.md) U22.
 
+**Built 2026-11-21 (v0.3.8, owner: "implement what can be implemented first"), offline only:** `src/mtpy/mapping.py`
+fits the five models (poly2 / poly3 as the full 3 x 3 / 4 x 4 tensor on normalised coordinates, so a poly
+transform also stores `centre` and `scale`), applies them both ways, pairs two spot lists from a rough guess
+(mutual nearest neighbours, outlier rejection, refit), finds spots (box-mean local maxima, background-subtracted
+centroid; `radius` = the spot's or the bead's half width) and saves / loads the JSON below. Two differences from
+the proposal: the control points are kept **inside** the JSON (`control_points: {"from", "to"}` per transform) - one
+file holds the whole map; `channels` may be empty. Not built: the GUI to measure a map, the smCamera import, the
+channel-layout preset. Not measured: whether M-270 autofluorescence is bright enough on the EMCCD.
+
 Owner 2026-10-23: "Mapping의 경우 single channel, 2 channel, 3 channel로 사용할 것 같고 각 채널 정체를 define할 수 있고
 그 정보를 프리셋 저장도 가능해야겠음. 동시에 magnetic bead와 EMCCD 사이의 mapping 역시 필요함. 사전의 mapping을 통해서
 데이터를 불러오는게 맞겠고, mapping 데이터 형식은 어떻게 할지도 정하면 좋을듯"

@@ -72,6 +72,11 @@ The owner ran watch -> picks -> calibrate -> track -> protocol -> Save the trace
   The image line shows the rate set and the rate measured from the camera timestamps.
 - **EMCCD beside the JAI** (owner 2026-11-21, plan 10a): with the EMCCD on Live, its frames are written into the
   run file while the JAI records; the status line counts the frames read, recorded and lost.
+- **JAI tube** (owner 2026-11-21): the length-adjustable tube is set by hand; Setup's "JAI tube (manual)" is the
+  setting as read on it, written into every run file (`metadata/presets/jai_tube`). A pre-calibration reference
+  taken at another tube setting is refused.
+- **EMCCD storage** (owner 2026-11-21): the EMCCD group chooses "every frame whole" or "bead boxes + some whole
+  frames" (box size, the first N whole, every Nth whole, a JAI -> EMCCD map file) for the next run file.
 - **Reset calibration** (owner 2026-11-21): also switches the autofocus off and moves the piezo (focus) to z = 0.
 - **Plot window** (owner 2026-11-15): "4. Plot" opens the second graph in a window of its own (any size, beside the
   Run page); it is drawn only while the window is open.
