@@ -1,15 +1,16 @@
-"""Offline fluorescence analysis for MT-TIRF (plan 10a; owner 2026-11-21). Pure numpy, on recorded data.
+"""Offline fluorescence analysis for MT-TIRF (plan 10a; owner 2026-11-21). numpy / scipy, on recorded data.
 
 - Which spot under a bead is the bead's molecule (U25): with the dye a little above the surface, its TIRF intensity
   follows the bead's height when the bead is pulled and released; `correlation_map` gives, per pixel, the
   correlation of intensity with the bead's z over time (the bead's own molecule ~ high |r|, surface dyes ~ 0).
-- Depth from the PSF shape (astigmatism, as 3D STORM): `widths` measures a spot's x / y widths;
+- Depth from the PSF shape (astigmatism, as 3D STORM): `widths` fits a spot's x / y widths;
   `astig_calibration` fits z against sx - sy from a z scan of surface dyes; `z_from_widths` reads z back.
 
     r = fluor.box_correlation("tra001.h5", box=0, bead_id=3, reference_bead=1)
 """
 import h5py
 import numpy as np
+from scipy import optimize
 
 
 def correlation_map(stack, signal):
@@ -56,20 +57,33 @@ def box_correlation(path, box, bead_id, reference_bead=None):
 
 
 def widths(spot, background=None):
-    """Centre (x, y) and widths (sx, sy, px) of one spot from its intensity moments above the background (default:
-    the median of the window's border). Returns {"x", "y", "sx", "sy", "signal", "background"}; NaN without signal.
-    shortcut: moment widths, not a fitted elliptical Gaussian (no scipy here); noise inflates them for dim spots,
-    so calibrate and measure with the same window size - upgrade to a Gaussian fit when dim spots matter."""
+    """Centre (x, y) and widths (sx, sy, px) of one spot: a least-squares fit of an elliptical Gaussian with its axes
+    on the camera's (the astigmatic lens is aligned to them) plus a constant background, started from the intensity
+    moments. A given `background` is held fixed. Returns {"x", "y", "sx", "sy", "amplitude", "signal" (2 pi A sx
+    sy), "background"}; NaN when there is no signal or the fit leaves the window."""
     b = np.asarray(spot, dtype=np.float64)
     bg = float(np.median(np.r_[b[0], b[-1], b[1:-1, 0], b[1:-1, -1]])) if background is None else float(background)
+    nan = {"x": np.nan, "y": np.nan, "sx": np.nan, "sy": np.nan, "amplitude": np.nan, "signal": 0.0, "background": bg}
     w = np.clip(b - bg, 0.0, None)
     tot = w.sum()
     if tot <= 0:
-        return {"x": np.nan, "y": np.nan, "sx": np.nan, "sy": np.nan, "signal": 0.0, "background": bg}
+        return nan
     yy, xx = np.indices(b.shape)
     x, y = (w * xx).sum() / tot, (w * yy).sum() / tot
-    return {"x": x, "y": y, "sx": float(np.sqrt((w * (xx - x) ** 2).sum() / tot)),
-            "sy": float(np.sqrt((w * (yy - y) ** 2).sum() / tot)), "signal": float(tot), "background": bg}
+    sx, sy = np.sqrt((w * (xx - x) ** 2).sum() / tot), np.sqrt((w * (yy - y) ** 2).sum() / tot)
+
+    def resid(p):
+        g = p[0] * np.exp(-(xx - p[1]) ** 2 / (2 * p[3] ** 2) - (yy - p[2]) ** 2 / (2 * p[4] ** 2))
+        return (g + (p[5] if background is None else bg) - b).ravel()
+    p0 = [w.max(), x, y, max(sx, 0.5), max(sy, 0.5)] + ([bg] if background is None else [])
+    r = optimize.least_squares(resid, p0)
+    a, x, y, sx, sy = r.x[0], r.x[1], r.x[2], abs(r.x[3]), abs(r.x[4])
+    h, wd = b.shape
+    if not r.success or a <= 0 or not (0 <= x <= wd - 1 and 0 <= y <= h - 1) or max(sx, sy) > max(h, wd):
+        return nan
+    bg = float(r.x[5]) if background is None else bg
+    return {"x": float(x), "y": float(y), "sx": float(sx), "sy": float(sy), "amplitude": float(a),
+            "signal": float(2 * np.pi * a * sx * sy), "background": bg}
 
 
 def astig_calibration(z_um, sx, sy, degree=3):

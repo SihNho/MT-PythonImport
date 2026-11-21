@@ -1,5 +1,5 @@
 """Maps between coordinate frames: JAI <-> EMCCD and EMCCD channel <-> channel (U22; format docs/format/mapping.md,
-schema mt-map/1). Pure numpy and offline: fit a transform from paired control points, apply it both ways, pair two
+schema mt-map/1). numpy / scipy and offline: fit a transform from paired control points, apply it both ways, pair two
 spot lists, find spots in an image, save / load one JSON file per map.
 
     t = mapping.fit(jai_xy, emccd_xy, "affine")              # -> {"model", "forward", "inverse", "rms_px", ...}
@@ -15,6 +15,7 @@ import time
 from pathlib import Path
 
 import numpy as np
+from scipy import ndimage
 
 SCHEMA = "mt-map/1"
 MODELS = ("translation", "similarity", "affine", "poly2", "poly3")
@@ -118,22 +119,6 @@ def fit_pairs(src, dst, guess, model="affine", max_px=3.0, rounds=5, reject=3.0)
     return t
 
 
-def _box_mean(img, r):
-    """Mean over a (2r+1)^2 window, edges by replication (cumulative sums: no scipy on the rig)."""
-    k = 2 * r + 1
-    p = np.pad(img, r + 1, mode="edge")
-    c = p.cumsum(axis=0).cumsum(axis=1)
-    s = c[k:, k:] - c[:-k, k:] - c[k:, :-k] + c[:-k, :-k]
-    return s[: img.shape[0], : img.shape[1]] / (k * k)
-
-
-def _window_max(a, r):
-    k = 2 * r + 1
-    p = np.pad(a, r, mode="constant", constant_values=-np.inf)
-    v = np.lib.stride_tricks.sliding_window_view(p, k, axis=0).max(axis=-1)
-    return np.lib.stride_tricks.sliding_window_view(v, k, axis=1).max(axis=-1)
-
-
 def find_spots(img, radius=2, k=5.0, edge=None):
     """Bright spots in an image: local maxima of the (2 radius + 1) box mean higher than median + k x noise (noise
     from the median absolute deviation), each placed at the background-subtracted centroid of its window. radius
@@ -142,10 +127,10 @@ def find_spots(img, radius=2, k=5.0, edge=None):
     img = np.asarray(img, dtype=np.float64)
     r = int(radius)
     edge = max(r, int(r if edge is None else edge))     # the centroid window stays inside
-    sm = _box_mean(img, r)
+    sm = ndimage.uniform_filter(img, 2 * r + 1, mode="nearest")
     med = np.median(sm)
     noise = 1.4826 * np.median(np.abs(sm - med)) or 1e-12
-    peak = (sm == _window_max(sm, r)) & (sm > med + k * noise)
+    peak = (sm == ndimage.maximum_filter(sm, 2 * r + 1, mode="constant", cval=-np.inf)) & (sm > med + k * noise)
     h, w = img.shape
     out = []
     for y, x in zip(*np.nonzero(peak)):

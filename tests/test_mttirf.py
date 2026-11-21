@@ -166,6 +166,16 @@ def test_depth_from_the_psf_widths_astigmatism():
     assert np.isnan(fluor.z_from_widths(cal, 10.0, 1.0))                     # far outside the calibration
 
 
+def test_widths_of_a_dim_spot_are_fitted_not_inflated():
+    rng = np.random.default_rng(6)
+    got = [fluor.widths(100 + _gauss((21, 21), 10.3, 9.6, 1.5, 2.2, 40) + rng.normal(0, 5, (21, 21)))
+           for _ in range(20)]
+    sx, sy = np.median([g["sx"] for g in got]), np.median([g["sy"] for g in got])
+    assert sx == pytest.approx(1.5, rel=0.1) and sy == pytest.approx(2.2, rel=0.1)
+    assert np.median([g["x"] for g in got]) == pytest.approx(10.3, abs=0.1)
+    assert np.isnan(fluor.widths(np.full((9, 9), 7.0))["sx"])                # no signal
+
+
 def test_bead_z_extension_from_a_run_file(tmp_path):
     p = tmp_path / "r.h5"
     with h5py.File(p, "w") as f:
@@ -173,6 +183,6 @@ def test_bead_z_extension_from_a_run_file(tmp_path):
         f["mt/t_host"] = np.arange(5, dtype=np.float64)
         f["mt/z_um"] = np.array([[1.0, 2.0], [1.0, 2.5], [1.0, -1.0], [1.1, 3.1], [1.0, 3.0]])
         f["mt/bead_lost"] = np.array([[0, 0], [0, 0], [0, 1], [0, 0], [0, 0]], dtype=np.uint8)
-    t, v = fluor.bead_z(p, 3, reference_bead=1)
+    _, v = fluor.bead_z(p, 3, reference_bead=1)
     assert np.isnan(v[2]) and v[3] == pytest.approx(2.0)
     assert fluor.bead_z(p, 3, [0.5, 2.0, 9.0], reference_bead=1)[:2] == pytest.approx([1.25, 1.75])
